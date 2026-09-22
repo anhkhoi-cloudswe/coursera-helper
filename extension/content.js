@@ -771,12 +771,24 @@
 
   // Quy trình xử lý Quiz trong Auto-Skip: Giải AI -> Submit -> Chờ kết quả -> Chuyển tiếp
   async function processQuizStep() {
-    showInPageToast('🤖 [Auto-Skip] Phát hiện Quiz/Assignment! Đang kích hoạt AI giải tự động...', false, 5000);
+    showInPageToast('🤖 [Auto-Skip] Phát hiện Quiz/Assignment! Đang kiểm tra trang...', false, 5000);
 
-    // Chờ trang quiz load hoàn toàn
+    // Chờ trang load hoàn toàn
     await new Promise(r => setTimeout(r, 1500));
 
-    // Bước 1: Quét câu hỏi
+    // Bước 0: Kiểm tra nếu đang ở trang giới thiệu (landing page) có nút "Start assignment"
+    const startAssignmentBtn = findStartAssignmentButton();
+    if (startAssignmentBtn) {
+      showInPageToast('📝 [Auto-Skip] Đang vào bài assignment... (bấm Start assignment)', false, 4000);
+      triggerClick(startAssignmentBtn);
+
+      // Chờ SPA navigate sang trang quiz thực sự (có câu hỏi)
+      // SPA watcher sẽ xử lý tiếp khi URL thay đổi
+      // Giữ nguyên isStepInProgress/isQuizSolveInProgress để heartbeat không gây ra re-entry
+      return;
+    }
+
+    // Bước 1: Quét câu hỏi (trên trang quiz thực sự)
     showInPageToast('🔍 [Auto-Skip] Đang quét câu hỏi trên trang...');
     let questions = await extractAllQuizQuestionsFromDOM();
 
@@ -871,12 +883,54 @@
     isQuizSolveInProgress = false;
   }
 
+  // Tìm nút "Start assignment" trên trang giới thiệu của Graded Assignment
+  function findStartAssignmentButton() {
+    // Thử theo data-testid của Coursera
+    const byTestId = document.querySelector(
+      'button[data-testid*="start"], a[data-testid*="start-assignment"], button[data-e2e*="start"]'
+    );
+    if (byTestId) return byTestId;
+
+    // Tìm theo text của nút
+    const allBtns = Array.from(document.querySelectorAll('button, a[role="button"], a.cds-button'));
+    for (const btn of allBtns) {
+      const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+      if (
+        txt === 'start assignment' ||
+        txt === 'bắt đầu làm bài' ||
+        txt.includes('start assignment') ||
+        txt.includes('begin assignment')
+      ) {
+        return btn;
+      }
+    }
+    return null;
+  }
+
   // Bắt sự kiện chuyển trang trong React Single Page App (SPA)
   function setupSpaUrlWatcher() {
     const handleUrlChange = () => {
       const currentUrl = window.location.href;
       if (currentUrl !== lastEvaluatedUrl) {
+        // Nếu quiz solver đang chạy và chỉ chuyển sang trang quiz thực sự (vẫn nằm trong /assignment/)
+        // thì giữ nguyên isQuizSolveInProgress và tiếp tục processQuizStep
+        const isStillInAssignment = isQuizSolveInProgress &&
+          (currentUrl.includes('/assignment/') || currentUrl.includes('/quiz/') || currentUrl.includes('/exam/'));
+
+        if (isStillInAssignment) {
+          // URL đã thay đổi sang trang quiz thực sự, cập nhật lastEvaluatedUrl
+          // và reset isStepInProgress để processQuizStep có thể chạy tiếp
+          lastEvaluatedUrl = currentUrl;
+          isStepInProgress = false;
+          // Tiếp tục quy trình giải quiz sau khi trang mới render
+          setTimeout(() => {
+            processQuizStep();
+          }, 1200);
+          return;
+        }
+
         isStepInProgress = false; // Reset cờ khóa để trang mới được xử lý ngay
+        isQuizSolveInProgress = false;
         chrome.storage.local.get(['auto_skip_active'], (res) => {
           if (res.auto_skip_active) {
             // Chờ 800ms để DOM trang mới render
