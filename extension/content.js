@@ -798,8 +798,11 @@
       const text = (el.innerText || '').toLowerCase();
       return (
         text.includes('ready to submit') ||
+        text.includes('submit review') ||
+        text.includes('submit your review') ||
         text.includes('sẵn sàng nộp bài') ||
-        text.includes('are you sure you want to submit')
+        text.includes('are you sure you want to submit') ||
+        text.includes('xác nhận nộp')
       );
     });
 
@@ -828,10 +831,12 @@
 
       if (
         txt === 'submit' ||
+        txt === 'submit review' ||
         txt === 'yes, submit' ||
         txt === 'nộp bài' ||
         txt === 'confirm' ||
-        txt === 'xác nhận'
+        txt === 'xác nhận' ||
+        txt.includes('submit')
       ) {
         return btn;
       }
@@ -1188,6 +1193,7 @@
         el.innerText = value;
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('blur', { bubbles: true }));
         el.style.outline = '2px solid #10b981';
         el.style.background = 'rgba(16, 185, 129, 0.08)';
         return true;
@@ -1204,6 +1210,9 @@
       }
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: '!' }));
+      el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: '!' }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
       el.style.outline = '2px solid #10b981';
       el.style.background = 'rgba(16, 185, 129, 0.08)';
       return true;
@@ -1222,8 +1231,8 @@
 
     if (allRadios.length === 0) {
       // Có thể là trang bắt đầu chấm (chưa mở bài chấm thực tế)
-      const startReviewBtn = Array.from(document.querySelectorAll('button, a')).find(b => {
-        const t = (b.innerText || '').toLowerCase().trim();
+      const startReviewBtn = Array.from(document.querySelectorAll('button, a, [role="button"]')).find(b => {
+        const t = (b.innerText || b.textContent || '').toLowerCase().trim();
         return t.includes('review a peer') || t.includes('start review') || t.includes('bắt đầu chấm') || t.includes('chấm bài');
       });
       if (startReviewBtn) {
@@ -1287,13 +1296,13 @@
 
     // 2. Tự động điền "GOOD!" vào tất cả các ô Feedback / nhận xét
     const textareas = Array.from(document.querySelectorAll(
-      'textarea, input[type="text"][placeholder*="feedback" i], div[contenteditable="true"]'
+      'textarea, input[type="text"][placeholder*="feedback" i], input[type="text"][placeholder*="nhận xét" i], input[type="text"][placeholder*="comment" i], div[contenteditable="true"]'
     ));
 
     let feedbackCount = 0;
     for (const ta of textareas) {
       if (ta.disabled || ta.readOnly) continue;
-      if (ta.closest('header, nav, aside')) continue;
+      if (ta.closest('header, nav, aside, #coursera-helper-hud')) continue;
 
       setFeedbackInputValue(ta, 'GOOD!');
       feedbackCount++;
@@ -1304,59 +1313,142 @@
       showInPageToast(`✍️ Đã tự động điền "GOOD!" vào ${feedbackCount} ô nhận xét!`);
     }
 
+    // 3. Đảm bảo tích Honor Code và các checkbox thỏa thuận (nếu có)
+    await tickHonorCodeAgreement();
+    const remainingCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]:not(:checked)'));
+    for (const cb of remainingCheckboxes) {
+      if (cb.closest('header, nav, aside, #coursera-helper-hud')) continue;
+      tickOptionElement(cb);
+    }
+
     return { success: true, criteriaTicked, feedbackCount };
   }
 
-  // Tự động tìm và bấm nút Submit bài đánh giá Peer
-  async function submitCurrentPeerReview() {
-    showInPageToast('🚀 Đang kiểm tra nút nộp đánh giá (Submit review)...');
-
-    // Cuộn xuống cuối trang
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-    await new Promise(r => setTimeout(r, 600));
-
-    // Tìm nút Submit Review
-    let submitBtn = null;
-    const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+  // Tìm nút Submit bài đánh giá Peer (hỗ trợ cả khi button bị disabled tạm thời)
+  function findPeerSubmitButton(onlyEnabled = true) {
+    const allBtns = Array.from(document.querySelectorAll('button, [role="button"], input[type="submit"], a.cds-button'));
     for (const btn of allBtns) {
-      if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
-      if (btn.closest('header, nav, aside')) continue;
+      if (btn.closest('header, nav, aside, #coursera-helper-hud')) continue;
 
-      const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-      if (
+      const txt = (btn.innerText || btn.textContent || btn.value || '').trim().toLowerCase();
+      const ariaLabel = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
+      const testId = (btn.getAttribute('data-testid') || '').trim().toLowerCase();
+
+      const isSubmitMatch =
         txt === 'submit review' ||
         txt === 'submit' ||
         txt === 'nộp bài' ||
         txt === 'nộp đánh giá' ||
-        txt === 'submit evaluation'
-      ) {
-        submitBtn = btn;
-        break;
+        txt === 'nộp bài đánh giá' ||
+        txt === 'submit evaluation' ||
+        txt.includes('submit review') ||
+        ariaLabel.includes('submit review') ||
+        testId.includes('submit-review') ||
+        (txt.startsWith('submit') && txt.length < 25);
+
+      if (isSubmitMatch) {
+        const isDisabled = btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.classList.contains('disabled');
+        if (!onlyEnabled || !isDisabled) {
+          return btn;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Tự động tìm và bấm nút Submit bài đánh giá Peer
+  async function submitCurrentPeerReview() {
+    showInPageToast('🚀 Đang kiểm tra và chuẩn bị nộp đánh giá (Submit review)...');
+
+    // Cuộn xuống cuối trang (cả window lẫn các container scrollable bên trong)
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    document.querySelectorAll('main, [role="main"], div[class*="content" i], div[class*="scroll" i], div[class*="body" i]').forEach(c => {
+      try { c.scrollTop = c.scrollHeight; } catch (e) {}
+    });
+    await new Promise(r => setTimeout(r, 400));
+
+    // Đảm bảo tích Honor code hoặc các checkbox cam kết nếu có
+    await tickHonorCodeAgreement();
+
+    // Chờ nút Submit Review mở khóa trong tối đa 6 giây (polling cho React form validation)
+    let submitBtn = null;
+    for (let attempt = 0; attempt < 24; attempt++) {
+      submitBtn = findPeerSubmitButton(true);
+      if (submitBtn) break;
+
+      // Nếu đã qua 8 lần thử mà nút vẫn bị disabled, chủ động kích hoạt lại các ô feedback và radio
+      if (attempt === 8 || attempt === 16) {
+        const textareas = Array.from(document.querySelectorAll('textarea, div[contenteditable="true"]'));
+        textareas.forEach(ta => {
+          if (!ta.value || ta.value.trim() === '') {
+            setFeedbackInputValue(ta, 'GOOD!');
+          } else {
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            ta.dispatchEvent(new Event('change', { bubbles: true }));
+            ta.dispatchEvent(new Event('blur', { bubbles: true }));
+          }
+        });
+
+        // Kiểm tra xem có radio nào chưa tick không
+        const allRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
+        const checked = allRadios.filter(r => r.checked);
+        if (checked.length < 1 && allRadios.length > 0) {
+          allRadios.forEach(r => tickOptionElement(r));
+        }
+      }
+
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    // Nếu vẫn không tìm thấy nút enabled, tìm nút bất kỳ (kể cả disabled) và gỡ thuộc tính disabled
+    if (!submitBtn) {
+      submitBtn = findPeerSubmitButton(false);
+      if (submitBtn) {
+        console.warn('CourseraHelper: Nút Submit bị disabled, đang gỡ thuộc tính disabled để kích hoạt...');
+        try {
+          submitBtn.removeAttribute('disabled');
+          submitBtn.setAttribute('aria-disabled', 'false');
+          submitBtn.classList.remove('disabled');
+        } catch (e) {}
       }
     }
 
     if (!submitBtn) {
-      showInPageToast('⚠️ Chưa tìm thấy nút Submit Review hoặc nút đang bị khóa!', true, 4000);
+      showInPageToast('⚠️ Chưa tìm thấy nút Submit Review trên trang!', true, 4000);
       return false;
     }
 
+    // Cuộn nút vào giữa màn hình và đánh dấu viền tím phát sáng
     submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
     await new Promise(r => setTimeout(r, 300));
 
     submitBtn.style.outline = '3px solid #7c3aed';
-    submitBtn.style.boxShadow = '0 0 16px rgba(124, 58, 237, 0.8)';
+    submitBtn.style.boxShadow = '0 0 16px rgba(124, 58, 237, 0.85)';
 
-    triggerClick(submitBtn);
+    // Gửi chuỗi sự kiện chuột hoàn chỉnh
+    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+      submitBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+    });
+    try {
+      submitBtn.click();
+    } catch (e) {}
+
     showInPageToast('📤 Đã bấm Submit Review! Đang kiểm tra popup xác nhận...');
 
-    // Chờ popup xác nhận nếu có (Ready to submit?)
-    for (let i = 0; i < 15; i++) {
-      await new Promise(r => setTimeout(r, 300));
+    // Chờ popup xác nhận nếu có ("Ready to submit?" / "Submit your review?") trong tối đa 4 giây
+    for (let i = 0; i < 16; i++) {
+      await new Promise(r => setTimeout(r, 250));
       const confirmBtn = findSubmitConfirmButton(submitBtn);
       if (confirmBtn) {
         confirmBtn.style.outline = '3px solid #3b82f6';
-        confirmBtn.click();
-        showInPageToast('🎉 Đã bấm xác nhận Submit đánh giá thành công!');
+        confirmBtn.style.boxShadow = '0 0 16px rgba(59, 130, 246, 0.85)';
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+          confirmBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+        });
+        try {
+          confirmBtn.click();
+        } catch (e) {}
+        showInPageToast('🎉 Đã bấm xác nhận Submit trong popup!');
         break;
       }
     }
@@ -1364,33 +1456,20 @@
     return true;
   }
 
-  // Tìm nút để chuyển sang bài peer tiếp theo ("Review another peer" / "Continue")
-  async function navigateToNextPeer() {
-    showInPageToast('⏳ Đang tìm bài Peer tiếp theo để chấm...');
-    for (let attempts = 0; attempts < 15; attempts++) {
-      await new Promise(r => setTimeout(r, 600));
-
-      const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
-      const nextBtn = allBtns.find(b => {
-        const txt = (b.innerText || b.textContent || '').toLowerCase().trim();
-        return (
-          txt.includes('review another peer') ||
-          txt.includes('review another') ||
-          txt.includes('review more') ||
-          txt.includes('continue to next peer') ||
-          txt.includes('chấm bài tiếp') ||
-          txt.includes('đánh giá bạn khác')
-        );
-      });
-
-      if (nextBtn) {
-        showInPageToast('👉 Đang mở bài Peer tiếp theo...');
-        triggerClick(nextBtn);
-        return true;
-      }
-    }
-
-    return false;
+  // Tìm nút để chuyển sang bài peer tiếp theo ("Review another peer" / "Continue") nếu có
+  function findNextPeerReviewButton() {
+    const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    return allBtns.find(b => {
+      const txt = (b.innerText || b.textContent || '').toLowerCase().trim();
+      return (
+        txt.includes('review another peer') ||
+        txt.includes('review another') ||
+        txt.includes('review more') ||
+        txt.includes('continue to next peer') ||
+        txt.includes('chấm bài tiếp') ||
+        txt.includes('đánh giá bạn khác')
+      );
+    }) || null;
   }
 
   // Vòng lặp tự động chấm đủ 4 bài Peer Review
@@ -1444,28 +1523,66 @@
       // Nộp bài đánh giá
       const submitted = await submitCurrentPeerReview();
       if (!submitted) {
-        showInPageToast(`⚠️ Chưa thể nộp bài ${displayIndex}. Vui lòng kiểm tra trên màn hình!`, true, 6000);
+        showInPageToast(`⚠️ Chưa thể bấm Submit Review bài ${displayIndex}. Vui lòng kiểm tra trên màn hình!`, true, 6000);
         break;
       }
 
       currentCount++;
       await chrome.storage.local.set({ auto_peer_count: currentCount });
-      showInPageToast(`🎉 Đã hoàn thành chấm xong bài ${currentCount}/${targetReviews}!`);
+      showInPageToast(`🎉 Đã nộp xong bài ${currentCount}/${targetReviews}! Coursera đang tự động chuyển bài tiếp theo...`, false, 4000);
 
       if (currentCount >= targetReviews) {
         break;
       }
 
-      // Tìm và chuyển sang bài tiếp theo
-      await new Promise(r => setTimeout(r, 1500));
-      const navigated = await navigateToNextPeer();
-      if (!navigated) {
-        showInPageToast('💡 Không tìm thấy bài chấm tiếp theo (có thể đã hết bài cần chấm trong khóa).', false, 6000);
-        break;
+      // Lưu URL trước khi Coursera tự động chuyển bài
+      const prevUrl = window.location.href;
+      showInPageToast(`⏳ Đang chờ Coursera tự động mở bài ${currentCount + 1}/${targetReviews}...`, false, 5000);
+
+      // Chờ Coursera tự động chuyển trang / tải bài mới trong tối đa 20 giây
+      let nextReady = false;
+      for (let w = 0; w < 40; w++) {
+        await new Promise(r => setTimeout(r, 500));
+
+        // 1. URL đã thay đổi sang bài review mới (Coursera tự động chuyển bài)
+        if (window.location.href !== prevUrl && window.location.href.includes('/peer/')) {
+          nextReady = true;
+          break;
+        }
+
+        // 2. DOM đã reset (các radio options đã được bỏ chọn, sẵn sàng cho bài chấm mới)
+        const allCurrentRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
+        const checkedRadios = allCurrentRadios.filter(r => r.checked);
+        if (allCurrentRadios.length > 0 && checkedRadios.length === 0) {
+          nextReady = true;
+          break;
+        }
+
+        // 3. Fallback phụ trợ nếu Coursera hiển thị nút "Review another peer" hoặc "Continue"
+        const nextBtn = findNextPeerReviewButton();
+        if (nextBtn) {
+          triggerClick(nextBtn);
+          nextReady = true;
+          break;
+        }
+
+        // 4. Kiểm tra nếu khóa học đã hoàn tất toàn bộ số bài đánh giá yêu cầu
+        const pageText = (document.body.innerText || '').toLowerCase();
+        if (
+          pageText.includes('all required reviews') ||
+          pageText.includes('you have completed all') ||
+          pageText.includes('đã hoàn thành tất cả đánh giá') ||
+          pageText.includes('reviews submitted') ||
+          pageText.includes('you have completed this assignment')
+        ) {
+          showInPageToast('🎉 Coursera thông báo bạn đã hoàn thành đủ số bài đánh giá của khóa học!', false, 6000);
+          nextReady = false;
+          break;
+        }
       }
 
-      // Chờ trang bài mới render
-      await new Promise(r => setTimeout(r, 3000));
+      // Chờ thêm 2 giây để giao diện bài mới render ổn định trước khi chấm bài tiếp theo
+      await new Promise(r => setTimeout(r, 2000));
     }
 
     // Kết thúc vòng lặp
