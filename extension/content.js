@@ -1173,6 +1173,318 @@
     return null;
   }
 
+  // ==========================================
+  // 5.2 TỰ ĐỘNG CHẤM ĐIỂM BÀI LÀM CỦA NGƯỜI KHÁC (PEER REVIEW)
+  // ==========================================
+
+  let isPeerReviewInProgress = false;
+
+  // Điền văn bản vào thẻ textarea / input chuẩn React SyntheticEvent
+  function setFeedbackInputValue(el, value = 'GOOD!') {
+    if (!el) return false;
+    try {
+      el.focus();
+      if (el.isContentEditable) {
+        el.innerText = value;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.style.outline = '2px solid #10b981';
+        el.style.background = 'rgba(16, 185, 129, 0.08)';
+        return true;
+      }
+      const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) {
+        setter.call(el, value);
+      } else {
+        el.value = value;
+      }
+      if (el._valueTracker) {
+        el._valueTracker.setValue('');
+      }
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.style.outline = '2px solid #10b981';
+      el.style.background = 'rgba(16, 185, 129, 0.08)';
+      return true;
+    } catch (err) {
+      console.warn('CourseraHelper: Lỗi điền Feedback:', err);
+      return false;
+    }
+  }
+
+  // Tự động chấm điểm 1 bài Peer Review hiện tại (chọn điểm cao nhất và điền GOOD!)
+  async function gradeCurrentPeerReview() {
+    showInPageToast('🔍 Đang phân tích bảng Rubric & tìm mức điểm cao nhất...');
+
+    // 1. Quét tất cả radio buttons trên trang
+    const allRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
+
+    if (allRadios.length === 0) {
+      // Có thể là trang bắt đầu chấm (chưa mở bài chấm thực tế)
+      const startReviewBtn = Array.from(document.querySelectorAll('button, a')).find(b => {
+        const t = (b.innerText || '').toLowerCase().trim();
+        return t.includes('review a peer') || t.includes('start review') || t.includes('bắt đầu chấm') || t.includes('chấm bài');
+      });
+      if (startReviewBtn) {
+        showInPageToast('📝 Đang mở bài Peer để chấm...');
+        triggerClick(startReviewBtn);
+        await new Promise(r => setTimeout(r, 2000));
+        return { success: false, needWait: true };
+      }
+      return { success: false, needWait: false, message: 'Không tìm thấy Rubric chấm điểm trên trang này!' };
+    }
+
+    // Nhóm radio theo nhóm tiêu chí (name hoặc container fieldset/radiogroup)
+    const radioGroups = new Map();
+    allRadios.forEach((radio, idx) => {
+      let groupKey = radio.name || radio.getAttribute('name');
+      if (!groupKey) {
+        const parent = radio.closest('fieldset, div[role="radiogroup"], .cds-formGroup, tr, table') || radio.parentElement?.parentElement;
+        groupKey = parent ? (parent.id || ('group_' + idx)) : ('radio_' + idx);
+      }
+      if (!radioGroups.has(groupKey)) radioGroups.set(groupKey, []);
+      radioGroups.get(groupKey).push(radio);
+    });
+
+    let criteriaTicked = 0;
+
+    for (const [groupName, radios] of radioGroups) {
+      if (radios.length === 0) continue;
+
+      // Đánh giá từng option để tìm option có số điểm cao nhất
+      let bestRadio = null;
+      let maxPoints = -1;
+
+      for (const r of radios) {
+        const label = r.closest('label') || document.querySelector(`label[for="${r.id}"]`) || r.parentElement;
+        const text = (label ? (label.innerText || label.textContent) : '') || '';
+
+        // Phân tích số điểm (ví dụ: "4 points", "4 điểm", "3 pts")
+        const match = text.match(/(\d+(?:\.\d+)?)\s*(?:points?|pts|điểm)/i);
+        if (match) {
+          const pt = parseFloat(match[1]);
+          if (pt > maxPoints) {
+            maxPoints = pt;
+            bestRadio = r;
+          }
+        }
+      }
+
+      // Fallback: Nếu không đọc được số điểm, lấy option cuối cùng (theo chuẩn Coursera Rubric thường xếp từ thấp đến cao)
+      if (!bestRadio) {
+        bestRadio = radios[radios.length - 1];
+      }
+
+      if (bestRadio) {
+        const ok = tickOptionElement(bestRadio);
+        if (ok) criteriaTicked++;
+        await new Promise(r => setTimeout(r, 80));
+      }
+    }
+
+    showInPageToast(`✅ Đã chọn điểm cao nhất cho ${criteriaTicked} tiêu chí Rubric!`);
+
+    // 2. Tự động điền "GOOD!" vào tất cả các ô Feedback / nhận xét
+    const textareas = Array.from(document.querySelectorAll(
+      'textarea, input[type="text"][placeholder*="feedback" i], div[contenteditable="true"]'
+    ));
+
+    let feedbackCount = 0;
+    for (const ta of textareas) {
+      if (ta.disabled || ta.readOnly) continue;
+      if (ta.closest('header, nav, aside')) continue;
+
+      setFeedbackInputValue(ta, 'GOOD!');
+      feedbackCount++;
+      await new Promise(r => setTimeout(r, 60));
+    }
+
+    if (feedbackCount > 0) {
+      showInPageToast(`✍️ Đã tự động điền "GOOD!" vào ${feedbackCount} ô nhận xét!`);
+    }
+
+    return { success: true, criteriaTicked, feedbackCount };
+  }
+
+  // Tự động tìm và bấm nút Submit bài đánh giá Peer
+  async function submitCurrentPeerReview() {
+    showInPageToast('🚀 Đang kiểm tra nút nộp đánh giá (Submit review)...');
+
+    // Cuộn xuống cuối trang
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    await new Promise(r => setTimeout(r, 600));
+
+    // Tìm nút Submit Review
+    let submitBtn = null;
+    const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+    for (const btn of allBtns) {
+      if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+      if (btn.closest('header, nav, aside')) continue;
+
+      const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+      if (
+        txt === 'submit review' ||
+        txt === 'submit' ||
+        txt === 'nộp bài' ||
+        txt === 'nộp đánh giá' ||
+        txt === 'submit evaluation'
+      ) {
+        submitBtn = btn;
+        break;
+      }
+    }
+
+    if (!submitBtn) {
+      showInPageToast('⚠️ Chưa tìm thấy nút Submit Review hoặc nút đang bị khóa!', true, 4000);
+      return false;
+    }
+
+    submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await new Promise(r => setTimeout(r, 300));
+
+    submitBtn.style.outline = '3px solid #7c3aed';
+    submitBtn.style.boxShadow = '0 0 16px rgba(124, 58, 237, 0.8)';
+
+    triggerClick(submitBtn);
+    showInPageToast('📤 Đã bấm Submit Review! Đang kiểm tra popup xác nhận...');
+
+    // Chờ popup xác nhận nếu có (Ready to submit?)
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 300));
+      const confirmBtn = findSubmitConfirmButton(submitBtn);
+      if (confirmBtn) {
+        confirmBtn.style.outline = '3px solid #3b82f6';
+        confirmBtn.click();
+        showInPageToast('🎉 Đã bấm xác nhận Submit đánh giá thành công!');
+        break;
+      }
+    }
+
+    return true;
+  }
+
+  // Tìm nút để chuyển sang bài peer tiếp theo ("Review another peer" / "Continue")
+  async function navigateToNextPeer() {
+    showInPageToast('⏳ Đang tìm bài Peer tiếp theo để chấm...');
+    for (let attempts = 0; attempts < 15; attempts++) {
+      await new Promise(r => setTimeout(r, 600));
+
+      const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+      const nextBtn = allBtns.find(b => {
+        const txt = (b.innerText || b.textContent || '').toLowerCase().trim();
+        return (
+          txt.includes('review another peer') ||
+          txt.includes('review another') ||
+          txt.includes('review more') ||
+          txt.includes('continue to next peer') ||
+          txt.includes('chấm bài tiếp') ||
+          txt.includes('đánh giá bạn khác')
+        );
+      });
+
+      if (nextBtn) {
+        showInPageToast('👉 Đang mở bài Peer tiếp theo...');
+        triggerClick(nextBtn);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  // Vòng lặp tự động chấm đủ 4 bài Peer Review
+  async function runAutoPeerReviewWorkflow(targetReviews = 4) {
+    const btnPeer = document.getElementById('ch-hud-peerreview');
+    const origBtnText = btnPeer ? btnPeer.innerHTML : '⭐ Chấm Điểm Peer';
+
+    // Đọc số bài đã chấm hiện tại trong storage (để duy trì state nếu trang reload SPA)
+    const stored = await chrome.storage.local.get(['auto_peer_active', 'auto_peer_count']);
+
+    // Nếu đang chạy mà bấm lại -> Dừng lại
+    if (stored.auto_peer_active && isPeerReviewInProgress) {
+      await chrome.storage.local.set({ auto_peer_active: false, auto_peer_count: 0 });
+      isPeerReviewInProgress = false;
+      showInPageToast('🛑 Đã dừng tự động chấm Peer Review!');
+      if (btnPeer) {
+        btnPeer.classList.remove('is-active');
+        btnPeer.innerHTML = origBtnText;
+      }
+      return;
+    }
+
+    let currentCount = stored.auto_peer_active ? (stored.auto_peer_count || 0) : 0;
+    isPeerReviewInProgress = true;
+    await chrome.storage.local.set({ auto_peer_active: true, auto_peer_count: currentCount });
+
+    if (btnPeer) {
+      btnPeer.classList.add('is-active');
+    }
+
+    while (currentCount < targetReviews) {
+      const displayIndex = currentCount + 1;
+      const progressMsg = `⭐ Đang tự chấm bài Peer ${displayIndex}/${targetReviews}...`;
+      showInPageToast(progressMsg);
+      if (btnPeer) btnPeer.innerHTML = `⏳ Bài ${displayIndex}/${targetReviews}`;
+
+      // Chấm bài hiện tại
+      const gradeRes = await gradeCurrentPeerReview();
+      if (!gradeRes.success && gradeRes.needWait) {
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
+
+      if (!gradeRes.success) {
+        showInPageToast(`⚠️ ${gradeRes.message || 'Chưa sẵn sàng bài chấm!'}`, true, 5000);
+        break;
+      }
+
+      await new Promise(r => setTimeout(r, 800));
+
+      // Nộp bài đánh giá
+      const submitted = await submitCurrentPeerReview();
+      if (!submitted) {
+        showInPageToast(`⚠️ Chưa thể nộp bài ${displayIndex}. Vui lòng kiểm tra trên màn hình!`, true, 6000);
+        break;
+      }
+
+      currentCount++;
+      await chrome.storage.local.set({ auto_peer_count: currentCount });
+      showInPageToast(`🎉 Đã hoàn thành chấm xong bài ${currentCount}/${targetReviews}!`);
+
+      if (currentCount >= targetReviews) {
+        break;
+      }
+
+      // Tìm và chuyển sang bài tiếp theo
+      await new Promise(r => setTimeout(r, 1500));
+      const navigated = await navigateToNextPeer();
+      if (!navigated) {
+        showInPageToast('💡 Không tìm thấy bài chấm tiếp theo (có thể đã hết bài cần chấm trong khóa).', false, 6000);
+        break;
+      }
+
+      // Chờ trang bài mới render
+      await new Promise(r => setTimeout(r, 3000));
+    }
+
+    // Kết thúc vòng lặp
+    await chrome.storage.local.set({ auto_peer_active: false, auto_peer_count: 0 });
+    isPeerReviewInProgress = false;
+
+    if (btnPeer) {
+      btnPeer.classList.remove('is-active');
+      btnPeer.innerHTML = '✅ Đã Chấm Xong!';
+      setTimeout(() => {
+        if (btnPeer) btnPeer.innerHTML = origBtnText;
+      }, 4000);
+    }
+
+    if (currentCount > 0) {
+      showInPageToast(`🏆 XUẤT SẮC! Đã tự động chấm xong ${currentCount}/${targetReviews} bài Peer Review với điểm tuyệt đối và feedback GOOD!`, false, 7000);
+    }
+  }
+
   // Bắt sự kiện chuyển trang trong React Single Page App (SPA)
   function setupSpaUrlWatcher() {
     const handleUrlChange = () => {
@@ -1202,12 +1514,18 @@
 
         isStepInProgress = false; // Reset cờ khóa để trang mới được xử lý ngay
         isQuizSolveInProgress = false;
-        chrome.storage.local.get(['auto_skip_active'], (res) => {
+        chrome.storage.local.get(['auto_skip_active', 'auto_peer_active'], (res) => {
           if (res.auto_skip_active) {
             // Chờ 800ms để DOM trang mới render
             setTimeout(() => {
               executeAutoSkipStep();
             }, 800);
+          } else if (res.auto_peer_active && !isPeerReviewInProgress) {
+            if (window.location.href.includes('/peer/') && window.location.href.includes('/review/')) {
+              setTimeout(() => {
+                runAutoPeerReviewWorkflow(4);
+              }, 1500);
+            }
           }
         });
       }
@@ -1254,11 +1572,20 @@
   }
 
   // Khởi động kiểm tra trạng thái khi tải trang
-  chrome.storage.local.get(['auto_skip_active'], (res) => {
+  chrome.storage.local.get(['auto_skip_active', 'auto_peer_active'], (res) => {
     if (res.auto_skip_active) {
       startAutoSkipLoop();
     } else {
       createFloatingHUD();
+    }
+
+    // Tự động khôi phục quy trình chấm Peer Review nếu trang reload
+    if (res.auto_peer_active && !isPeerReviewInProgress) {
+      if (window.location.href.includes('/peer/') && window.location.href.includes('/review/')) {
+        setTimeout(() => {
+          runAutoPeerReviewWorkflow(4);
+        }, 1800);
+      }
     }
   });
 
@@ -1334,6 +1661,19 @@
           background: #1d4ed8;
           box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5);
         }
+        #ch-hud-peerreview {
+          background: #7c3aed;
+          color: #ffffff;
+          box-shadow: 0 2px 8px rgba(124, 58, 237, 0.35);
+        }
+        #ch-hud-peerreview:hover {
+          background: #6d28d9;
+          box-shadow: 0 4px 14px rgba(124, 58, 237, 0.5);
+        }
+        #ch-hud-peerreview.is-active {
+          background: #e11d48;
+          box-shadow: 0 2px 8px rgba(225, 29, 72, 0.35);
+        }
         #ch-hud-autoskip {
           background: #059669;
           color: #ffffff;
@@ -1371,6 +1711,10 @@
         ⚡ Tự Giải Cả Bài
       </button>
 
+      <button id="ch-hud-peerreview" class="ch-hud-btn" title="Tự động chấm điểm bài làm của người khác: chọn điểm cao nhất, điền Feedback 'GOOD!' và nộp đủ 4 bài!">
+        ⭐ Chấm Điểm Peer
+      </button>
+
       <button id="ch-hud-autoskip" class="ch-hud-btn" title="Tự động duyệt bài giảng: tua video, đọc bài, tự giải quiz và nộp bài liên tục">
         🚀 Auto-Skip Module
       </button>
@@ -1384,12 +1728,19 @@
 
     // Bắt sự kiện click trên HUD
     const btnSolveQuiz = floatingHUD.querySelector('#ch-hud-solvequiz');
+    const btnPeer = floatingHUD.querySelector('#ch-hud-peerreview');
     const btnAuto = floatingHUD.querySelector('#ch-hud-autoskip');
     const btnSkipOne = floatingHUD.querySelector('#ch-hud-skipone');
 
     if (btnSolveQuiz) {
       btnSolveQuiz.addEventListener('click', () => {
         triggerZeroClickQuizWorkflow();
+      });
+    }
+
+    if (btnPeer) {
+      btnPeer.addEventListener('click', () => {
+        runAutoPeerReviewWorkflow(4);
       });
     }
 
@@ -1404,9 +1755,13 @@
       completeCourseraVideo();
     });
 
-    // Cập nhật giao diện theo trạng thái ban đầu
-    chrome.storage.local.get(['auto_skip_active'], (res) => {
+    // Cập nhật trạng thái ban đầu của nút Peer Review và Auto-Skip
+    chrome.storage.local.get(['auto_skip_active', 'auto_peer_active', 'auto_peer_count'], (res) => {
       updateFloatingHUD(!!res.auto_skip_active);
+      if (res.auto_peer_active && btnPeer) {
+        btnPeer.classList.add('is-active');
+        btnPeer.innerHTML = `⏳ Bài ${(res.auto_peer_count || 0) + 1}/4`;
+      }
     });
   }
 
