@@ -919,8 +919,10 @@
         sendResponse({ active: nextState });
       });
     } else if (request.action === 'auto_fill_quiz') {
-      const result = autoFillCourseraQuiz(request.answers || []);
-      sendResponse(result);
+      autoFillCourseraQuiz(request.answers || []).then(result => {
+        sendResponse(result);
+      });
+      return true;
     }
     return true;
   });
@@ -968,65 +970,109 @@
     return false;
   }
 
+  function isOptionChecked(el, input) {
+    if (input && input.checked) return true;
+    if (el.getAttribute('aria-checked') === 'true') return true;
+    if (input && input.getAttribute('aria-checked') === 'true') return true;
+    if (el.classList.contains('cds-checkboxAndRadio-checked')) return true;
+    const parentLabel = el.closest('label');
+    if (parentLabel) {
+      if (parentLabel.classList.contains('cds-checkboxAndRadio-checked') || parentLabel.getAttribute('aria-checked') === 'true') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function highlightOptionCard(el) {
+    const card = el.closest('label, li, .rc-Option, [role="radio"], [role="checkbox"]') || el;
+    card.style.transition = 'all 0.3s ease';
+    card.style.outline = '2px solid #10b981';
+    card.style.background = 'rgba(16, 185, 129, 0.14)';
+    card.style.borderRadius = '6px';
+    card.style.boxShadow = '0 0 12px rgba(16, 185, 129, 0.45)';
+  }
+
   function tickOptionElement(el) {
     try {
       const input = el.tagName === 'INPUT' 
         ? el 
         : el.querySelector('input[type="radio"], input[type="checkbox"]');
-      const target = input || el;
 
       // Cuộn vào tầm nhìn
+      const scrollTarget = input || el;
       try {
-        target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       } catch (e) {}
 
-      // Kiểm tra trạng thái checked
-      const isAlreadyChecked = input ? input.checked : (el.getAttribute('aria-checked') === 'true');
-      if (!isAlreadyChecked) {
-        // Chuỗi sự kiện chuột cho React
-        ['mouseover', 'mousedown', 'mouseup', 'click'].forEach(evt => {
-          el.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
-        });
-
-        if (input && input !== el) {
-          input.checked = true;
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          try { input.click(); } catch (e) {}
-        } else {
-          el.click();
-        }
+      // Nếu ĐÃ được check rồi -> giữ nguyên, tuyệt đối không click lại (tránh toggle tắt checkbox)
+      if (isOptionChecked(el, input)) {
+        highlightOptionCard(el);
+        return true;
       }
 
-      // Hiệu ứng viền xanh lục phát sáng để người dùng dễ quan sát
-      const card = el.closest('label, li, .rc-Option, [role="radio"], [role="checkbox"]') || el;
-      card.style.transition = 'all 0.3s ease';
-      card.style.outline = '2px solid #10b981';
-      card.style.background = 'rgba(16, 185, 129, 0.14)';
-      card.style.borderRadius = '6px';
-      card.style.boxShadow = '0 0 12px rgba(16, 185, 129, 0.45)';
+      // Chưa check -> Tiến hành kích hoạt đúng 1 lần duy nhất
+      let ticked = false;
+
+      // Bước 1: Thử click trực tiếp vào <input> (chuẩn nhất cho React controlled checkbox/radio)
+      if (input) {
+        try {
+          input.click();
+          if (isOptionChecked(el, input)) ticked = true;
+        } catch (e) {}
+      }
+
+      // Bước 2: Nếu chưa checked (hoặc không có input), click vào <label> hoặc container
+      if (!ticked && !isOptionChecked(el, input)) {
+        const clickable = el.closest('label') || el;
+        try {
+          clickable.click();
+          if (isOptionChecked(el, input)) ticked = true;
+        } catch (e) {}
+      }
+
+      // Bước 3: Gửi sự kiện MouseEvent chuẩn cho React SyntheticEvent nếu vẫn chưa checked
+      if (!ticked && !isOptionChecked(el, input)) {
+        const target = input || el.closest('label') || el;
+        try {
+          ['mouseover', 'mousedown', 'mouseup', 'click'].forEach(evt => {
+            target.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+          });
+          if (isOptionChecked(el, input)) ticked = true;
+        } catch (e) {}
+      }
+
+      // Bước 4: React controlled component prototype setter dự phòng tối thượng
+      if (!isOptionChecked(el, input) && input) {
+        try {
+          const proto = window.HTMLInputElement.prototype;
+          const setter = Object.getOwnPropertyDescriptor(proto, 'checked')?.set;
+          if (setter) {
+            setter.call(input, true);
+          } else {
+            input.checked = true;
+          }
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        } catch (e) {}
+      }
+
+      // Hiệu ứng viền phát sáng xanh lục
+      highlightOptionCard(el);
 
       return true;
     } catch (err) {
-      console.warn('Lỗi tick option:', err);
+      console.warn('CourseraHelper: Lỗi tick option:', err);
       return false;
     }
   }
 
-  function autoFillCourseraQuiz(answersList) {
+  async function autoFillCourseraQuiz(answersList) {
     if (!answersList || !Array.isArray(answersList) || answersList.length === 0) {
       return { success: false, tickedCount: 0, totalQuestions: 0 };
     }
 
     let tickedCount = 0;
-    const allOptionElements = Array.from(document.querySelectorAll(
-      'label, li.rc-Option, div[data-testid="option-label"], [role="radio"], [role="checkbox"], input[type="radio"], input[type="checkbox"]'
-    ));
-
-    // Tìm các container câu hỏi nếu có
-    let questionContainers = Array.from(document.querySelectorAll(
-      'div[data-testid="part-container"], fieldset, .rc-FormPartsQuestion, .rc-QuizQuestion, div[role="group"]'
-    )).filter((c, idx, arr) => !arr.some(other => other !== c && other.contains(c)));
 
     for (let i = 0; i < answersList.length; i++) {
       const item = answersList[i];
@@ -1034,8 +1080,13 @@
       const targetAnswers = item.answers || [];
       if (targetAnswers.length === 0) continue;
 
+      // Tìm container câu hỏi trong DOM hiện tại (fresh query để không bị ảnh hưởng bởi React re-render)
+      const questionContainers = Array.from(document.querySelectorAll(
+        'div[data-testid="part-container"], fieldset, .rc-FormPartsQuestion, .rc-QuizQuestion, div[role="group"]'
+      )).filter((c, idx, arr) => !arr.some(other => other !== c && other.contains(c)));
+
       let container = null;
-      if (questionContainers.length >= answersList.length) {
+      if (questionContainers.length > 0) {
         container = questionContainers.find(c => {
           const txt = c.innerText || c.textContent || '';
           const regex = new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i');
@@ -1056,12 +1107,18 @@
 
         // 2. Tìm toàn trang nếu chưa thấy
         if (!matchedOption) {
+          const allOptionElements = Array.from(document.querySelectorAll(
+            'label, li.rc-Option, div[data-testid="option-label"], [role="radio"], [role="checkbox"], input[type="radio"], input[type="checkbox"]'
+          ));
           matchedOption = allOptionElements.find(el => isOptionMatch(el, ansText));
         }
 
         if (matchedOption) {
           const ok = tickOptionElement(matchedOption);
           if (ok) tickedCount++;
+
+          // Giãn cách ngắn giữa các lần tick để React kịp cập nhật state của checkbox trong multi-select
+          await new Promise(resolve => setTimeout(resolve, 80));
         }
       }
     }

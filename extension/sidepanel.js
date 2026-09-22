@@ -403,7 +403,7 @@ async function sendAutoFillToCoursera(answers) {
 function executeDirectAutoFill(tabId, answers) {
   chrome.scripting.executeScript({
     target: { tabId: tabId, allFrames: true },
-    func: (answersList) => {
+    func: async (answersList) => {
       function normalizeText(str) {
         if (!str) return '';
         return str.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
@@ -430,33 +430,60 @@ function executeDirectAutoFill(tabId, answers) {
         return false;
       }
 
-      const allOptions = Array.from(document.querySelectorAll(
-        'label, li.rc-Option, div[data-testid="option-label"], [role="radio"], [role="checkbox"], input[type="radio"], input[type="checkbox"]'
-      ));
+      function isChecked(el, input) {
+        if (input && input.checked) return true;
+        if (el.getAttribute('aria-checked') === 'true') return true;
+        if (input && input.getAttribute('aria-checked') === 'true') return true;
+        if (el.classList.contains('cds-checkboxAndRadio-checked')) return true;
+        const parentLabel = el.closest('label');
+        if (parentLabel && (parentLabel.classList.contains('cds-checkboxAndRadio-checked') || parentLabel.getAttribute('aria-checked') === 'true')) {
+          return true;
+        }
+        return false;
+      }
 
       let count = 0;
       for (const item of answersList) {
         for (const ansText of (item.answers || [])) {
+          const allOptions = Array.from(document.querySelectorAll(
+            'label, li.rc-Option, div[data-testid="option-label"], [role="radio"], [role="checkbox"], input[type="radio"], input[type="checkbox"]'
+          ));
           const matched = allOptions.find(el => isMatch(el, ansText));
           if (matched) {
             const input = matched.tagName === 'INPUT' ? matched : matched.querySelector('input');
             const target = input || matched;
             try { target.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
-            ['mouseover', 'mousedown', 'mouseup', 'click'].forEach(evt => {
-              matched.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
-            });
-            if (input && input !== matched) {
-              input.checked = true;
-              input.dispatchEvent(new Event('change', { bubbles: true }));
-              input.dispatchEvent(new Event('input', { bubbles: true }));
-              try { input.click(); } catch (e) {}
+
+            // Chỉ click đúng 1 lần nếu chưa được tick
+            if (!isChecked(matched, input)) {
+              if (input) {
+                try { input.click(); } catch (e) {}
+              }
+              if (!isChecked(matched, input)) {
+                const clickable = matched.closest('label') || matched;
+                try { clickable.click(); } catch (e) {}
+              }
+              if (!isChecked(matched, input) && input) {
+                try {
+                  const proto = window.HTMLInputElement.prototype;
+                  const setter = Object.getOwnPropertyDescriptor(proto, 'checked')?.set;
+                  if (setter) setter.call(input, true);
+                  else input.checked = true;
+                  input.dispatchEvent(new Event('change', { bubbles: true }));
+                  input.dispatchEvent(new Event('input', { bubbles: true }));
+                } catch (e) {}
+              }
             }
+
             const card = matched.closest('label, li, [role="radio"], [role="checkbox"]') || matched;
+            card.style.transition = 'all 0.3s ease';
             card.style.outline = '2px solid #10b981';
             card.style.background = 'rgba(16, 185, 129, 0.14)';
             card.style.borderRadius = '6px';
             card.style.boxShadow = '0 0 12px rgba(16, 185, 129, 0.45)';
             count++;
+
+            await new Promise(r => setTimeout(r, 80));
           }
         }
       }
