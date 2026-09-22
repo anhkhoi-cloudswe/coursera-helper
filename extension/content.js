@@ -2351,7 +2351,7 @@
 
     floatingHUD.innerHTML = `
       <button id="ch-hud-solvequiz" class="ch-hud-btn" title="Tự động quét toàn bộ câu hỏi (kèm hình ảnh), gọi Gemini giải, tick đáp án và tự động nộp bài!">
-        ⚡ Tự Giải Cả Bài
+        ⚡ Giải Quiz
       </button>
 
       <button id="ch-hud-peerreview" class="ch-hud-btn" title="Tự động chấm điểm bài làm của người khác: chọn điểm cao nhất, điền Feedback 'GOOD!' và nộp đủ 4 bài!">
@@ -2363,12 +2363,8 @@
       </button>
 
       <button id="ch-hud-skipone" class="ch-hud-btn" title="Tua video này tới cuối và sang bài tiếp">
-        ⏩ Tua 1 bài
+        ⏩ Skip Video
       </button>
-
-      <div style="font-size: 11px; opacity: 0.85; color: #94a3b8; font-weight: 500; padding: 2px 8px; border-left: 1px solid rgba(255,255,255,0.15); margin-left: 2px; white-space: nowrap;">
-        Made by <strong style="color: #60a5fa; font-weight: 600;">Anh Khoi Nguyen</strong>
-      </div>
     `;
 
     document.body.appendChild(floatingHUD);
@@ -2438,7 +2434,6 @@
   }
 
   function updateFloatingHUD(isActive) {
-    createFloatingHUD();
     const btnAuto = document.getElementById('ch-hud-autoskip');
     if (!btnAuto) return;
 
@@ -3038,7 +3033,7 @@
   // Khởi động quy trình giải tự động 1-Click (Zero-Click)
   async function triggerZeroClickQuizWorkflow() {
     const btnSolve = document.getElementById('ch-hud-solvequiz');
-    const origBtnText = btnSolve ? btnSolve.innerHTML : '⚡ Tự Giải Cả Bài';
+    const origBtnText = btnSolve ? btnSolve.innerHTML : '⚡ Giải Quiz';
 
     // 1. Kiểm tra Extension Context trước tiên
     if (!isExtensionContextValid()) {
