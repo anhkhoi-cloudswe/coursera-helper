@@ -517,6 +517,7 @@
   // Xử lý thông minh Video, Reading (Mark as completed) và SPA Routing
   // ==========================================
   let isStepInProgress = false;
+  let isQuizSolveInProgress = false; // Cờ riêng cho quiz để không bị heartbeat ngắt
   let autoSkipHeartbeat = null;
   let lastEvaluatedUrl = '';
   let lastActionTimestamp = 0;
@@ -532,9 +533,11 @@
 
       // Nếu bước trước đang trong quá trình thực thi (chưa hết timeout), không ngắt
       if (isStepInProgress) {
-        // Tự động gỡ khóa nếu kẹt quá 10 giây
-        if (Date.now() - lastActionTimestamp > 10000) {
+        // Cho quiz solver thời gian đủ lâu (120s), các loại bài khác 15s
+        const lockTimeout = isQuizSolveInProgress ? 120000 : 15000;
+        if (Date.now() - lastActionTimestamp > lockTimeout) {
           isStepInProgress = false;
+          isQuizSolveInProgress = false;
         } else {
           return;
         }
@@ -543,17 +546,24 @@
       const currentUrl = window.location.href;
       const now = Date.now();
 
-      // TRƯỜNG HỢP A: Gặp Quiz / Exam / Assignment -> Dừng an toàn để người dùng làm hoặc AI giải
-      if (
+      // TRƯỜNG HỢP A: Gặp Quiz / Graded Assignment -> Tự động giải AI rồi submit & chuyển tiếp
+      const isQuizUrl = (
         currentUrl.includes('/quiz/') ||
         currentUrl.includes('/exam/') ||
         currentUrl.includes('/assignment/') ||
         currentUrl.includes('/ungradedLti/')
-      ) {
-        showInPageToast('⏸️ Gặp bài Quiz / Bài tập! Tạm dừng Auto-Skip để bạn làm hoặc giải với AI.', true);
-        chrome.storage.local.set({ auto_skip_active: false });
-        updateFloatingHUD(false);
-        stopAutoSkipLoop();
+      );
+
+      if (isQuizUrl && currentUrl !== lastEvaluatedUrl) {
+        // Chỉ kích hoạt 1 lần mỗi khi vào trang quiz mới (tránh heartbeat gọi lại)
+        isStepInProgress = true;
+        isQuizSolveInProgress = true;
+        lastActionTimestamp = now;
+        lastEvaluatedUrl = currentUrl;
+        processQuizStep();
+        return;
+      } else if (isQuizUrl) {
+        // Đã xử lý trang quiz này rồi, đang chờ solver
         return;
       }
 
@@ -698,6 +708,167 @@
         }, 800);
       }
     }, 800);
+  }
+
+  // ==========================================
+  // 5.1 XỬ LÝ QUIZ / GRADED ASSIGNMENT TRONG AUTO-SKIP
+  // ==========================================
+
+  // Tìm nút Submit của Coursera Quiz
+  function findQuizSubmitButton() {
+    // Ưu tiên data-testid
+    const byTestId = document.querySelector(
+      'button[data-testid*="submit"], button[data-testid*="Submit"], button[data-e2e*="submit"]'
+    );
+    if (byTestId && !byTestId.disabled) return byTestId;
+
+    // Tìm theo text
+    const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+    for (const btn of allBtns) {
+      if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+      const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+      if (
+        txt === 'submit' ||
+        txt === 'submit quiz' ||
+        txt === 'submit assignment' ||
+        txt === 'nộp bài' ||
+        txt.includes('submit') && txt.length < 30
+      ) {
+        return btn;
+      }
+    }
+    return null;
+  }
+
+  // Tìm nút xác nhận Submit (popup xác nhận của Coursera)
+  function findSubmitConfirmButton() {
+    const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+    for (const btn of allBtns) {
+      const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+      if (
+        txt === 'submit' ||
+        txt === 'yes, submit' ||
+        txt === 'confirm' ||
+        txt === 'xác nhận' ||
+        txt === 'ok'
+      ) {
+        // Chỉ chọn nếu đang trong modal/dialog
+        if (btn.closest('[role="dialog"], [aria-modal="true"], .rc-Dialog, [data-testid*="dialog"], [data-testid*="modal"]')) {
+          return btn;
+        }
+      }
+    }
+    // Fallback: nút submit không phải trong form quiz chính
+    const dialogSubmit = document.querySelector(
+      '[role="dialog"] button, [aria-modal="true"] button, .rc-Dialog button'
+    );
+    if (dialogSubmit && !dialogSubmit.disabled) {
+      const txt = (dialogSubmit.innerText || '').trim().toLowerCase();
+      if (txt && txt.length < 20) return dialogSubmit;
+    }
+    return null;
+  }
+
+  // Quy trình xử lý Quiz trong Auto-Skip: Giải AI -> Submit -> Chờ kết quả -> Chuyển tiếp
+  async function processQuizStep() {
+    showInPageToast('🤖 [Auto-Skip] Phát hiện Quiz/Assignment! Đang kích hoạt AI giải tự động...', false, 5000);
+
+    // Chờ trang quiz load hoàn toàn
+    await new Promise(r => setTimeout(r, 1500));
+
+    // Bước 1: Quét câu hỏi
+    showInPageToast('🔍 [Auto-Skip] Đang quét câu hỏi trên trang...');
+    let questions = await extractAllQuizQuestionsFromDOM();
+
+    // Nếu chưa thấy câu hỏi (trang chưa load), thử lại sau 2s
+    if (!questions || questions.length === 0) {
+      await new Promise(r => setTimeout(r, 2000));
+      questions = await extractAllQuizQuestionsFromDOM();
+    }
+
+    if (!questions || questions.length === 0) {
+      showInPageToast('⚠️ [Auto-Skip] Không tìm thấy câu hỏi quiz! Bỏ qua và chuyển tiếp...', true, 4000);
+      await new Promise(r => setTimeout(r, 1500));
+      navigateToNextLesson();
+      isStepInProgress = false;
+      isQuizSolveInProgress = false;
+      return;
+    }
+
+    showInPageToast(`✅ [Auto-Skip] Tìm thấy ${questions.length} câu hỏi! Đang gọi Gemini giải...`, false, 5000);
+
+    // Bước 2: Gọi Gemini giải và tự tick đáp án (dùng inline solver)
+    const { gemini_api_key: apiKey, gemini_model: savedModel } = await chrome.storage.local.get(['gemini_api_key', 'gemini_model']);
+    if (!apiKey) {
+      showInPageToast('⚠️ [Auto-Skip] Chưa có API Key! Dừng lại để bạn cài đặt.', true, 6000);
+      chrome.storage.local.set({ auto_skip_active: false });
+      updateFloatingHUD(false);
+      stopAutoSkipLoop();
+      isStepInProgress = false;
+      isQuizSolveInProgress = false;
+      return;
+    }
+
+    const model = savedModel || 'gemini-3.6-flash';
+    const BATCH_SIZE = 5;
+    const totalBatches = Math.ceil(questions.length / BATCH_SIZE);
+
+    for (let b = 0; b < totalBatches; b++) {
+      const startIdx = b * BATCH_SIZE;
+      const endIdx = Math.min(startIdx + BATCH_SIZE, questions.length);
+      const batchQuestions = questions.slice(startIdx, endIdx);
+
+      showInPageToast(`⏳ [Auto-Skip] Đang giải câu ${startIdx + 1} - ${endIdx} / ${questions.length}...`);
+      const parts = buildMultimodalBatchParts(batchQuestions, startIdx + 1, endIdx);
+
+      try {
+        const text = await callGeminiDirectParts(apiKey, model, parts);
+        if (text) {
+          const answers = parseAnswersFromText(text);
+          if (answers.length > 0) {
+            await autoFillCourseraQuiz(answers);
+          }
+        }
+      } catch (err) {
+        console.error('[Auto-Skip] Quiz solver batch error:', err);
+      }
+
+      if (b < totalBatches - 1) {
+        await new Promise(r => setTimeout(r, 400));
+      }
+    }
+
+    showInPageToast('📝 [Auto-Skip] Đã tick đáp án xong! Đang chuẩn bị nộp bài...', false, 3000);
+    await new Promise(r => setTimeout(r, 1200));
+
+    // Bước 3: Tìm và bấm nút Submit
+    let submitBtn = findQuizSubmitButton();
+    if (submitBtn) {
+      showInPageToast('📤 [Auto-Skip] Đang nộp bài...');
+      triggerClick(submitBtn);
+
+      // Chờ popup xác nhận xuất hiện
+      await new Promise(r => setTimeout(r, 1500));
+      const confirmBtn = findSubmitConfirmButton();
+      if (confirmBtn) {
+        triggerClick(confirmBtn);
+        showInPageToast('✅ [Auto-Skip] Đã xác nhận nộp bài!');
+      }
+
+      // Chờ kết quả xử lý rồi chuyển tiếp
+      await new Promise(r => setTimeout(r, 3000));
+      showInPageToast('➡️ [Auto-Skip] Đã nộp xong! Đang chuyển sang bài tiếp theo...');
+      navigateToNextLesson();
+    } else {
+      // Không tìm thấy nút Submit (ví dụ quiz ungraded / peer graded)
+      showInPageToast('ℹ️ [Auto-Skip] Không tìm thấy nút Submit. Chuyển tiếp...', false, 3000);
+      await new Promise(r => setTimeout(r, 1000));
+      navigateToNextLesson();
+    }
+
+    await new Promise(r => setTimeout(r, 1500));
+    isStepInProgress = false;
+    isQuizSolveInProgress = false;
   }
 
   // Bắt sự kiện chuyển trang trong React Single Page App (SPA)
