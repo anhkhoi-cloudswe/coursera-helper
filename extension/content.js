@@ -809,6 +809,24 @@
     `;
 
     floatingHUD.innerHTML = `
+      <button id="ch-hud-solvequiz" style="
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        color: #ffffff;
+        font-weight: 700;
+        font-size: 11px;
+        padding: 5px 12px;
+        border-radius: 9999px;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        box-shadow: 0 2px 10px rgba(99, 102, 241, 0.45);
+        transition: all 0.15s ease;
+      " title="Tự động quét toàn bộ câu hỏi (kèm hình ảnh), gọi Gemini giải và tự tick cả bài!">
+        ⚡ Tự Giải Cả Bài
+      </button>
+
       <button id="ch-hud-autoskip" style="
         background: #10b981;
         color: #064e3b;
@@ -861,9 +879,16 @@
     document.body.appendChild(floatingHUD);
 
     // Bắt sự kiện click trên HUD
+    const btnSolveQuiz = floatingHUD.querySelector('#ch-hud-solvequiz');
     const btnAuto = floatingHUD.querySelector('#ch-hud-autoskip');
     const btnSkipOne = floatingHUD.querySelector('#ch-hud-skipone');
     const btnSpeed = floatingHUD.querySelector('#ch-hud-speed');
+
+    if (btnSolveQuiz) {
+      btnSolveQuiz.addEventListener('click', () => {
+        triggerZeroClickQuizWorkflow();
+      });
+    }
 
     btnAuto.addEventListener('click', () => {
       chrome.storage.local.get(['auto_skip_active'], (res) => {
@@ -922,6 +947,15 @@
       autoFillCourseraQuiz(request.answers || []).then(result => {
         sendResponse(result);
       });
+      return true;
+    } else if (request.action === 'extract_all_quiz_questions') {
+      extractAllQuizQuestionsFromDOM().then(questions => {
+        sendResponse({ questions: questions });
+      });
+      return true;
+    } else if (request.action === 'show_in_page_toast') {
+      showInPageToast(request.message || '', request.isWarning || false);
+      sendResponse({ ok: true });
       return true;
     }
     return true;
@@ -1132,7 +1166,359 @@
     return { success: tickedCount > 0, tickedCount, totalAnswers: answersList.length };
   }
 
+  // ==========================================
+  // 9. HỆ THỐNG ZERO-CLICK: TỰ ĐỘNG BÓC TÁCH CÂU HỎI, HỖ TRỢ HÌNH ẢNH & BATCH SOLVER
+  // ==========================================
+
+  // Trích xuất ảnh sang dạng Base64 (hỗ trợ cả canvas & fetch blob)
+  async function extractImageBase64(img) {
+    if (!img) return null;
+    const src = img.src || img.getAttribute('src') || '';
+    if (!src || src.startsWith('data:image/svg') || src.includes('.svg')) return null;
+
+    if (src.startsWith('data:image')) {
+      const parts = src.split(',');
+      const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+      return { mime_type: mime, data: parts[1] };
+    }
+
+    // Cách 1: Vẽ qua Canvas ngầm, giới hạn chiều dài tối đa 1000px để tối ưu tốc độ
+    try {
+      if (img.complete && img.naturalWidth > 15) {
+        const maxDim = 1000;
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        return { mime_type: 'image/jpeg', data: dataUrl.split(',')[1] };
+      }
+    } catch (e) {}
+
+    // Cách 2: Fetch Blob trực tiếp
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result;
+          if (typeof result === 'string' && result.includes(',')) {
+            const parts = result.split(',');
+            const mime = blob.type || 'image/jpeg';
+            resolve({ mime_type: mime, data: parts[1] });
+          } else {
+            resolve(null);
+          }
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Tự động quét toàn bộ bài trắc nghiệm trên DOM Coursera (kèm trích xuất hình ảnh)
+  async function extractAllQuizQuestionsFromDOM() {
+    let containers = Array.from(document.querySelectorAll(
+      'div[data-testid="part-container"], fieldset.rc-FormPartsQuestion, fieldset, .rc-FormPartsQuestion, .rc-QuizQuestion, div[role="group"]'
+    )).filter((c, idx, arr) => !arr.some(other => other !== c && other.contains(c)));
+
+    // Fallback nếu không khớp class chuẩn
+    if (containers.length === 0) {
+      const allInputs = Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
+      const parentSet = new Set();
+      allInputs.forEach(inp => {
+        const group = inp.closest('fieldset, form, div[role="group"], .rc-QuizQuestion') || inp.parentElement?.parentElement;
+        if (group) parentSet.add(group);
+      });
+      containers = Array.from(parentSet);
+    }
+
+    const questions = [];
+
+    for (let idx = 0; idx < containers.length; idx++) {
+      const container = containers[idx];
+
+      // 1. Số thứ tự câu
+      let qNum = idx + 1;
+      const testId = container.getAttribute('data-testid') || '';
+      const matchTestId = testId.match(/\d+/);
+      if (matchTestId) {
+        qNum = parseInt(matchTestId[0], 10);
+      } else {
+        const cTxt = container.innerText || '';
+        const matchNum = cTxt.match(/(?:Question\s+(\d+)|\b(\d+)\.|\bCâu\s+(\d+))/i);
+        if (matchNum) {
+          qNum = parseInt(matchNum[1] || matchNum[2] || matchNum[3], 10);
+        }
+      }
+
+      // 2. Thân câu hỏi (Prompt)
+      let promptText = '';
+      const titleEl = container.querySelector(
+        'legend, h2, h3, [data-testid*="question-title"], [data-testid*="prompt"], .rc-FormPartsQuestion__title, .c-question-body'
+      );
+      if (titleEl) {
+        promptText = titleEl.innerText || titleEl.textContent || '';
+      } else {
+        const firstOpt = container.querySelector('label, li.rc-Option, [role="radio"], [role="checkbox"]');
+        if (firstOpt) {
+          const fullTxt = container.innerText || '';
+          const optTxt = firstOpt.innerText || '';
+          const splitIdx = fullTxt.indexOf(optTxt);
+          promptText = splitIdx > 0 ? fullTxt.slice(0, splitIdx) : fullTxt;
+        } else {
+          promptText = container.innerText || '';
+        }
+      }
+
+      promptText = cleanCourseraQuiz(promptText);
+      promptText = promptText
+        .replace(/\b\d+\s*points?\b/gi, '')
+        .replace(/\b\d+\s*điểm\b/gi, '')
+        .replace(/Unanswered|Chưa trả lời/gi, '')
+        .trim();
+
+      // 3. Trích xuất hình ảnh trong câu hỏi (Sơ đồ, bảng biểu, ảnh code)
+      const promptImgs = Array.from(container.querySelectorAll('img:not([alt*="avatar"]):not([src*="icon"])'));
+      const images = [];
+      for (const img of promptImgs) {
+        if (img.closest('label, li.rc-Option, [role="radio"], [role="checkbox"]')) continue;
+        if (img.naturalWidth > 0 && (img.naturalWidth < 25 || img.naturalHeight < 25)) continue;
+        const b64 = await extractImageBase64(img);
+        if (b64) images.push(b64);
+      }
+
+      // 4. Trích xuất các phương án lựa chọn
+      const optEls = Array.from(container.querySelectorAll(
+        'label.cds-checkboxAndRadio-label, label, li.rc-Option, div[data-testid="option-label"], [role="radio"], [role="checkbox"]'
+      ));
+
+      const options = [];
+      const seenTexts = new Set();
+      let qType = 'radio';
+
+      for (const optEl of optEls) {
+        const rawOptText = (optEl.innerText || optEl.textContent || '').trim();
+        const cleanOpt = rawOptText.replace(/\s+/g, ' ').trim();
+        if (!cleanOpt || cleanOpt.length > 500) continue;
+        if (seenTexts.has(cleanOpt.toLowerCase())) continue;
+        seenTexts.add(cleanOpt.toLowerCase());
+
+        const inp = optEl.querySelector('input');
+        if (inp && inp.type === 'checkbox') qType = 'checkbox';
+
+        let optImg = null;
+        const optImgEl = optEl.querySelector('img');
+        if (optImgEl && optImgEl.naturalWidth > 25) {
+          optImg = await extractImageBase64(optImgEl);
+        }
+
+        options.push({
+          text: cleanOpt,
+          image: optImg
+        });
+      }
+
+      if (options.length > 0) {
+        questions.push({
+          q: qNum,
+          text: promptText,
+          images: images,
+          options: options,
+          type: qType
+        });
+      }
+    }
+
+    return questions;
+  }
+
+  // Khởi động quy trình giải tự động 1-Click (Zero-Click)
+  async function triggerZeroClickQuizWorkflow() {
+    showInPageToast('🔍 Đang quét câu hỏi và hình ảnh trên trang...');
+    const questions = await extractAllQuizQuestionsFromDOM();
+
+    if (!questions || questions.length === 0) {
+      showInPageToast('⚠️ Không tìm thấy câu hỏi trắc nghiệm nào trên trang này! (Hãy mở bài Quiz trước)', true);
+      return;
+    }
+
+    const totalImages = questions.reduce((acc, q) => acc + (q.images ? q.images.length : 0), 0);
+    showInPageToast(`🚀 Tìm thấy ${questions.length} câu hỏi (${totalImages} ảnh)! Đang bắt đầu giải tự động...`);
+
+    // Kiểm tra xem Side Panel có sẵn sàng để xử lý không
+    chrome.runtime.sendMessage({
+      action: 'solve_full_quiz_from_page',
+      questions: questions
+    }, (res) => {
+      // Nếu Side Panel chưa mở, chạy bộ giải nội tuyến trực tiếp
+      if (chrome.runtime.lastError || !res) {
+        runInlineBatchSolver(questions);
+      }
+    });
+  }
+
+  // Bộ giải nội tuyến dự phòng (chạy ngay cả khi Side Panel đóng)
+  async function runInlineBatchSolver(questions) {
+    const { gemini_api_key: apiKey, gemini_model: savedModel } = await chrome.storage.local.get(['gemini_api_key', 'gemini_model']);
+    if (!apiKey) {
+      showInPageToast('⚠️ Chưa có Gemini API Key! Hãy mở Side Panel để cài đặt API Key.', true);
+      chrome.runtime.sendMessage({ action: 'open_side_panel' });
+      return;
+    }
+
+    const model = savedModel || 'gemini-3.6-flash';
+    const BATCH_SIZE = 5;
+    const totalQuestions = questions.length;
+    const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
+    const allAnswers = [];
+
+    for (let b = 0; b < totalBatches; b++) {
+      const startIdx = b * BATCH_SIZE;
+      const endIdx = Math.min(startIdx + BATCH_SIZE, totalQuestions);
+      const batchQuestions = questions.slice(startIdx, endIdx);
+
+      showInPageToast(`⏳ Đang giải nhóm câu ${startIdx + 1}-${endIdx} / ${totalQuestions}...`);
+
+      const parts = buildMultimodalBatchParts(batchQuestions, startIdx + 1, endIdx);
+
+      try {
+        const text = await callGeminiDirectParts(apiKey, model, parts);
+        if (text) {
+          const answers = parseAnswersFromText(text);
+          if (answers.length > 0) {
+            allAnswers.push(...answers);
+            await autoFillCourseraQuiz(answers);
+          }
+        }
+      } catch (err) {
+        console.error('CourseraHelper Inline Solver Error:', err);
+      }
+
+      if (b < totalBatches - 1) {
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+
+    showInPageToast(`🎉 HOÀN THÀNH! Đã giải và tự động tick xong tất cả ${totalQuestions} câu hỏi!`);
+  }
+
+  function buildMultimodalBatchParts(batchQuestions, startNum, endNum) {
+    const parts = [];
+    let text = `Bạn là chuyên gia an toàn thông tin và AI. Hãy giải chính xác nhóm câu hỏi trắc nghiệm từ câu ${startNum} đến câu ${endNum} của bài kiểm tra Coursera sau đây.\n\n`;
+    text += `HƯỚNG DẪN QUAN TRỌNG:\n`;
+    text += `1. Nếu câu hỏi có hình ảnh đính kèm, hãy quan sát thật kỹ sơ đồ/biểu đồ để đưa ra đáp án chính xác nhất.\n`;
+    text += `2. Đối với câu 1 đáp án: Chọn 1 đáp án đúng.\n`;
+    text += `3. Đối với câu nhiều đáp án: Chọn đủ tất cả đáp án đúng.\n`;
+    text += `4. Cuối bài, BẮT BUỘC cung cấp khối json:answers theo mẫu:\n`;
+    text += "```json:answers\n";
+    text += "[\n  {\"q\": " + startNum + ", \"answers\": [\"Đáp án đúng 1\", \"Đáp án đúng 2\"]}\n]\n";
+    text += "```\n\n";
+
+    for (const q of batchQuestions) {
+      text += `### Question ${q.q}\n${q.text}\n`;
+      text += `Options (${q.type === 'checkbox' ? 'Chọn nhiều đáp án' : 'Chọn 1 đáp án'}):\n`;
+      q.options.forEach(opt => { text += `- ${opt.text}\n`; });
+      text += `\n`;
+    }
+
+    parts.push({ text });
+
+    for (const q of batchQuestions) {
+      if (q.images && q.images.length > 0) {
+        for (const img of q.images) {
+          if (img && img.data) {
+            parts.push({ text: `[Hình ảnh của Question ${q.q}]:` });
+            parts.push({ inline_data: { mime_type: img.mime_type || 'image/jpeg', data: img.data } });
+          }
+        }
+      }
+      if (q.options) {
+        for (const opt of q.options) {
+          if (opt.image && opt.image.data) {
+            parts.push({ text: `[Hình ảnh của lựa chọn "${opt.text}"]:` });
+            parts.push({ inline_data: { mime_type: opt.image.mime_type || 'image/jpeg', data: opt.image.data } });
+          }
+        }
+      }
+    }
+
+    return parts;
+  }
+
+  async function callGeminiDirectParts(apiKey, preferredModel, parts) {
+    const models = [preferredModel, 'gemini-3.6-flash', 'gemini-3.6-pro', 'gemini-3.5-flash'];
+    for (const m of models) {
+      for (const ver of ['v1beta', 'v1']) {
+        try {
+          const res = await fetch(`https://generativelanguage.googleapis.com/${ver}/models/${m}:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify({ contents: [{ parts }] })
+          });
+          const data = await res.json();
+          if (data.candidates && data.candidates[0]?.content?.parts) {
+            const p = data.candidates[0].content.parts.find(x => x.text);
+            if (p) return p.text;
+          }
+        } catch (e) {}
+      }
+    }
+    return '';
+  }
+
+  function parseAnswersFromText(aiText) {
+    if (!aiText) return [];
+    try {
+      const jsonMatch = aiText.match(/```(?:json:answers|json)?\s*(\[\s*\{[\s\S]*?\}\s*\])\s*```/i);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[1]);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(item => ({
+            q: Number(item.q || item.question || 0),
+            answers: (Array.isArray(item.answers) ? item.answers : [item.answer || item.text]).filter(Boolean)
+          })).filter(item => item.answers.length > 0);
+        }
+      }
+    } catch (e) {}
+
+    const results = [];
+    const questionBlocks = aiText.split(/(?:###\s*(?:Câu|Question)\s*(\d+)|\b(?:Câu|Question)\s+(\d+)\b)/i);
+    if (questionBlocks.length > 2) {
+      for (let i = 1; i < questionBlocks.length; i += 3) {
+        const qNum = parseInt(questionBlocks[i] || questionBlocks[i + 1] || '0', 10);
+        const content = questionBlocks[i + 2] || '';
+        const ansMatch = content.match(/(?:ĐÁP ÁN ĐÚNG|CORRECT ANSWER)[\s\S]*?(?:GIẢI THÍCH|EXPLANATION|---|$)/i);
+        if (ansMatch) {
+          const bullets = Array.from(ansMatch[0].matchAll(/[\*\-]\s*(?:\*\*)?(.*?)(?:\*\*)?(?:\r?\n|$)/g))
+            .map(m => m[1].replace(/^(?:ĐÁP ÁN ĐÚNG|CORRECT ANSWER):?\s*/i, '').replace(/\*\*/g, '').trim())
+            .filter(t => t.length > 2 && !t.toLowerCase().includes('đáp án đúng'));
+          if (bullets.length > 0) {
+            results.push({ q: qNum, answers: bullets });
+          }
+        }
+      }
+    }
+    return results;
+  }
+
   // Tự tạo HUD khi trang sẵn sàng
   createFloatingHUD();
 
 })();
+

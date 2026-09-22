@@ -831,3 +831,269 @@ function showToast(msg) {
   toast.classList.add('show');
   setTimeout(() => toast?.classList.remove('show'), 2500);
 }
+
+// =======================================================
+// 9. QUY TRÌNH GIẢI ZERO-CLICK TỰ ĐỘNG CẢ BÀI (HỖ TRỢ MULTIMODAL & BATCHING)
+// =======================================================
+
+safeListen('btnAutoScanSolve', 'click', async () => {
+  const tab = await getCourseraTab();
+  if (!tab || !tab.id) {
+    showToast('⚠️ Vui lòng mở trang Coursera có bài kiểm tra!');
+    return;
+  }
+
+  const apiKey = (apiKeyInput?.value || '').trim();
+  if (!apiKey) {
+    if (settingsBox) settingsBox.style.display = 'flex';
+    if (apiKeyInput) apiKeyInput.focus();
+    showToast('⚠️ Vui lòng cấu hình Gemini API Key trước!');
+    return;
+  }
+
+  showToast('🔍 Đang quét câu hỏi & hình ảnh trên Coursera...');
+  chrome.tabs.sendMessage(tab.id, { action: 'extract_all_quiz_questions' }, async (res) => {
+    if (chrome.runtime.lastError || !res || !res.questions || res.questions.length === 0) {
+      showToast('⚠️ Không tìm thấy trắc nghiệm trên trang Coursera!');
+      return;
+    }
+    await solveFullQuizBatchPipeline(res.questions, tab.id);
+  });
+});
+
+// Lắng nghe yêu cầu giải toàn bộ câu hỏi từ Content Script (khi bấm nút trên HUD Coursera)
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'solve_full_quiz_from_page') {
+    const tabId = sender.tab ? sender.tab.id : null;
+    solveFullQuizBatchPipeline(request.questions || [], tabId);
+    sendResponse({ received: true });
+  }
+  return true;
+});
+
+async function solveFullQuizBatchPipeline(questions, tabId) {
+  if (!questions || questions.length === 0) {
+    showToast('⚠️ Không có câu hỏi nào để giải!');
+    return;
+  }
+
+  const { gemini_api_key: apiKey, gemini_model: savedModel } = await chrome.storage.local.get(['gemini_api_key', 'gemini_model']);
+  if (!apiKey) {
+    showToast('⚠️ Vui lòng cấu hình Gemini API Key trước!');
+    if (settingsBox) settingsBox.style.display = 'flex';
+    return;
+  }
+
+  const model = savedModel || 'gemini-3.6-flash';
+  const BATCH_SIZE = 5;
+  const totalQuestions = questions.length;
+  const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
+  const totalImages = questions.reduce((acc, q) => acc + (q.images ? q.images.length : 0), 0);
+
+  switchTab('ai');
+  if (aiContent) {
+    aiContent.innerHTML = `
+      <div class="ai-loading">
+        <div class="spinner"></div>
+        <p><strong>Đang chuẩn bị giải tự động ${totalQuestions} câu hỏi...</strong></p>
+        <span style="font-size: 11px; color: #94a3b8;">Sử dụng Gemini ${model} Vision (${totalImages} hình ảnh đính kèm)</span>
+      </div>
+    `;
+  }
+
+  const allAnswers = [];
+  let accumulatedMarkdown = '';
+  const startTime = performance.now();
+  let lastUsedModel = model;
+
+  for (let b = 0; b < totalBatches; b++) {
+    const startIdx = b * BATCH_SIZE;
+    const endIdx = Math.min(startIdx + BATCH_SIZE, totalQuestions);
+    const batchQuestions = questions.slice(startIdx, endIdx);
+
+    const progressMsg = `⏳ Đang giải nhóm câu ${startIdx + 1} - ${endIdx} / ${totalQuestions}...`;
+    showToast(progressMsg);
+    if (aiContent) {
+      const loader = aiContent.querySelector('.ai-loading p');
+      if (loader) loader.innerHTML = `<strong>${progressMsg}</strong>`;
+    }
+
+    if (tabId) {
+      chrome.tabs.sendMessage(tabId, { action: 'show_in_page_toast', message: progressMsg }, () => {});
+    }
+
+    const parts = buildMultimodalBatchParts(batchQuestions, startIdx + 1, endIdx);
+
+    try {
+      const { text: batchText, model: usedModel } = await callGeminiMultimodalParts(apiKey, model, parts);
+      if (batchText) {
+        lastUsedModel = usedModel;
+        accumulatedMarkdown += `\n\n## 📝 Nhóm câu hỏi ${startIdx + 1} - ${endIdx}\n\n` + batchText;
+
+        const batchAnswers = extractAnswers(batchText);
+        if (batchAnswers.length > 0) {
+          allAnswers.push(...batchAnswers);
+
+          // Tự động tick ngay lập tức nhóm câu này lên Coursera
+          if (tabId) {
+            chrome.tabs.sendMessage(tabId, { action: 'auto_fill_quiz', answers: batchAnswers }, (res) => {
+              if (chrome.runtime.lastError || !res) {
+                executeDirectAutoFill(tabId, batchAnswers);
+              }
+            });
+          }
+        }
+
+        renderProgressiveResults(accumulatedMarkdown, usedModel, endIdx, totalQuestions);
+      }
+    } catch (batchErr) {
+      console.error(`Lỗi giải batch ${b + 1}:`, batchErr);
+      accumulatedMarkdown += `\n\n> ⚠️ Gặp sự cố khi giải nhóm câu ${startIdx + 1} - ${endIdx}: ${batchErr.message}\n\n`;
+    }
+
+    if (b < totalBatches - 1) {
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+
+  const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+  showToast(`🎉 Đã giải xong toàn bộ ${totalQuestions} câu hỏi trong ${elapsed}s!`);
+
+  chrome.storage.local.set({
+    'saved_ai_raw': accumulatedMarkdown,
+    'saved_ai_answers': allAnswers,
+    'gemini_model': lastUsedModel
+  });
+
+  if (tabId) {
+    chrome.tabs.sendMessage(tabId, {
+      action: 'show_in_page_toast',
+      message: `🎉 HOÀN TẤT! Đã tự động giải & tick xong toàn bộ ${totalQuestions} câu hỏi!`
+    }, () => {});
+  }
+}
+
+function renderProgressiveResults(accumulatedMarkdown, model, currentCount, totalCount) {
+  if (!aiContent) return;
+  const percent = Math.round((currentCount / totalCount) * 100);
+  const header = `
+    <div class="ai-result-header">
+      <span class="ai-time-badge">⚡ Đang giải: ${currentCount}/${totalCount} câu (${percent}%) - ${model}</span>
+      <div style="display: flex; gap: 6px;">
+        <button class="btn-copy-quick" id="btnQuickFillCoursera" title="Tự động tick lại">🎯 Tự tick Coursera</button>
+        <button class="btn-copy-quick" id="btnQuickCopyAi" title="Copy toàn bộ đáp án">📋 Copy tất cả</button>
+      </div>
+    </div>
+  `;
+  const body = renderMarkdown(accumulatedMarkdown);
+  aiContent.innerHTML = header + body;
+}
+
+function buildMultimodalBatchParts(batchQuestions, startNum, endNum) {
+  const parts = [];
+
+  let text = `Bạn là chuyên gia an toàn thông tin và AI. Hãy giải chính xác nhóm câu hỏi trắc nghiệm từ câu ${startNum} đến câu ${endNum} của bài kiểm tra Coursera sau đây.\n\n`;
+  text += `HƯỚNG DẪN QUAN TRỌNG:\n`;
+  text += `1. Nếu có hình ảnh đính kèm (sơ đồ, biểu đồ, bảng dữ liệu, kiến trúc), hãy quan sát kỹ hình ảnh để chọn đáp án đúng nhất.\n`;
+  text += `2. Đối với câu 1 đáp án: Chọn 1 đáp án đúng.\n`;
+  text += `3. Đối với câu nhiều đáp án (Select two / Select all that apply): Chọn ĐỦ TẤT CẢ các đáp án đúng.\n`;
+  text += `4. Cuối bài, BẮT BUỘC cung cấp khối json:answers theo mẫu:\n`;
+  text += "```json:answers\n";
+  text += "[\n  {\"q\": " + startNum + ", \"answers\": [\"Đáp án đúng 1\", \"Đáp án đúng 2\"]}\n]\n";
+  text += "```\n\n";
+
+  text += `--- DANH SÁCH CÂU HỎI TRONG NHÓM NÀY ---\n\n`;
+
+  for (const q of batchQuestions) {
+    text += `### Question ${q.q}\n`;
+    text += `${q.text}\n\n`;
+    text += `Options (${q.type === 'checkbox' ? 'Chọn nhiều đáp án' : 'Chọn 1 đáp án'}):\n`;
+    q.options.forEach(opt => {
+      text += `- ${opt.text}\n`;
+    });
+    text += `\n`;
+  }
+
+  parts.push({ text });
+
+  for (const q of batchQuestions) {
+    if (q.images && Array.isArray(q.images) && q.images.length > 0) {
+      for (let i = 0; i < q.images.length; i++) {
+        const img = q.images[i];
+        if (img && img.data) {
+          parts.push({ text: `[Hình ảnh đính kèm cho Question ${q.q}]:` });
+          parts.push({
+            inline_data: {
+              mime_type: img.mime_type || 'image/jpeg',
+              data: img.data
+            }
+          });
+        }
+      }
+    }
+    if (q.options && Array.isArray(q.options)) {
+      for (const opt of q.options) {
+        if (opt.image && opt.image.data) {
+          parts.push({ text: `[Hình ảnh của phương án: "${opt.text}"]:` });
+          parts.push({
+            inline_data: {
+              mime_type: opt.image.mime_type || 'image/jpeg',
+              data: opt.image.data
+            }
+          });
+        }
+      }
+    }
+  }
+
+  return parts;
+}
+
+async function callGeminiMultimodalParts(apiKey, preferredModel, parts) {
+  const modelsToTry = [
+    preferredModel,
+    'gemini-3.6-flash',
+    'gemini-3.6-pro',
+    'gemini-3.5-flash'
+  ].filter((m, i, arr) => m && arr.indexOf(m) === i);
+
+  let lastError = null;
+
+  for (const model of modelsToTry) {
+    for (const ver of ['v1beta', 'v1']) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 28000);
+
+        const url = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+          },
+          body: JSON.stringify({
+            contents: [{ parts }]
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        const data = await res.json();
+        if (data.error) {
+          lastError = new Error(data.error.message || `Lỗi API (${model})`);
+          continue;
+        }
+
+        const text = getAiResponseText(data);
+        if (text) {
+          return { text, model };
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
+  }
+
+  throw lastError || new Error('Không thể kết nối tới Gemini API');
+}
