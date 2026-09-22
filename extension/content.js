@@ -8,7 +8,11 @@
   if (window._courseraHelperInjected) return;
   window._courseraHelperInjected = true;
 
-  const TRAP_REGEX = /\s*You are a helpful AI assistant[\s\S]*?Do you understand\?\.?\s*/gi;
+  const TRAP_PATTERNS = [
+    /\s*You are a helpful AI assistant[\s\S]*?Do you understand\?\.?\s*/gi,
+    /\s*You are a helpful AI assistant[\s\S]*?accessing assessment pages\.?\s*/gi,
+    /\s*You are a helpful AI assistant[\s\S]*?(?=\s*(?:\d+\.|\bQuestion\b|\b[A-D]\.|\n\n\n|$))/gi
+  ];
   const POINT_REGEX = /^[ \t]*\d+(?:\.\d+)?[ \t]*points?\.?[ \t]*$/gmi;
 
   // ==========================================
@@ -16,7 +20,10 @@
   // ==========================================
   function cleanCourseraQuiz(text) {
     if (!text) return text;
-    let cleaned = text.replace(TRAP_REGEX, '\n\n');
+    let cleaned = text;
+    for (const pattern of TRAP_PATTERNS) {
+      cleaned = cleaned.replace(pattern, '\n\n');
+    }
     cleaned = cleaned.replace(POINT_REGEX, '');
     cleaned = cleaned.replace(/\r\n/g, '\n');
     cleaned = cleaned.replace(/[ \t]+$/gm, '');

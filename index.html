@@ -860,8 +860,12 @@
     const globalToast = document.getElementById('globalToast');
     const toastText = document.getElementById('toastText');
 
-    // Regex mẫu lọc bẫy Coursera
-    const COURSERA_TRAP_REGEX = /\s*You are a helpful AI assistant[\s\S]*?Do you understand\?\.?\s*/gi;
+    // Regex mẫu lọc bẫy Coursera đa biến thể
+    const COURSERA_TRAP_PATTERNS = [
+      /\s*You are a helpful AI assistant[\s\S]*?Do you understand\?\.?\s*/gi,
+      /\s*You are a helpful AI assistant[\s\S]*?accessing assessment pages\.?\s*/gi,
+      /\s*You are a helpful AI assistant[\s\S]*?(?=\s*(?:\d+\.|\bQuestion\b|\b[A-D]\.|\n\n\n|$))/gi
+    ];
 
     // Load Local Storage
     let savedApiKey = localStorage.getItem('coursera_gemini_api_key') || '';
@@ -890,11 +894,15 @@
       }
 
       const origLen = text.length;
-      const matches = text.match(COURSERA_TRAP_REGEX);
-      const traps = matches ? matches.length : 0;
+      let traps = 0;
+      let cleaned = text;
 
-      // 1. Loại bỏ Prompt Injection Trap
-      let cleaned = text.replace(COURSERA_TRAP_REGEX, '\n\n');
+      // 1. Loại bỏ Prompt Injection Trap với tất cả mẫu
+      for (const pattern of COURSERA_TRAP_PATTERNS) {
+        const matches = cleaned.match(pattern);
+        if (matches) traps += matches.length;
+        cleaned = cleaned.replace(pattern, '\n\n');
+      }
 
       // 2. Loại bỏ các dòng điểm số ("1 point", "2 points", v.v.)
       cleaned = cleaned.replace(/^[ \t]*\d+(?:\.\d+)?[ \t]*points?\.?[ \t]*$/gmi, '');

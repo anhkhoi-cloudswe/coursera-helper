@@ -1,37 +1,40 @@
-// Coursera Helper — Side Panel Controller v2.1.0
+// Coursera Helper — Side Panel Controller v2.1.1
 
-const TRAP_REGEX = /\s*You are a helpful AI assistant[\s\S]*?Do you understand\?\.?\s*/gi;
+// Multi-pattern regex để khử triệt để tất cả các biến thể Prompt Injection của Coursera
+const TRAP_PATTERNS = [
+  /\s*You are a helpful AI assistant[\s\S]*?Do you understand\?\.?\s*/gi,
+  /\s*You are a helpful AI assistant[\s\S]*?accessing assessment pages\.?\s*/gi,
+  /\s*You are a helpful AI assistant[\s\S]*?(?=\s*(?:\d+\.|\bQuestion\b|\b[A-D]\.|\n\n\n|$))/gi
+];
 const POINT_REGEX = /^[ \t]*\d+(?:\.\d+)?[ \t]*points?\.?[ \t]*$/gmi;
+
+// Helper gắn sự kiện an toàn tuyệt đối (không bao giờ văng lỗi nếu thiếu DOM)
+function safeListen(id, event, handler) {
+  const el = typeof id === 'string' ? document.getElementById(id) : id;
+  if (el) {
+    el.addEventListener(event, handler);
+  } else {
+    console.warn(`[CourseraHelper] Phần tử "${id}" không tìm thấy.`);
+  }
+}
 
 // DOM Elements
 const rawInput = document.getElementById('rawInput');
 const cleanOutput = document.getElementById('cleanOutput');
 const inputCount = document.getElementById('inputCount');
-const btnGrabCoursera = document.getElementById('btnGrabCoursera');
-const btnPaste = document.getElementById('btnPaste');
-const btnClear = document.getElementById('btnClear');
 const tabClean = document.getElementById('tabClean');
 const tabAi = document.getElementById('tabAi');
 const viewClean = document.getElementById('viewClean');
 const viewAi = document.getElementById('viewAi');
 const aiContent = document.getElementById('aiContent');
-const btnCopyClean = document.getElementById('btnCopyClean');
-const btnCopyPrompt = document.getElementById('btnCopyPrompt');
-const btnSolve = document.getElementById('btnSolve');
-const btnToggleSettings = document.getElementById('btnToggleSettings');
-const btnCloseSettings = document.getElementById('btnCloseSettings');
 const settingsBox = document.getElementById('settingsBox');
 const apiKeyInput = document.getElementById('apiKeyInput');
 const modelSelect = document.getElementById('modelSelect');
-const btnSaveKey = document.getElementById('btnSaveKey');
 const btnAutoSkipModule = document.getElementById('btnAutoSkipModule');
-const btnSkipVideo = document.getElementById('btnSkipVideo');
-const btnSpeed16 = document.getElementById('btnSpeed16');
-const btnOpenWeb = document.getElementById('btnOpenWeb');
 const toast = document.getElementById('toast');
 
 // =======================================================
-// 1. TÌM TAB COURSERA AN TOÀN TUYỆT ĐỐI (KHÔNG BAO GIỜ LỖI)
+// 1. TÌM TAB COURSERA AN TOÀN TUYỆT ĐỐI
 // =======================================================
 async function getCourseraTab() {
   try {
@@ -44,7 +47,7 @@ async function getCourseraTab() {
 
     if (courseraTabs.length === 0) return null;
 
-    // Ưu tiên tab đang active (được chọn)
+    // Ưu tiên tab Coursera đang active
     const activeTab = courseraTabs.find(t => t.active);
     return activeTab || courseraTabs[0];
   } catch (e) {
@@ -64,24 +67,24 @@ chrome.storage.local.get([
   'saved_ai_html',
   'auto_skip_active'
 ], (res) => {
-  if (res.gemini_api_key) apiKeyInput.value = res.gemini_api_key;
-  if (res.gemini_model) modelSelect.value = res.gemini_model;
+  if (res.gemini_api_key && apiKeyInput) apiKeyInput.value = res.gemini_api_key;
+  if (res.gemini_model && modelSelect) modelSelect.value = res.gemini_model;
 
-  if (res.saved_raw_input) {
+  if (res.saved_raw_input && rawInput) {
     rawInput.value = res.saved_raw_input;
-    inputCount.innerText = `${res.saved_raw_input.length.toLocaleString()} ký tự`;
+    if (inputCount) inputCount.innerText = `${res.saved_raw_input.length.toLocaleString()} ký tự`;
   }
-  if (res.saved_clean_output) {
+  if (res.saved_clean_output && cleanOutput) {
     cleanOutput.value = res.saved_clean_output;
   }
-  if (res.saved_ai_html) {
+  if (res.saved_ai_html && aiContent) {
     aiContent.innerHTML = res.saved_ai_html;
   }
 
   updateAutoSkipButtonUI(!!res.auto_skip_active);
 });
 
-// Lắng nghe thay đổi auto_skip_active từ storage (hoặc từ content script HUD)
+// Lắng nghe thay đổi trạng thái auto skip từ storage
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.auto_skip_active !== undefined) {
     updateAutoSkipButtonUI(changes.auto_skip_active.newValue);
@@ -89,6 +92,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 function updateAutoSkipButtonUI(isActive) {
+  if (!btnAutoSkipModule) return;
   if (isActive) {
     btnAutoSkipModule.innerText = '🛑 Dừng Auto Skip';
     btnAutoSkipModule.style.background = '#f43f5e';
@@ -105,7 +109,10 @@ function updateAutoSkipButtonUI(isActive) {
 // =======================================================
 function cleanCourseraQuiz(text) {
   if (!text) return '';
-  let cleaned = text.replace(TRAP_REGEX, '\n\n');
+  let cleaned = text;
+  for (const pattern of TRAP_PATTERNS) {
+    cleaned = cleaned.replace(pattern, '\n\n');
+  }
   cleaned = cleaned.replace(POINT_REGEX, '');
   cleaned = cleaned.replace(/\r\n/g, '\n');
   cleaned = cleaned.replace(/[ \t]+$/gm, '');
@@ -114,10 +121,11 @@ function cleanCourseraQuiz(text) {
 }
 
 function updateCleaning() {
+  if (!rawInput) return;
   const raw = rawInput.value;
-  inputCount.innerText = `${raw.length.toLocaleString()} ký tự`;
+  if (inputCount) inputCount.innerText = `${raw.length.toLocaleString()} ký tự`;
   const cleaned = cleanCourseraQuiz(raw);
-  cleanOutput.value = cleaned;
+  if (cleanOutput) cleanOutput.value = cleaned;
 
   chrome.storage.local.set({
     'saved_raw_input': raw,
@@ -125,32 +133,32 @@ function updateCleaning() {
   });
 }
 
-rawInput.addEventListener('input', updateCleaning);
+safeListen('rawInput', 'input', updateCleaning);
 
 // =======================================================
 // 4. TAB NAVIGATION (VĂN BẢN SẠCH <-> GEMINI AI)
 // =======================================================
 function switchTab(target) {
   if (target === 'clean') {
-    tabClean.classList.add('active');
-    tabAi.classList.remove('active');
-    viewClean.classList.add('active');
-    viewAi.classList.remove('active');
+    tabClean?.classList.add('active');
+    tabAi?.classList.remove('active');
+    viewClean?.classList.add('active');
+    viewAi?.classList.remove('active');
   } else {
-    tabAi.classList.add('active');
-    tabClean.classList.remove('active');
-    viewAi.classList.add('active');
-    viewClean.classList.remove('active');
+    tabAi?.classList.add('active');
+    tabClean?.classList.remove('active');
+    viewAi?.classList.add('active');
+    viewClean?.classList.remove('active');
   }
 }
 
-tabClean.addEventListener('click', () => switchTab('clean'));
-tabAi.addEventListener('click', () => switchTab('ai'));
+safeListen('tabClean', 'click', () => switchTab('clean'));
+safeListen('tabAi', 'click', () => switchTab('ai'));
 
 // =======================================================
-// 5. LẤY CHỮ BÔI ĐEN TỪ COURSERA & CLIPBOARD
+// 5. CÁC NÚT THAO TÁC VĂN BẢN (LẤY CHỮ, DÁN, XÓA)
 // =======================================================
-btnGrabCoursera.addEventListener('click', async () => {
+safeListen('btnGrabCoursera', 'click', async () => {
   try {
     const tab = await getCourseraTab();
     if (!tab || !tab.id) {
@@ -165,7 +173,7 @@ btnGrabCoursera.addEventListener('click', async () => {
 
     const selected = results?.[0]?.result;
     if (selected && selected.trim()) {
-      rawInput.value = selected;
+      if (rawInput) rawInput.value = selected;
       updateCleaning();
       switchTab('clean');
       showToast('✓ Đã lấy câu hỏi từ Coursera!');
@@ -177,23 +185,23 @@ btnGrabCoursera.addEventListener('click', async () => {
   }
 });
 
-btnPaste.addEventListener('click', async () => {
+safeListen('btnPaste', 'click', async () => {
   try {
     const text = await navigator.clipboard.readText();
     if (text) {
-      rawInput.value = text;
+      if (rawInput) rawInput.value = text;
       updateCleaning();
       switchTab('clean');
       showToast('Đã dán và lọc sạch!');
     }
   } catch (e) {
-    rawInput.focus();
+    rawInput?.focus();
   }
 });
 
-btnClear.addEventListener('click', () => {
-  rawInput.value = '';
-  cleanOutput.value = '';
+safeListen('btnClear', 'click', () => {
+  if (rawInput) rawInput.value = '';
+  if (cleanOutput) cleanOutput.value = '';
   updateCleaning();
   showToast('Đã xóa');
 });
@@ -201,51 +209,61 @@ btnClear.addEventListener('click', () => {
 // =======================================================
 // 6. COPY ACTIONS
 // =======================================================
-btnCopyClean.addEventListener('click', async () => {
-  if (!cleanOutput.value) return;
-  await navigator.clipboard.writeText(cleanOutput.value);
+safeListen('btnCopyClean', 'click', async () => {
+  const text = cleanOutput?.value || cleanCourseraQuiz(rawInput?.value || '');
+  if (!text) {
+    showToast('Chưa có nội dung để copy');
+    return;
+  }
+  await navigator.clipboard.writeText(text);
   showToast('Đã copy văn bản sạch!');
 });
 
-btnCopyPrompt.addEventListener('click', async () => {
-  if (!cleanOutput.value) {
+safeListen('btnCopyPrompt', 'click', async () => {
+  const text = cleanOutput?.value || cleanCourseraQuiz(rawInput?.value || '');
+  if (!text) {
     showToast('Chưa có câu hỏi');
     return;
   }
-  const promptText = `Bạn là chuyên gia an toàn thông tin & bảo mật. Hãy giải chi tiết các câu hỏi trắc nghiệm sau, ghi rõ đáp án đúng và giải thích ngắn gọn:\n\n${cleanOutput.value}`;
+  const promptText = `Bạn là chuyên gia hàng đầu. Hãy giải chi tiết các câu hỏi trắc nghiệm sau, ghi rõ đáp án đúng (in đậm) và giải thích ngắn gọn:\n\n${text}`;
   await navigator.clipboard.writeText(promptText);
   showToast('Đã copy Prompt cho Gemini!');
 });
 
 // =======================================================
-// 7. GỌI GEMINI API TRỰC TIẾP TRONG THANH BÊN
+// 7. GỌI GEMINI API GIẢI ĐÁP ÁN (GIẢI)
 // =======================================================
-btnSolve.addEventListener('click', async () => {
-  if (!cleanOutput.value) {
-    showToast('Vui lòng nhập câu hỏi trước!');
+safeListen('btnSolve', 'click', async () => {
+  const textToSolve = (cleanOutput?.value || cleanCourseraQuiz(rawInput?.value || '')).trim();
+
+  if (!textToSolve) {
+    showToast('⚠️ Vui lòng dán hoặc lấy câu hỏi trước!');
+    if (rawInput) rawInput.focus();
     return;
   }
 
-  const apiKey = apiKeyInput.value.trim();
+  const apiKey = (apiKeyInput?.value || '').trim();
   if (!apiKey) {
-    settingsBox.style.display = 'flex';
-    apiKeyInput.focus();
-    showToast('Vui lòng cài đặt Gemini API Key');
+    if (settingsBox) settingsBox.style.display = 'flex';
+    if (apiKeyInput) apiKeyInput.focus();
+    showToast('⚠️ Vui lòng nhập và Lưu Gemini API Key trước!');
     return;
   }
 
   switchTab('ai');
-  aiContent.innerHTML = `
-    <div class="ai-empty-state">
-      <div class="spinner"></div>
-      <p style="color: #a5b4fc; font-weight: 600;">Gemini đang phân tích và giải đề...</p>
-    </div>
-  `;
+  if (aiContent) {
+    aiContent.innerHTML = `
+      <div class="ai-empty-state">
+        <div class="spinner"></div>
+        <p style="color: #a5b4fc; font-weight: 600;">Gemini đang phân tích và giải đề...</p>
+      </div>
+    `;
+  }
 
   try {
-    const model = modelSelect.value || 'gemini-2.0-flash';
-    const systemPrompt = "Bạn là chuyên gia an ninh mạng xuất sắc. Hãy giải các câu hỏi trắc nghiệm sau. Với mỗi câu hỏi: chỉ rõ ĐÁP ÁN ĐÚNG (in đậm) và GIẢI THÍCH NGẮN GỌN (1-2 câu). Trình bày rõ ràng, dễ đọc.";
-    const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${cleanOutput.value}`;
+    const model = modelSelect?.value || 'gemini-2.0-flash';
+    const systemPrompt = "Bạn là chuyên gia xuất sắc. Hãy giải các câu hỏi trắc nghiệm sau. Với mỗi câu hỏi: chỉ rõ ĐÁP ÁN ĐÚNG (in đậm) và GIẢI THÍCH NGẮN GỌN (1-2 câu). Trình bày mạch lạc, dễ đọc.";
+    const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const res = await fetch(url, {
@@ -263,17 +281,19 @@ btnSolve.addEventListener('click', async () => {
     if (!candidate) throw new Error('Không có phản hồi từ AI');
 
     const htmlResult = renderMarkdown(candidate);
-    aiContent.innerHTML = htmlResult;
+    if (aiContent) aiContent.innerHTML = htmlResult;
 
     chrome.storage.local.set({ 'saved_ai_html': htmlResult });
     showToast('✓ Gemini đã giải xong!');
   } catch (err) {
-    aiContent.innerHTML = `
-      <div style="padding: 12px; background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); border-radius: 8px; color: #fecdd3;">
-        <strong style="color: #f43f5e;">Lỗi:</strong> ${err.message}<br><br>
-        <span style="font-size: 11px; color: #94a3b8;">Mẹo: Kiểm tra lại API Key hoặc dùng nút "Prompt" để dán vào gemini.google.com</span>
-      </div>
-    `;
+    if (aiContent) {
+      aiContent.innerHTML = `
+        <div style="padding: 12px; background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); border-radius: 8px; color: #fecdd3;">
+          <strong style="color: #f43f5e;">Lỗi:</strong> ${err.message}<br><br>
+          <span style="font-size: 11px; color: #94a3b8;">Mẹo: Kiểm tra lại API Key hoặc dùng nút "Prompt" để dán vào gemini.google.com</span>
+        </div>
+      `;
+    }
   }
 });
 
@@ -292,21 +312,23 @@ function renderMarkdown(md) {
   return `<p>${html}</p>`;
 }
 
-// Cài đặt API
-btnToggleSettings.addEventListener('click', () => {
-  settingsBox.style.display = settingsBox.style.display === 'none' ? 'flex' : 'none';
+// Cài đặt API Key
+safeListen('btnToggleSettings', 'click', () => {
+  if (settingsBox) {
+    settingsBox.style.display = settingsBox.style.display === 'none' ? 'flex' : 'none';
+  }
 });
 
-btnCloseSettings.addEventListener('click', () => {
-  settingsBox.style.display = 'none';
+safeListen('btnCloseSettings', 'click', () => {
+  if (settingsBox) settingsBox.style.display = 'none';
 });
 
-btnSaveKey.addEventListener('click', () => {
-  const key = apiKeyInput.value.trim();
-  const model = modelSelect.value;
+safeListen('btnSaveKey', 'click', () => {
+  const key = apiKeyInput?.value.trim() || '';
+  const model = modelSelect?.value || 'gemini-2.0-flash';
   chrome.storage.local.set({ 'gemini_api_key': key, 'gemini_model': model }, () => {
     showToast('✓ Đã lưu cài đặt API Key!');
-    settingsBox.style.display = 'none';
+    if (settingsBox) settingsBox.style.display = 'none';
   });
 });
 
@@ -315,7 +337,7 @@ btnSaveKey.addEventListener('click', () => {
 // =======================================================
 
 // A. NÚT SKIP 1 VIDEO (Tua video đang mở hoặc bấm Next)
-btnSkipVideo.addEventListener('click', async () => {
+safeListen('btnSkipVideo', 'click', async () => {
   const tab = await getCourseraTab();
   if (!tab || !tab.id) {
     showToast('⚠️ Vui lòng mở trang Coursera!');
@@ -324,10 +346,8 @@ btnSkipVideo.addEventListener('click', async () => {
 
   showToast('⏳ Đang xử lý Video...');
 
-  // 1. Thử gửi message tới content script
   chrome.tabs.sendMessage(tab.id, { action: 'skip_video' }, (res) => {
     if (chrome.runtime.lastError || !res) {
-      // 2. Dự phòng: Thực thi trực tiếp qua scripting API nếu tab chưa kịp load content script
       executeDirectSkip(tab.id);
     } else {
       showToast('⏩ Đã tua Video & đang chuyển bài!');
@@ -336,7 +356,7 @@ btnSkipVideo.addEventListener('click', async () => {
 });
 
 // B. NÚT TỐC ĐỘ 16X
-btnSpeed16.addEventListener('click', async () => {
+safeListen('btnSpeed16', 'click', async () => {
   const tab = await getCourseraTab();
   if (!tab || !tab.id) {
     showToast('⚠️ Vui lòng mở trang Coursera!');
@@ -358,7 +378,7 @@ btnSpeed16.addEventListener('click', async () => {
 });
 
 // C. NÚT AUTO-SKIP HẾT TOÀN BỘ MODULE (HANDS-FREE)
-btnAutoSkipModule.addEventListener('click', async () => {
+safeListen('btnAutoSkipModule', 'click', async () => {
   const tab = await getCourseraTab();
   if (!tab || !tab.id) {
     showToast('⚠️ Vui lòng mở trang Coursera!');
@@ -372,10 +392,8 @@ btnAutoSkipModule.addEventListener('click', async () => {
 
       if (nextState) {
         showToast('🚀 Khởi động Auto-Skip Module!');
-        // Gửi lệnh hoặc kích hoạt trực tiếp trong tab
         chrome.tabs.sendMessage(tab.id, { action: 'toggle_auto_skip' }, () => {
           if (chrome.runtime.lastError) {
-            // Tab chưa load content script -> nạp script thủ công
             chrome.scripting.executeScript({
               target: { tabId: tab.id },
               files: ['content.js']
@@ -390,12 +408,11 @@ btnAutoSkipModule.addEventListener('click', async () => {
   });
 });
 
-// Script dự phòng can thiệp trực tiếp DOM
+// Script dự phòng can thiệp trực tiếp DOM nếu tab chưa kịp load content script
 function executeDirectSkip(tabId) {
   chrome.scripting.executeScript({
     target: { tabId: tabId, allFrames: true },
     func: () => {
-      // A. Nếu ở trang tổng quan Module: bấm Get started hoặc bài đầu tiên
       const isOverview = window.location.href.includes('/home/module/') || window.location.href.includes('/module/');
       if (isOverview) {
         const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"], span'));
@@ -414,7 +431,6 @@ function executeDirectSkip(tabId) {
         }
       }
 
-      // B. Nếu có Video: tua tới cuối
       const videos = Array.from(document.querySelectorAll('video'));
       for (const v of videos) {
         try {
@@ -431,7 +447,6 @@ function executeDirectSkip(tabId) {
         } catch (e) {}
       }
 
-      // C. Bấm Go to next item
       setTimeout(() => {
         const clickables = Array.from(document.querySelectorAll('button, a, [role="button"]'));
         const nextBtn = clickables.find(el => {
@@ -441,7 +456,6 @@ function executeDirectSkip(tabId) {
         if (nextBtn) {
           nextBtn.click();
         } else {
-          // Thử tìm trong thanh điều hướng bài học bên trái
           const activeItem = document.querySelector('[aria-current="true"], .rc-ItemLink.active');
           if (activeItem) {
             const nextContainer = activeItem.closest('li, [role="listitem"], .rc-ItemRow')?.nextElementSibling;
@@ -455,12 +469,13 @@ function executeDirectSkip(tabId) {
 }
 
 // Mở trang Web
-btnOpenWeb.addEventListener('click', () => {
+safeListen('btnOpenWeb', 'click', () => {
   chrome.tabs.create({ url: 'https://coursera-helper.vercel.app' });
 });
 
 function showToast(msg) {
+  if (!toast) return;
   toast.innerText = msg;
   toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2500);
+  setTimeout(() => toast?.classList.remove('show'), 2500);
 }
