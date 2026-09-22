@@ -2098,6 +2098,10 @@
       <button id="ch-hud-skipone" class="ch-hud-btn" title="Tua video này tới cuối và sang bài tiếp">
         ⏩ Tua 1 bài
       </button>
+
+      <div style="font-size: 11px; opacity: 0.85; color: #94a3b8; font-weight: 500; padding: 2px 8px; border-left: 1px solid rgba(255,255,255,0.15); margin-left: 2px; white-space: nowrap;">
+        Made by <strong style="color: #60a5fa; font-weight: 600;">Anh Khoi Nguyen</strong>
+      </div>
     `;
 
     document.body.appendChild(floatingHUD);

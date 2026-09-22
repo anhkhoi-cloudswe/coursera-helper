@@ -544,6 +544,19 @@ textarea::placeholder {
   box-shadow: 0 0 6px #10b981;
 }
 
+.author-mark {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 6px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.author-mark strong {
+  color: #6366f1;
+  font-weight: 600;
+}
+
 /* Toast */
 .toast {
   position: fixed;
