@@ -267,53 +267,52 @@ chrome.storage.local.get(['auto_skip_active'], (data) => {
   }
 });
 
-btnAutoSkipModule.addEventListener('click', async () => {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab || !tab.id) return;
-
-    chrome.storage.local.get(['auto_skip_active'], (data) => {
-      if (data.auto_skip_active) {
-        chrome.tabs.sendMessage(tab.id, { action: 'stop_auto_skip_module' });
-        btnAutoSkipModule.innerText = '🚀 Auto Skip Hết Module';
-        showToast('🛑 Đã dừng Auto-Skip Module');
-      } else {
-        chrome.tabs.sendMessage(tab.id, { action: 'start_auto_skip_module' });
-        btnAutoSkipModule.innerText = '🛑 Dừng Auto Skip';
-        showToast('🚀 Bắt đầu Auto-Skip toàn bộ bài học trong Module...');
+// Hàm gửi message an toàn (Tự nạp content script nếu tab chưa kết nối)
+function sendTabMessage(message, callback) {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs || !tabs[0] || !tabs[0].id) {
+      showToast('⚠️ Vui lòng mở một tab Coursera!');
+      return;
+    }
+    const tabId = tabs[0].id;
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      if (chrome.runtime.lastError) {
+        // Tự động nạp content.js nếu tab Coursera vừa reload Extension
+        chrome.scripting.executeScript({
+          target: { tabId: tabId },
+          files: ['content.js']
+        }, () => {
+          setTimeout(() => {
+            chrome.tabs.sendMessage(tabId, message, callback);
+          }, 200);
+        });
+      } else if (callback) {
+        callback(response);
       }
     });
-  } catch (e) {
-    showToast('⚠️ Vui lòng mở trang Coursera để sử dụng');
-  }
+  });
+}
+
+btnAutoSkipModule.addEventListener('click', () => {
+  chrome.storage.local.get(['auto_skip_active'], (data) => {
+    if (data.auto_skip_active) {
+      sendTabMessage({ action: 'stop_auto_skip_module' });
+      btnAutoSkipModule.innerText = '🚀 Auto Skip Hết Module';
+      showToast('🛑 Đã dừng Auto-Skip Module');
+    } else {
+      sendTabMessage({ action: 'start_auto_skip_module' });
+      btnAutoSkipModule.innerText = '🛑 Dừng Auto Skip';
+      showToast('🚀 Bắt đầu Auto-Skip toàn bộ bài học trong Module...');
+    }
+  });
 });
 
-btnSkipVideo.addEventListener('click', async () => {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab || !tab.id) return;
-    chrome.tabs.sendMessage(tab.id, { action: 'skip_video' }, (res) => {
-      if (chrome.runtime.lastError) {
-        showToast('⚠️ Mở trang bài học chứa Video để sử dụng');
-      }
-    });
-  } catch (e) {
-    showToast('Lỗi gửi lệnh tới tab');
-  }
+btnSkipVideo.addEventListener('click', () => {
+  sendTabMessage({ action: 'skip_video' });
 });
 
-btnSpeed16.addEventListener('click', async () => {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab || !tab.id) return;
-    chrome.tabs.sendMessage(tab.id, { action: 'set_video_speed', speed: 16 }, (res) => {
-      if (chrome.runtime.lastError) {
-        showToast('⚠️ Mở trang bài học chứa Video để sử dụng');
-      }
-    });
-  } catch (e) {
-    showToast('Lỗi gửi lệnh tới tab');
-  }
+btnSpeed16.addEventListener('click', () => {
+  sendTabMessage({ action: 'set_video_speed', speed: 16 });
 });
 
 // Mở trang Web

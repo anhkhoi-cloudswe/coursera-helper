@@ -203,23 +203,46 @@ function setCourseraVideoSpeed(rate) {
 // 4. CHẾ ĐỘ AUTO-SKIP TOÀN BỘ MODULE (HANDS-FREE)
 // ==========================================
 
+function findModuleItemUrls() {
+  const allLinks = Array.from(document.querySelectorAll('a[href]'));
+  
+  // Lọc các liên kết bài học thuộc Coursera
+  const itemUrls = allLinks
+    .map(a => a.href)
+    .filter(u => u && u.includes('/learn/') && (
+      u.includes('/lecture/') || 
+      u.includes('/item/') || 
+      u.includes('/supplement/') || 
+      u.includes('/quiz/') || 
+      u.includes('/ungradedLab/') ||
+      u.includes('/exam/')
+    ));
+
+  let uniqueUrls = Array.from(new Set(itemUrls));
+  
+  // Dự phòng nếu DOM của Coursera chưa load đầy đủ
+  if (uniqueUrls.length === 0) {
+    const mainAreaLinks = Array.from(document.querySelectorAll('main a[href*="/learn/"], div[role="main"] a[href*="/learn/"], div.rc-ModuleBody a[href*="/learn/"]'));
+    uniqueUrls = Array.from(new Set(mainAreaLinks.map(a => a.href)))
+      .filter(u => !u.includes('/home/module/') && !u.includes('/grades') && !u.includes('/messages'));
+  }
+  
+  return uniqueUrls;
+}
+
 async function startAutoSkipModule() {
-  // 1. Nếu đang ở trang tổng quan Module (như /home/module/1)
   const isOverview = window.location.href.includes('/home/module/') || window.location.href.includes('/module/');
   
   if (isOverview) {
-    // Tìm tất cả các đường dẫn bài học/video trong Module hiện tại
-    const links = Array.from(document.querySelectorAll('a[href*="/lecture/"], a[href*="/item/"]'));
-    const urls = Array.from(new Set(links.map(a => a.href))).filter(u => u.includes('/learn/'));
+    const urls = findModuleItemUrls();
     
     if (urls.length === 0) {
-      showInPageToast('⚠️ Không tìm thấy bài học nào trong Module này!');
+      showInPageToast('⚠️ Vui lòng cuộn trang xuống một chút để Coursera hiển thị các bài học rồi thử lại!');
       return;
     }
 
     showInPageToast(`🚀 Đã tìm thấy ${urls.length} bài học! Đang bắt đầu Auto-Skip...`);
     
-    // Lưu danh sách URL và bật chế độ Auto Skip
     chrome.storage.local.set({
       'auto_skip_active': true,
       'auto_skip_queue': urls,
@@ -228,8 +251,7 @@ async function startAutoSkipModule() {
       window.location.href = urls[0];
     });
   } else {
-    // Nếu đang ở sẵn trong một bài học
-    const nextLink = document.querySelector('a[href*="/lecture/"], a[href*="/item/"]');
+    // Đang ở sẵn trong một bài học
     chrome.storage.local.set({
       'auto_skip_active': true,
       'auto_skip_queue': [],
