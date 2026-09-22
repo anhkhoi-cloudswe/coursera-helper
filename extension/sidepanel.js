@@ -70,11 +70,14 @@ chrome.storage.local.get([
   'auto_fill_quiz_enabled'
 ], (res) => {
   if (res.gemini_api_key && apiKeyInput) apiKeyInput.value = res.gemini_api_key;
+  const deprecated = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
   if (modelSelect) {
-    // Tự động nâng cấp model lên gemini-3.6-flash chuẩn mới nhất của Google
-    const isOld = !res.gemini_model || ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.5-flash'].includes(res.gemini_model);
+    const isOld = !res.gemini_model || deprecated.includes(res.gemini_model);
     const m = isOld ? 'gemini-3.6-flash' : res.gemini_model;
     modelSelect.value = m;
+    if (isOld) {
+      chrome.storage.local.set({ 'gemini_model': 'gemini-3.6-flash' });
+    }
   }
 
   if (chkAutoFillQuiz) {
@@ -275,39 +278,44 @@ async function getAvailableGeminiModels(apiKey) {
 }
 
 function selectOptimalModel(supportedModels, userPreferred) {
+  const deprecated = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
   if (!supportedModels || supportedModels.length === 0) {
     return { name: 'gemini-3.6-flash', version: 'v1beta' };
   }
 
-  // 1. Nếu user từng chọn một model và model đó có trong danh sách
-  if (userPreferred && userPreferred !== 'gemini-2.0-flash') {
-    const found = supportedModels.find(m => m.name === userPreferred);
+  // Loại bỏ các model đã khai tử
+  const validModels = supportedModels.filter(m => !deprecated.includes(m.name));
+  if (validModels.length === 0) {
+    return { name: 'gemini-3.6-flash', version: 'v1beta' };
+  }
+
+  // 1. Nếu user từng chọn một model hợp lệ và model đó có trong danh sách
+  if (userPreferred && !deprecated.includes(userPreferred)) {
+    const found = validModels.find(m => m.name === userPreferred);
     if (found) return found;
   }
 
-  // 2. Ưu tiên model mới nhất và nhanh nhất
+  // 2. Ưu tiên model chuẩn 2026
   const priorities = [
     'gemini-3.6-flash',
     'gemini-3.6-pro',
-    'gemini-3.5-flash',
-    'gemini-2.5-flash',
-    'gemini-1.5-flash'
+    'gemini-3.5-flash'
   ];
 
   for (const p of priorities) {
-    const match = supportedModels.find(m => m.name === p);
+    const match = validModels.find(m => m.name === p);
     if (match) return match;
   }
 
   // 3. Tìm bất kỳ model nào có chữ "flash"
-  const anyFlash = supportedModels.find(m => m.name.toLowerCase().includes('flash'));
+  const anyFlash = validModels.find(m => m.name.toLowerCase().includes('flash'));
   if (anyFlash) return anyFlash;
 
   // 4. Tìm bất kỳ model nào có chữ "gemini"
-  const anyGemini = supportedModels.find(m => m.name.toLowerCase().includes('gemini'));
+  const anyGemini = validModels.find(m => m.name.toLowerCase().includes('gemini'));
   if (anyGemini) return anyGemini;
 
-  return supportedModels[0];
+  return validModels[0] || { name: 'gemini-3.6-flash', version: 'v1beta' };
 }
 
 function populateModelSelect(supportedModels, activeModelName) {
@@ -559,14 +567,16 @@ safeListen('btnSolve', 'click', async () => {
 `;
   const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
 
-  const chosenModel = modelSelect?.value || 'gemini-3.6-flash';
+  const deprecated = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
+  let chosenModel = modelSelect?.value || 'gemini-3.6-flash';
+  if (deprecated.includes(chosenModel)) chosenModel = 'gemini-3.6-flash';
+
   const modelsToTry = Array.from(new Set([
     chosenModel,
     'gemini-3.6-flash',
     'gemini-3.6-pro',
-    'gemini-3.5-flash',
-    'gemini-2.5-flash'
-  ])).filter(Boolean);
+    'gemini-3.5-flash'
+  ])).filter(m => m && !deprecated.includes(m));
 
   const startTime = performance.now();
   let solved = false;
@@ -575,10 +585,48 @@ safeListen('btnSolve', 'click', async () => {
   let successfulModel = '';
 
   for (const model of modelsToTry) {
+    // 1. Thử qua Google Interactions API (chuẩn chính thức khuyến nghị 2026 cho gemini-3.6-flash)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 16000);
+
+      const resInteractions = await fetch(`https://generativelanguage.googleapis.com/v1beta/interactions?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
+        body: JSON.stringify({
+          model: model,
+          input: fullPrompt
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      const dataInteractions = await resInteractions.json();
+      if (!dataInteractions.error) {
+        const text = getAiResponseText(dataInteractions);
+        if (text) {
+          solvedText = text;
+          successfulModel = model;
+          solved = true;
+          break;
+        }
+      } else {
+        lastError = new Error(dataInteractions.error.message || `Lỗi Interactions API (${model})`);
+      }
+    } catch (e) {
+      lastError = e;
+    }
+
+    if (solved) break;
+
+    // 2. Thử qua generateContent endpoint
     for (const ver of ['v1beta', 'v1']) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 16000); // Tối đa 16s mỗi request
+        const timeoutId = setTimeout(() => controller.abort(), 16000);
 
         const url = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`;
         const resGen = await fetch(url, {
@@ -600,9 +648,9 @@ safeListen('btnSolve', 'click', async () => {
           continue;
         }
 
-        const candidate = dataGen.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (candidate) {
-          solvedText = candidate;
+        const text = getAiResponseText(dataGen);
+        if (text) {
+          solvedText = text;
           successfulModel = model;
           solved = true;
           break;
@@ -611,6 +659,7 @@ safeListen('btnSolve', 'click', async () => {
         lastError = e;
       }
     }
+
     if (solved) break;
   }
 
@@ -663,6 +712,41 @@ safeListen('btnSolve', 'click', async () => {
     }
   }
 });
+
+// Trích xuất văn bản câu trả lời từ bất kỳ định dạng nào của Google AI (Interactions API hoặc generateContent)
+function getAiResponseText(data) {
+  if (!data) return '';
+
+  // 1. Google Interactions API (chuẩn 2026): mảng steps
+  if (Array.isArray(data.steps)) {
+    for (let i = data.steps.length - 1; i >= 0; i--) {
+      const step = data.steps[i];
+      if (Array.isArray(step.content)) {
+        for (const item of step.content) {
+          if (item && item.text) return item.text;
+        }
+      }
+      if (typeof step.output === 'string') return step.output;
+      if (typeof step.text === 'string') return step.text;
+    }
+  }
+
+  // 2. Các trường output trực tiếp của Interactions API
+  if (typeof data.output === 'string') return data.output;
+  if (typeof data.output_text === 'string') return data.output_text;
+  if (Array.isArray(data.outputs) && data.outputs[0]?.text) {
+    return data.outputs[0].text;
+  }
+
+  // 3. Chuẩn generateContent: data.candidates
+  if (Array.isArray(data.candidates) && data.candidates[0]?.content?.parts) {
+    const parts = data.candidates[0].content.parts;
+    const textPart = parts.find(p => p.text);
+    if (textPart) return textPart.text;
+  }
+
+  return '';
+}
 
 function renderMarkdown(md) {
   // Loại bỏ khối json:answers nếu có để giao diện luôn sạch đẹp
