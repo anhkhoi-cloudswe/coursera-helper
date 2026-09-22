@@ -408,17 +408,84 @@
     return null;
   }
 
-  // D. Chuyển sang bài học tiếp theo (Ưu tiên nút Next -> fallback Sidebar)
+  // Kiểm tra xem có đang ở trang kết quả điểm của Quiz/Graded Assignment không (ví dụ "Your grade: 90%")
+  function isQuizResultScreen() {
+    const bodyText = (document.body.innerText || '').toLowerCase();
+    const hasGradeKeywords = (
+      bodyText.includes('your grade:') ||
+      bodyText.includes('your grade') ||
+      bodyText.includes('điểm của bạn:') ||
+      bodyText.includes('your latest:') ||
+      bodyText.includes('your highest:') ||
+      bodyText.includes('to pass you need') ||
+      bodyText.includes('we keep your highest score') ||
+      bodyText.includes('nice work')
+    );
+
+    const hasNextBtn = findQuizNextItemButton() !== null;
+    const hasGradeContainer = document.querySelector(
+      '[class*="grade" i], [class*="score" i], [data-testid*="grade"], [data-testid*="score"]'
+    ) !== null;
+
+    return (hasGradeKeywords && hasNextBtn) || (hasGradeKeywords && hasGradeContainer);
+  }
+
+  // Tìm nút "Next item" hoặc nút chuyển bài trên màn hình kết quả Quiz
+  function findQuizNextItemButton() {
+    // 1. Tìm theo testId hoặc data-e2e
+    const testIdBtn = document.querySelector(
+      'button[data-testid*="next"], a[data-testid*="next"], button[data-e2e*="next"], a[data-e2e*="next"]'
+    );
+    if (testIdBtn && !testIdBtn.disabled && !testIdBtn.closest('#coursera-helper-hud, header, nav')) {
+      return testIdBtn;
+    }
+
+    // 2. Tìm tất cả các nút/link có chữ "Next item" hoặc "Next" hoặc "Tiếp theo"
+    const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    for (const btn of allBtns) {
+      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
+      if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+
+      const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+      if (
+        txt === 'next item' ||
+        txt.startsWith('next item') ||
+        txt.includes('next item') ||
+        txt === 'go to next item' ||
+        txt.startsWith('go to next item') ||
+        txt.includes('go to next item') ||
+        txt === 'tiếp theo' ||
+        txt === 'bài tiếp theo'
+      ) {
+        return btn;
+      }
+    }
+
+    return null;
+  }
+
+  // Tìm nút Back ở góc trên bên trái của trang Quiz để quay lại thanh ngoài
+  function findQuizBackButton() {
+    const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    return allBtns.find(b => {
+      if (b.closest('#coursera-helper-hud')) return false;
+      const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+      const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+      return t === 'back' || t === '← back' || t.startsWith('back') || aria.includes('back') || t === 'quay lại';
+    }) || null;
+  }
+
+  // D. Chuyển sang bài học tiếp theo (Ưu tiên nút Next/Next item -> fallback Sidebar -> fallback Back)
   function navigateToNextLesson() {
-    // 1. Thử nút Go to next item
-    const nextBtn = findNextButton();
-    if (nextBtn && !nextBtn.disabled && nextBtn.getAttribute('aria-disabled') !== 'true') {
-      showInPageToast('➡️ Đang chuyển sang bài học tiếp theo...');
-      triggerClick(nextBtn);
+    // 1. Thử nút Next item (đặc biệt trên màn hình kết quả Quiz) hoặc Go to next item
+    const nextItemBtn = findQuizNextItemButton() || findNextButton();
+    if (nextItemBtn && !nextItemBtn.disabled && nextItemBtn.getAttribute('aria-disabled') !== 'true') {
+      showInPageToast('➡️ Đang bấm "Next item" để chuyển sang bài tiếp theo...');
+      triggerClick(nextItemBtn);
       return true;
     }
 
-    // 2. Thử link bài tiếp theo trên menu bên trái
+    // 2. Thử link bài tiếp theo trên menu bên trái (Sidebar)
     const nextSidebarLink = findNextSidebarLink();
     if (nextSidebarLink) {
       const linkText = (nextSidebarLink.innerText || nextSidebarLink.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 35);
@@ -427,11 +494,29 @@
       return true;
     }
 
-    // 3. Nếu nút nextBtn bị disabled hoặc chưa bấm được, vẫn click thử
-    if (nextBtn) {
+    // 3. Nếu đang ở màn hình kết quả quiz và không có sidebar, thử bấm nút Back để ra ngoài module
+    if (isQuizResultScreen()) {
+      const backBtn = findQuizBackButton();
+      if (backBtn) {
+        showInPageToast('⬅️ Đang bấm Back để ra ngoài danh sách bài học...');
+        triggerClick(backBtn);
+        return true;
+      }
+    }
+
+    // 4. Nếu nút nextItemBtn tồn tại kể cả khi bị disabled nhẹ, vẫn thử kích hoạt
+    if (nextItemBtn) {
       showInPageToast('➡️ Thử bấm nút chuyển tiếp...');
-      triggerClick(nextBtn);
+      triggerClick(nextItemBtn);
       return true;
+    }
+
+    // Chỉ tắt auto-skip nếu không còn bài và không phải đang ở trang quiz chờ chấm
+    const currentUrl = window.location.href;
+    const isQuiz = currentUrl.includes('/assignment/') || currentUrl.includes('/assignment-submission/') || currentUrl.includes('/quiz/') || currentUrl.includes('/exam/');
+    if (isQuiz) {
+      console.log('CourseraHelper: Đang trong trang Quiz, không tắt auto-skip sớm.');
+      return false;
     }
 
     // Không còn bài nào tiếp theo -> Hoàn thành Module!
@@ -591,6 +676,31 @@
       const currentUrl = window.location.href;
       const now = Date.now();
 
+      // TRƯỜNG HỢP A0: Đang ở màn hình kết quả điểm Quiz (Your grade: ... / Next item) -> Bấm Next item ngay
+      if (isQuizResultScreen()) {
+        isStepInProgress = true;
+        isQuizSolveInProgress = false;
+        lastActionTimestamp = now;
+        lastEvaluatedUrl = currentUrl;
+
+        const nextBtn = findQuizNextItemButton() || findNextButton();
+        if (nextBtn) {
+          showInPageToast('🎉 [Auto-Skip] Đang ở trang kết quả điểm! Bấm "Next item" để tiếp tục...', false, 4000);
+          nextBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setTimeout(() => {
+            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+              nextBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+            });
+            try { nextBtn.click(); } catch (e) {}
+            setTimeout(() => {
+              isStepInProgress = false;
+              isQuizSolveInProgress = false;
+            }, 2000);
+          }, 400);
+          return;
+        }
+      }
+
       // TRƯỜNG HỢP A: Gặp Quiz / Graded Assignment -> Tự động giải AI rồi submit & chuyển tiếp
       const isQuizUrl = (
         currentUrl.includes('/quiz/') ||
@@ -610,7 +720,14 @@
         processQuizStep();
         return;
       } else if (isQuizUrl) {
-        // Đã xử lý trang quiz này rồi, đang chờ solver
+        // Đã ở trang quiz này rồi, kiểm tra xem đã có nút Next item hoặc đã có kết quả chưa
+        const nextBtn = findQuizNextItemButton();
+        if (nextBtn) {
+          showInPageToast('🎉 [Auto-Skip] Nút "Next item" đã sẵn sàng! Bấm để chuyển tiếp...', false, 4000);
+          triggerClick(nextBtn);
+          isStepInProgress = false;
+          isQuizSolveInProgress = false;
+        }
         return;
       }
 
@@ -1062,6 +1179,19 @@
     // Chờ trang load hoàn toàn
     await new Promise(r => setTimeout(r, 1500));
 
+    // Bước -1: Kiểm tra xem có đang ở trang kết quả điểm (Your grade: ...) hay không
+    if (isQuizResultScreen()) {
+      const nextBtn = findQuizNextItemButton() || findNextButton();
+      if (nextBtn) {
+        showInPageToast('🎉 [Auto-Skip] Đã có điểm bài Graded Assignment! Đang bấm "Next item" để tiếp tục module...', false, 4000);
+        triggerClick(nextBtn);
+        await new Promise(r => setTimeout(r, 2000));
+        isStepInProgress = false;
+        isQuizSolveInProgress = false;
+        return;
+      }
+    }
+
     // Bước 0: Kiểm tra nếu đang ở trang giới thiệu (landing page) có nút "Start assignment"
     const startAssignmentBtn = findStartAssignmentButton();
     if (startAssignmentBtn) {
@@ -1083,7 +1213,20 @@
     }
 
     if (!questions || questions.length === 0) {
-      showInPageToast('⚠️ [Auto-Skip] Không tìm thấy câu hỏi quiz! Bỏ qua và chuyển tiếp...', true, 4000);
+      // Trước khi bỏ qua, kiểm tra lại xem có phải trang kết quả không
+      if (isQuizResultScreen()) {
+        const nextBtn = findQuizNextItemButton() || findNextButton();
+        if (nextBtn) {
+          showInPageToast('🎉 [Auto-Skip] Phát hiện kết quả điểm! Bấm "Next item" để chuyển bài tiếp theo...', false, 4000);
+          triggerClick(nextBtn);
+          await new Promise(r => setTimeout(r, 2000));
+          isStepInProgress = false;
+          isQuizSolveInProgress = false;
+          return;
+        }
+      }
+
+      showInPageToast('⚠️ [Auto-Skip] Không tìm thấy câu hỏi quiz! Thử tìm nút chuyển tiếp...', true, 4000);
       await new Promise(r => setTimeout(r, 1500));
       navigateToNextLesson();
       isStepInProgress = false;
@@ -1140,16 +1283,51 @@
     // Bước 3: Tự động tick Honor Code và nộp bài
     const submitted = await completeHonorCodeAndSubmitQuiz();
     if (submitted) {
-      await new Promise(r => setTimeout(r, 3000));
-      showInPageToast('➡️ [Auto-Skip] Đã nộp xong! Đang chuyển sang bài tiếp theo...');
-      navigateToNextLesson();
+      showInPageToast('⏳ [Auto-Skip] Đã nộp bài! Đang chờ Coursera chấm điểm và hiển thị kết quả...', false, 6000);
+
+      // Polling thông minh chờ trang kết quả ("Your grade: ...") và nút "Next item" xuất hiện trong tối đa 25 giây
+      let nextClicked = false;
+      const submitStartUrl = window.location.href;
+
+      for (let w = 0; w < 50; w++) {
+        await new Promise(r => setTimeout(r, 500));
+
+        // 1. Kiểm tra nếu nút Next item trên banner kết quả đã sẵn sàng
+        const nextBtn = findQuizNextItemButton() || (isQuizResultScreen() ? findNextButton() : null);
+        if (nextBtn) {
+          showInPageToast('🎉 [Auto-Skip] Đã có kết quả điểm! Bấm "Next item" để chuyển sang bài tiếp theo...', false, 4000);
+          nextBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          await new Promise(r => setTimeout(r, 300));
+          nextBtn.style.outline = '3px solid #3b82f6';
+          nextBtn.style.boxShadow = '0 0 16px rgba(59, 130, 246, 0.85)';
+
+          ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+            nextBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+          });
+          try { nextBtn.click(); } catch (e) {}
+
+          nextClicked = true;
+          break;
+        }
+
+        // 2. Nếu Coursera đã tự động chuyển URL sang bài mới khác
+        if (window.location.href !== submitStartUrl && !window.location.href.includes('/attempt') && !window.location.href.includes('/review')) {
+          nextClicked = true;
+          break;
+        }
+      }
+
+      if (!nextClicked) {
+        showInPageToast('➡️ [Auto-Skip] Đang chuyển sang bài tiếp theo...');
+        navigateToNextLesson();
+      }
     } else {
-      showInPageToast('ℹ️ [Auto-Skip] Không thể tự nộp bài. Chuyển tiếp...', false, 3000);
+      showInPageToast('ℹ️ [Auto-Skip] Không thể tự nộp bài. Đang thử chuyển tiếp...', false, 3000);
       await new Promise(r => setTimeout(r, 1000));
       navigateToNextLesson();
     }
 
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 2000));
     isStepInProgress = false;
     isQuizSolveInProgress = false;
   }
@@ -1618,6 +1796,21 @@
           );
 
         if (isStillInAssignment) {
+          // Nếu trang chuyển sang màn hình xem lại kết quả điểm (review / feedback) hoặc đã có điểm
+          if (currentUrl.includes('/review') || currentUrl.includes('/feedback') || isQuizResultScreen()) {
+            isQuizSolveInProgress = false;
+            isStepInProgress = false;
+            lastEvaluatedUrl = currentUrl;
+            setTimeout(() => {
+              const nextBtn = findQuizNextItemButton() || findNextButton();
+              if (nextBtn) {
+                showInPageToast('🎉 [Auto-Skip] Đã có điểm! Bấm "Next item" để chuyển bài tiếp theo...', false, 4000);
+                triggerClick(nextBtn);
+              }
+            }, 1000);
+            return;
+          }
+
           // URL đã thay đổi sang trang quiz thực sự, cập nhật lastEvaluatedUrl
           // và reset isStepInProgress để processQuizStep có thể chạy tiếp
           lastEvaluatedUrl = currentUrl;
