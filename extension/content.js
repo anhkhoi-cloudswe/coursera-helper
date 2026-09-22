@@ -199,6 +199,120 @@ function setCourseraVideoSpeed(rate) {
   return false;
 }
 
+// ==========================================
+// 4. CHẾ ĐỘ AUTO-SKIP TOÀN BỘ MODULE (HANDS-FREE)
+// ==========================================
+
+async function startAutoSkipModule() {
+  // 1. Nếu đang ở trang tổng quan Module (như /home/module/1)
+  const isOverview = window.location.href.includes('/home/module/') || window.location.href.includes('/module/');
+  
+  if (isOverview) {
+    // Tìm tất cả các đường dẫn bài học/video trong Module hiện tại
+    const links = Array.from(document.querySelectorAll('a[href*="/lecture/"], a[href*="/item/"]'));
+    const urls = Array.from(new Set(links.map(a => a.href))).filter(u => u.includes('/learn/'));
+    
+    if (urls.length === 0) {
+      showInPageToast('⚠️ Không tìm thấy bài học nào trong Module này!');
+      return;
+    }
+
+    showInPageToast(`🚀 Đã tìm thấy ${urls.length} bài học! Đang bắt đầu Auto-Skip...`);
+    
+    // Lưu danh sách URL và bật chế độ Auto Skip
+    chrome.storage.local.set({
+      'auto_skip_active': true,
+      'auto_skip_queue': urls,
+      'auto_skip_index': 0
+    }, () => {
+      window.location.href = urls[0];
+    });
+  } else {
+    // Nếu đang ở sẵn trong một bài học
+    const nextLink = document.querySelector('a[href*="/lecture/"], a[href*="/item/"]');
+    chrome.storage.local.set({
+      'auto_skip_active': true,
+      'auto_skip_queue': [],
+      'auto_skip_index': 0
+    }, () => {
+      runAutoSkipStep();
+    });
+  }
+}
+
+function stopAutoSkipModule() {
+  chrome.storage.local.set({ 'auto_skip_active': false }, () => {
+    showInPageToast('🛑 Đã dừng Auto-Skip Module!');
+  });
+}
+
+function runAutoSkipStep() {
+  chrome.storage.local.get(['auto_skip_active', 'auto_skip_queue', 'auto_skip_index'], (data) => {
+    if (!data.auto_skip_active) return;
+
+    let index = data.auto_skip_index || 0;
+    const queue = data.auto_skip_queue || [];
+    const total = queue.length > 0 ? queue.length : '?';
+
+    showInPageToast(`🚀 Auto-Skip đang chạy (${index + 1}/${total})... Bấm 'Stop' để dừng.`);
+
+    setTimeout(() => {
+      // 1. Nếu trang có Video: Tua tới cuối
+      const video = document.querySelector('video');
+      if (video && video.duration) {
+        video.playbackRate = 16;
+        video.currentTime = Math.max(0, video.duration - 0.5);
+        video.play();
+      } else {
+        // Nếu là bài đọc (Reading): Cuộn xuống cuối trang
+        window.scrollTo(0, document.body.scrollHeight);
+      }
+
+      // 2. Chờ 2 giây để Coursera ghi nhận bài hoàn thành (tick xanh)
+      setTimeout(() => {
+        // Tìm nút Next
+        const nextBtn = document.querySelector(
+          'button[data-testid="next-item-button"], a[data-testid="next-item-button"], button[aria-label*="Next"], a[aria-label*="Next"]'
+        );
+
+        if (queue.length > 0 && index + 1 < queue.length) {
+          index++;
+          chrome.storage.local.set({ 'auto_skip_index': index }, () => {
+            if (nextBtn) {
+              nextBtn.click();
+            } else {
+              window.location.href = queue[index];
+            }
+          });
+        } else if (nextBtn) {
+          // Vẫn còn nút Next tiếp theo
+          nextBtn.click();
+        } else {
+          // Đã duyệt hết toàn bộ Module!
+          chrome.storage.local.set({ 'auto_skip_active': false }, () => {
+            showInPageToast('🎉 HOÀN THÀNH! Đã tự động Skip hết tất cả Video trong Module!');
+          });
+        }
+      }, 2200);
+    }, 1200);
+  });
+}
+
+// Tự động kích hoạt khi trang tải xong nếu Chế độ Auto-Skip đang BẬT
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', checkAndRunAutoSkip);
+} else {
+  checkAndRunAutoSkip();
+}
+
+function checkAndRunAutoSkip() {
+  chrome.storage.local.get(['auto_skip_active'], (data) => {
+    if (data.auto_skip_active) {
+      runAutoSkipStep();
+    }
+  });
+}
+
 // Lắng nghe lệnh điều khiển từ Side Panel
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -208,6 +322,12 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     } else if (request.action === 'set_video_speed') {
       const success = setCourseraVideoSpeed(request.speed || 16);
       sendResponse({ success });
+    } else if (request.action === 'start_auto_skip_module') {
+      startAutoSkipModule();
+      sendResponse({ success: true });
+    } else if (request.action === 'stop_auto_skip_module') {
+      stopAutoSkipModule();
+      sendResponse({ success: true });
     }
     return true;
   });

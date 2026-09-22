@@ -256,8 +256,37 @@ btnSaveKey.addEventListener('click', () => {
 });
 
 // 9. Điều khiển Video Coursera (Skip & Speedup 16x)
+const btnAutoSkipModule = document.getElementById('btnAutoSkipModule');
 const btnSkipVideo = document.getElementById('btnSkipVideo');
 const btnSpeed16 = document.getElementById('btnSpeed16');
+
+// Kiểm tra trạng thái Auto Skip khi mở Side Panel
+chrome.storage.local.get(['auto_skip_active'], (data) => {
+  if (data.auto_skip_active) {
+    btnAutoSkipModule.innerText = '🛑 Dừng Auto Skip';
+  }
+});
+
+btnAutoSkipModule.addEventListener('click', async () => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) return;
+
+    chrome.storage.local.get(['auto_skip_active'], (data) => {
+      if (data.auto_skip_active) {
+        chrome.tabs.sendMessage(tab.id, { action: 'stop_auto_skip_module' });
+        btnAutoSkipModule.innerText = '🚀 Auto Skip Hết Module';
+        showToast('🛑 Đã dừng Auto-Skip Module');
+      } else {
+        chrome.tabs.sendMessage(tab.id, { action: 'start_auto_skip_module' });
+        btnAutoSkipModule.innerText = '🛑 Dừng Auto Skip';
+        showToast('🚀 Bắt đầu Auto-Skip toàn bộ bài học trong Module...');
+      }
+    });
+  } catch (e) {
+    showToast('⚠️ Vui lòng mở trang Coursera để sử dụng');
+  }
+});
 
 btnSkipVideo.addEventListener('click', async () => {
   try {
