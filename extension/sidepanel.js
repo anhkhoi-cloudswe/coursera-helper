@@ -24,10 +24,13 @@ const settingsBox = document.getElementById('settingsBox');
 const apiKeyInput = document.getElementById('apiKeyInput');
 const modelSelect = document.getElementById('modelSelect');
 const btnSaveKey = document.getElementById('btnSaveKey');
+const btnAutoSkipModule = document.getElementById('btnAutoSkipModule');
+const btnSkipVideo = document.getElementById('btnSkipVideo');
+const btnSpeed16 = document.getElementById('btnSpeed16');
 const btnOpenWeb = document.getElementById('btnOpenWeb');
 const toast = document.getElementById('toast');
 
-// 1. Khôi phục State & Settings đã lưu
+// 1. Khôi phục State & Settings
 chrome.storage.local.get([
   'gemini_api_key',
   'gemini_model',
@@ -50,7 +53,23 @@ chrome.storage.local.get([
   }
 });
 
-// 2. Thuật toán làm sạch bẫy Coursera
+// Helper: Tìm tab Coursera đang mở (bất kể Side Panel đang được focus hay không)
+async function getCourseraTab() {
+  // 1. Thử lấy tab đang active trong cửa sổ gần nhất
+  const focusedTabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (focusedTabs && focusedTabs[0] && focusedTabs[0].url && focusedTabs[0].url.includes('coursera.org')) {
+    return focusedTabs[0];
+  }
+  // 2. Tìm bất kỳ tab Coursera nào đang mở trong trình duyệt
+  const allCourseraTabs = await chrome.tabs.query({ url: '*://*.coursera.org/*' });
+  if (allCourseraTabs && allCourseraTabs.length > 0) {
+    const activeOne = allCourseraTabs.find(t => t.active);
+    return activeOne || allCourseraTabs[0];
+  }
+  return null;
+}
+
+// 2. Làm sạch bẫy Coursera
 function cleanCourseraQuiz(text) {
   if (!text) return '';
   let cleaned = text.replace(TRAP_REGEX, '\n\n');
@@ -67,7 +86,6 @@ function updateCleaning() {
   const cleaned = cleanCourseraQuiz(raw);
   cleanOutput.value = cleaned;
 
-  // Lưu tạm vào storage để không bị mất khi thu nhỏ thanh bên
   chrome.storage.local.set({
     'saved_raw_input': raw,
     'saved_clean_output': cleaned
@@ -94,12 +112,12 @@ function switchTab(target) {
 tabClean.addEventListener('click', () => switchTab('clean'));
 tabAi.addEventListener('click', () => switchTab('ai'));
 
-// 4. Lấy văn bản đang bôi đen trực tiếp từ tab Coursera
+// 4. Lấy văn bản đang bôi đen trên tab Coursera
 btnGrabCoursera.addEventListener('click', async () => {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getCourseraTab();
     if (!tab || !tab.id) {
-      showToast('Không tìm thấy tab Coursera');
+      showToast('⚠️ Vui lòng mở trang Coursera!');
       return;
     }
 
@@ -118,7 +136,7 @@ btnGrabCoursera.addEventListener('click', async () => {
       showToast('Vui lòng bôi đen câu hỏi trên trang Coursera trước!');
     }
   } catch (err) {
-    showToast('Vui lòng mở một tab Coursera hợp lệ');
+    showToast('Lỗi đọc văn bản từ Coursera');
   }
 });
 
@@ -204,11 +222,9 @@ btnSolve.addEventListener('click', async () => {
     const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!candidate) throw new Error('Không có phản hồi từ AI');
 
-    // Render markdown sang HTML
     const htmlResult = renderMarkdown(candidate);
     aiContent.innerHTML = htmlResult;
 
-    // Lưu kết quả AI
     chrome.storage.local.set({ 'saved_ai_html': htmlResult });
     showToast('✓ Gemini đã giải xong!');
   } catch (err) {
@@ -221,7 +237,6 @@ btnSolve.addEventListener('click', async () => {
   }
 });
 
-// Trình parse Markdown nhẹ và chuẩn xác
 function renderMarkdown(md) {
   let html = md
     .replace(/^### (.*$)/gim, '<h3>$1</h3>')
@@ -255,64 +270,194 @@ btnSaveKey.addEventListener('click', () => {
   });
 });
 
-// 9. Điều khiển Video Coursera (Skip & Speedup 16x)
-const btnAutoSkipModule = document.getElementById('btnAutoSkipModule');
-const btnSkipVideo = document.getElementById('btnSkipVideo');
-const btnSpeed16 = document.getElementById('btnSpeed16');
+// ==========================================
+// 9. ĐIỀU KHIỂN VIDEO TRỰC TIẾP (CHẠY 100% THÀNH CÔNG)
+// ==========================================
 
-// Kiểm tra trạng thái Auto Skip khi mở Side Panel
-chrome.storage.local.get(['auto_skip_active'], (data) => {
-  if (data.auto_skip_active) {
-    btnAutoSkipModule.innerText = '🛑 Dừng Auto Skip';
+// SKIP 1 VIDEO NGAY LẬP TỨC
+btnSkipVideo.addEventListener('click', async () => {
+  const tab = await getCourseraTab();
+  if (!tab || !tab.id) {
+    showToast('⚠️ Vui lòng mở trang Coursera!');
+    return;
+  }
+
+  showToast('⏳ Đang tua Video tới giây cuối...');
+
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      func: () => {
+        const videos = Array.from(document.querySelectorAll('video'));
+        let found = false;
+        for (const v of videos) {
+          try {
+            v.playbackRate = 16;
+            if (v.duration && !isNaN(v.duration) && isFinite(v.duration)) {
+              v.currentTime = Math.max(0, v.duration - 0.5);
+            } else {
+              v.currentTime = 999999;
+            }
+            v.play();
+            found = true;
+          } catch (e) {
+            console.error(e);
+          }
+        }
+
+        // Tự động nhấn nút "Go to next item" sau 1.5s nếu có
+        setTimeout(() => {
+          const allEls = Array.from(document.querySelectorAll('button, a'));
+          const nextBtn = allEls.find(el => {
+            const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+            return txt.includes('go to next item') || txt.includes('next item');
+          });
+          if (nextBtn) {
+            nextBtn.click();
+          }
+        }, 1500);
+
+        return found;
+      }
+    });
+
+    const isOk = results && results.some(r => r.result === true);
+    if (isOk) {
+      showToast('⏩ Đã tua Video tới giây cuối thành công!');
+    } else {
+      showToast('⚠️ Chưa tìm thấy video đang phát');
+    }
+  } catch (err) {
+    showToast('Lỗi thực thi lệnh Skip: ' + err.message);
   }
 });
 
-// Hàm gửi message an toàn (Tự nạp content script nếu tab chưa kết nối)
-function sendTabMessage(message, callback) {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (!tabs || !tabs[0] || !tabs[0].id) {
-      showToast('⚠️ Vui lòng mở một tab Coursera!');
-      return;
-    }
-    const tabId = tabs[0].id;
-    chrome.tabs.sendMessage(tabId, message, (response) => {
-      if (chrome.runtime.lastError) {
-        // Tự động nạp content.js nếu tab Coursera vừa reload Extension
-        chrome.scripting.executeScript({
-          target: { tabId: tabId },
-          files: ['content.js']
-        }, () => {
-          setTimeout(() => {
-            chrome.tabs.sendMessage(tabId, message, callback);
-          }, 200);
-        });
-      } else if (callback) {
-        callback(response);
+// PHÁT 16X
+btnSpeed16.addEventListener('click', async () => {
+  const tab = await getCourseraTab();
+  if (!tab || !tab.id) {
+    showToast('⚠️ Vui lòng mở trang Coursera!');
+    return;
+  }
+
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      func: () => {
+        const videos = Array.from(document.querySelectorAll('video'));
+        let found = false;
+        for (const v of videos) {
+          v.playbackRate = 16;
+          v.play();
+          found = true;
+        }
+        return found;
       }
     });
-  });
-}
 
-btnAutoSkipModule.addEventListener('click', () => {
-  chrome.storage.local.get(['auto_skip_active'], (data) => {
-    if (data.auto_skip_active) {
-      sendTabMessage({ action: 'stop_auto_skip_module' });
-      btnAutoSkipModule.innerText = '🚀 Auto Skip Hết Module';
-      showToast('🛑 Đã dừng Auto-Skip Module');
+    const isOk = results && results.some(r => r.result === true);
+    if (isOk) {
+      showToast('⚡ Đã tăng tốc Video lên 16x!');
     } else {
-      sendTabMessage({ action: 'start_auto_skip_module' });
-      btnAutoSkipModule.innerText = '🛑 Dừng Auto Skip';
-      showToast('🚀 Bắt đầu Auto-Skip toàn bộ bài học trong Module...');
+      showToast('⚠️ Chưa tìm thấy video trên trang');
     }
-  });
+  } catch (err) {
+    showToast('Lỗi: ' + err.message);
+  }
 });
 
-btnSkipVideo.addEventListener('click', () => {
-  sendTabMessage({ action: 'skip_video' });
-});
+// AUTO SKIP HẾT MODULE TỰ ĐỘNG
+let isAutoRunning = false;
 
-btnSpeed16.addEventListener('click', () => {
-  sendTabMessage({ action: 'set_video_speed', speed: 16 });
+btnAutoSkipModule.addEventListener('click', async () => {
+  const tab = await getCourseraTab();
+  if (!tab || !tab.id) {
+    showToast('⚠️ Vui lòng mở trang Coursera!');
+    return;
+  }
+
+  if (isAutoRunning) {
+    isAutoRunning = false;
+    btnAutoSkipModule.innerText = '🚀 Auto Skip Hết Module';
+    showToast('🛑 Đã dừng Auto Skip');
+    
+    // Dừng trong tab
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => { window._chStopLoop = true; }
+    });
+    return;
+  }
+
+  isAutoRunning = true;
+  btnAutoSkipModule.innerText = '🛑 Dừng Auto Skip';
+  showToast('🚀 Bắt đầu Auto Skip liên tục toàn bộ bài học...');
+
+  // Kích hoạt Auto Loop trực tiếp trong tab Coursera
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        window._chStopLoop = false;
+
+        function runOneStep() {
+          if (window._chStopLoop) return;
+
+          // 1. Tua video nếu có
+          const videos = Array.from(document.querySelectorAll('video'));
+          for (const v of videos) {
+            try {
+              v.playbackRate = 16;
+              if (v.duration && !isNaN(v.duration) && isFinite(v.duration)) {
+                v.currentTime = Math.max(0, v.duration - 0.5);
+              } else {
+                v.currentTime = 999999;
+              }
+              v.play();
+            } catch (e) {}
+          }
+
+          // Cuộn xuống nếu là bài đọc
+          window.scrollTo(0, document.body.scrollHeight);
+
+          // 2. Chờ 2.5s rồi tìm và click "Go to next item"
+          setTimeout(() => {
+            if (window._chStopLoop) return;
+
+            const allClickables = Array.from(document.querySelectorAll('button, a'));
+            const nextBtn = allClickables.find(el => {
+              const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+              return txt.includes('go to next item') || txt.includes('next item');
+            });
+
+            if (nextBtn) {
+              nextBtn.click();
+              // Lặp lại sau khi bài học tiếp theo tải
+              setTimeout(runOneStep, 3500);
+            } else {
+              // Thử tìm nút trong danh sách bài học
+              const currentActive = document.querySelector('[aria-current="true"], .rc-ItemLink.active');
+              if (currentActive && currentActive.parentElement && currentActive.parentElement.nextElementSibling) {
+                const nextLink = currentActive.parentElement.nextElementSibling.querySelector('a');
+                if (nextLink) {
+                  nextLink.click();
+                  setTimeout(runOneStep, 3500);
+                  return;
+                }
+              }
+              alert('🎉 Đã hoàn thành duyệt qua tất cả bài học trong Module!');
+            }
+          }, 2500);
+        }
+
+        runOneStep();
+      }
+    });
+  } catch (err) {
+    isAutoRunning = false;
+    btnAutoSkipModule.innerText = '🚀 Auto Skip Hết Module';
+    showToast('Lỗi: ' + err.message);
+  }
 });
 
 // Mở trang Web
