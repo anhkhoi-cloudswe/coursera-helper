@@ -38,6 +38,28 @@
       --radius-full: 9999px;
     }
 
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* Custom Sleek Dark Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.14);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
     html, body {
       height: 100vh;
       max-height: 100vh;
@@ -397,7 +419,7 @@
     }
 
     textarea::placeholder {
-      color: #3b4252;
+      color: #64748b;
     }
 
     /* Output Viewports */
@@ -726,7 +748,7 @@
               📋 Copy Prompt
             </button>
             <button class="btn btn-ai" id="btnSolveWithGemini" title="Tự động gọi Gemini AI để giải đề (Ctrl+Enter)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
               Gemini giải <span class="kbd" style="background: rgba(255,255,255,0.2); color: white;">Ctrl+↵</span>
             </button>
           </div>
