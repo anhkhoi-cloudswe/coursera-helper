@@ -1068,53 +1068,42 @@ Network intrusion detection alerts
       `;
 
       try {
-        const systemPrompt = "Bạn là chuyên gia an ninh mạng (Cybersecurity) xuất sắc. Hãy giải các câu hỏi trắc nghiệm sau. Với mỗi câu hỏi: chỉ rõ ĐÁP ÁN ĐÚNG (in đậm) và GIẢI THÍCH NGẮN GỌN (1-2 câu). Trình bày mạch lạc, dễ nhìn.";
+        const systemPrompt = `Bạn là trợ lý giải trắc nghiệm Coursera chuyên sâu. Hãy giải các câu hỏi sau với quy tắc:
+1. KHÔNG mở đầu hay kết bài bằng lời chào xã giao (không có "Chào bạn", "Dưới đây là...", v.v.). Bắt đầu ngay lập tức.
+2. PHẦN 1: BẢNG TÓM TẮT ĐÁP ÁN NHANH (QUICK KEY):
+   Liệt kê nhanh từng câu để người dùng tick bài thi trong 30 giây:
+   - Câu 1: [Đáp án A] | [Đáp án B (nếu chọn 2)]
+   - Câu 2: [Đáp án]
+   ...
+3. PHẦN 2: CHI TIẾT TỪNG CÂU & GIẢI THÍCH:
+   Mỗi câu trình bày theo format:
+   ### Câu [X] (Ghi rõ "(Chọn 2)" nếu câu hỏi yêu cầu Select two)
+   ĐÁP ÁN ĐÚNG:
+   * **[Nguyên văn nội dung đáp án đúng]**
+   GIẢI THÍCH: [1-2 câu giải thích ngắn gọn, súc tích bản chất chuyên môn]
+   ---
+`;
         const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${cleanedOutput.value}`;
 
         const modelsToTry = [
+          savedModel || 'gemini-3.6-flash',
           'gemini-3.6-flash',
           'gemini-3.6-pro',
-          'gemini-3.5-flash'
+          'gemini-3.5-flash',
+          'gemini-2.5-flash'
         ];
+        const uniqueModels = Array.from(new Set(modelsToTry)).filter(Boolean);
 
+        const startTime = performance.now();
         let solved = false;
         let lastError = null;
 
-        for (const model of modelsToTry) {
-          // 1. Thử qua Google Interactions API (chuẩn khuyến nghị 2026)
-          try {
-            const resInteractions = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': savedApiKey
-              },
-              body: JSON.stringify({
-                model: model,
-                input: fullPrompt,
-                store: false
-              })
-            });
-
-            const data = await resInteractions.json();
-            if (!data.error) {
-              const text = data.outputs?.[0]?.text || data.output_text || data.output;
-              if (text) {
-                aiRenderArea.innerHTML = typeof marked !== 'undefined' ? marked.parse(text) : `<pre>${text}</pre>`;
-                showToast(`Gemini (${model}) đã giải xong!`);
-                solved = true;
-                break;
-              }
-            } else {
-              lastError = new Error(data.error.message || 'Lỗi Interactions API');
-            }
-          } catch (e) {
-            lastError = e;
-          }
-
-          // 2. Thử qua generateContent endpoint
+        for (const model of uniqueModels) {
           for (const ver of ['v1beta', 'v1']) {
             try {
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 16000);
+
               const url = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${savedApiKey}`;
               const resGen = await fetch(url, {
                 method: 'POST',
@@ -1124,19 +1113,35 @@ Network intrusion detection alerts
                 },
                 body: JSON.stringify({
                   contents: [{ parts: [{ text: fullPrompt }] }]
-                })
+                }),
+                signal: controller.signal
               });
+              clearTimeout(timeoutId);
 
               const dataGen = await resGen.json();
               if (dataGen.error) {
-                lastError = new Error(dataGen.error.message || 'Lỗi từ Gemini API');
+                lastError = new Error(dataGen.error.message || `Lỗi từ ${model}`);
                 continue;
               }
 
               const candidate = dataGen.candidates?.[0]?.content?.parts?.[0]?.text;
               if (candidate) {
-                aiRenderArea.innerHTML = typeof marked !== 'undefined' ? marked.parse(candidate) : `<pre>${candidate}</pre>`;
-                showToast(`Gemini (${model}) đã giải xong!`);
+                const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+                const headerHtml = `
+                  <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(99,102,241,0.12); border:1px solid rgba(99,102,241,0.25); border-radius:8px; padding:8px 12px; margin-bottom:14px;">
+                    <span style="font-size:12px; font-weight:600; color:#a5b4fc;">⚡ Hoàn thành trong ${elapsed}s (${model})</span>
+                    <button id="btnQuickCopyWeb" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#fff; border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer; font-weight:600;">📋 Copy tất cả</button>
+                  </div>
+                `;
+                const parsedBody = typeof marked !== 'undefined' ? marked.parse(candidate) : `<pre>${candidate}</pre>`;
+                aiRenderArea.innerHTML = headerHtml + parsedBody;
+                
+                document.getElementById('btnQuickCopyWeb')?.addEventListener('click', async () => {
+                  await navigator.clipboard.writeText(candidate);
+                  showToast('✓ Đã copy toàn bộ đáp án!');
+                });
+
+                showToast(`Gemini (${model}) đã giải xong trong ${elapsed}s!`);
                 solved = true;
                 break;
               }

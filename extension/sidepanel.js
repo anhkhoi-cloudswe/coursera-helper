@@ -264,7 +264,7 @@ async function getAvailableGeminiModels(apiKey) {
 
 function selectOptimalModel(supportedModels, userPreferred) {
   if (!supportedModels || supportedModels.length === 0) {
-    return { name: 'gemini-1.5-flash', version: 'v1beta' };
+    return { name: 'gemini-3.6-flash', version: 'v1beta' };
   }
 
   // 1. Nếu user từng chọn một model và model đó có trong danh sách
@@ -273,17 +273,13 @@ function selectOptimalModel(supportedModels, userPreferred) {
     if (found) return found;
   }
 
-  // 2. Tìm model flash phổ biến
+  // 2. Ưu tiên model mới nhất và nhanh nhất
   const priorities = [
+    'gemini-3.6-flash',
+    'gemini-3.6-pro',
+    'gemini-3.5-flash',
     'gemini-2.5-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-latest',
-    'gemini-1.5-flash-002',
-    'gemini-1.5-flash-001',
-    'gemini-1.5-flash-8b',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-pro',
-    'gemini-1.5-pro-latest'
+    'gemini-1.5-flash'
   ];
 
   for (const p of priorities) {
@@ -315,6 +311,20 @@ function populateModelSelect(supportedModels, activeModelName) {
   });
 }
 
+// Bắt sự kiện click vào nút Copy Tất Cả trong khung kết quả AI
+if (aiContent) {
+  aiContent.addEventListener('click', async (e) => {
+    const target = e.target.closest('#btnQuickCopyAi');
+    if (target) {
+      chrome.storage.local.get(['saved_ai_raw'], async (res) => {
+        const textToCopy = res.saved_ai_raw || aiContent.innerText;
+        await navigator.clipboard.writeText(textToCopy);
+        showToast('✓ Đã copy toàn bộ đáp án!');
+      });
+    }
+  });
+}
+
 safeListen('btnSolve', 'click', async () => {
   const textToSolve = (cleanOutput?.value || cleanCourseraQuiz(rawInput?.value || '')).trim();
 
@@ -337,12 +347,27 @@ safeListen('btnSolve', 'click', async () => {
     aiContent.innerHTML = `
       <div class="ai-empty-state">
         <div class="spinner"></div>
-        <p style="color: #a5b4fc; font-weight: 600;">Gemini 3.6 Flash đang giải đề...</p>
+        <p style="color: #a5b4fc; font-weight: 600;">Gemini đang giải đề siêu tốc...</p>
+        <p style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Đang phân tích và xuất đáp án chuẩn xác nhất</p>
       </div>
     `;
   }
 
-  const systemPrompt = "Bạn là chuyên gia an toàn thông tin & bảo mật xuất sắc. Hãy giải các câu hỏi trắc nghiệm sau. Với mỗi câu hỏi: chỉ rõ ĐÁP ÁN ĐÚNG (in đậm) và GIẢI THÍCH NGẮN GỌN (1-2 câu). Trình bày mạch lạc, dễ đọc.";
+  const systemPrompt = `Bạn là trợ lý giải trắc nghiệm Coursera chuyên sâu. Hãy giải các câu hỏi sau với quy tắc:
+1. KHÔNG mở đầu hay kết bài bằng lời chào xã giao (không có "Chào bạn", "Dưới đây là...", v.v.). Bắt đầu ngay lập tức.
+2. PHẦN 1: BẢNG TÓM TẮT ĐÁP ÁN NHANH (QUICK KEY):
+   Liệt kê nhanh từng câu để người dùng tick bài thi trong 30 giây:
+   - Câu 1: [Đáp án A] | [Đáp án B (nếu chọn 2)]
+   - Câu 2: [Đáp án]
+   ...
+3. PHẦN 2: CHI TIẾT TỪNG CÂU & GIẢI THÍCH:
+   Mỗi câu trình bày theo format:
+   ### Câu [X] (Ghi rõ "(Chọn 2)" nếu câu hỏi yêu cầu Select two)
+   ĐÁP ÁN ĐÚNG:
+   * **[Nguyên văn nội dung đáp án đúng]**
+   GIẢI THÍCH: [1-2 câu giải thích ngắn gọn, súc tích bản chất chuyên môn]
+   ---
+`;
   const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
 
   const chosenModel = modelSelect?.value || 'gemini-3.6-flash';
@@ -350,50 +375,22 @@ safeListen('btnSolve', 'click', async () => {
     chosenModel,
     'gemini-3.6-flash',
     'gemini-3.6-pro',
-    'gemini-3.5-flash'
-  ]));
+    'gemini-3.5-flash',
+    'gemini-2.5-flash'
+  ])).filter(Boolean);
 
+  const startTime = performance.now();
   let solved = false;
   let lastError = null;
+  let solvedText = '';
+  let successfulModel = '';
 
   for (const model of modelsToTry) {
-    // 1. Thử gọi qua Google Interactions API (chuẩn khuyến nghị 2026 của Google)
-    try {
-      const resInteractions = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey
-        },
-        body: JSON.stringify({
-          model: model,
-          input: fullPrompt,
-          store: false
-        })
-      });
-
-      const data = await resInteractions.json();
-      if (!data.error) {
-        const text = data.outputs?.[0]?.text || data.output_text || data.output;
-        if (text) {
-          const htmlResult = renderMarkdown(text);
-          if (aiContent) aiContent.innerHTML = htmlResult;
-          if (modelSelect) modelSelect.value = model;
-          chrome.storage.local.set({ 'saved_ai_html': htmlResult, 'gemini_model': model });
-          showToast(`✓ Gemini (${model}) đã giải xong!`);
-          solved = true;
-          break;
-        }
-      } else {
-        lastError = new Error(data.error.message || 'Lỗi Interactions API');
-      }
-    } catch (e) {
-      lastError = e;
-    }
-
-    // 2. Thử gọi qua generateContent endpoint
     for (const ver of ['v1beta', 'v1']) {
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 16000); // Tối đa 16s mỗi request
+
         const url = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`;
         const resGen = await fetch(url, {
           method: 'POST',
@@ -403,22 +400,21 @@ safeListen('btnSolve', 'click', async () => {
           },
           body: JSON.stringify({
             contents: [{ parts: [{ text: fullPrompt }] }]
-          })
+          }),
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
 
         const dataGen = await resGen.json();
         if (dataGen.error) {
-          lastError = new Error(dataGen.error.message || 'Lỗi API');
+          lastError = new Error(dataGen.error.message || `Lỗi API (${model})`);
           continue;
         }
 
         const candidate = dataGen.candidates?.[0]?.content?.parts?.[0]?.text;
         if (candidate) {
-          const htmlResult = renderMarkdown(candidate);
-          if (aiContent) aiContent.innerHTML = htmlResult;
-          if (modelSelect) modelSelect.value = model;
-          chrome.storage.local.set({ 'saved_ai_html': htmlResult, 'gemini_model': model });
-          showToast(`✓ Gemini (${model}) đã giải xong!`);
+          solvedText = candidate;
+          successfulModel = model;
           solved = true;
           break;
         }
@@ -426,11 +422,32 @@ safeListen('btnSolve', 'click', async () => {
         lastError = e;
       }
     }
-
     if (solved) break;
   }
 
-  if (!solved && lastError) {
+  if (solved && solvedText) {
+    const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+    const htmlHeader = `
+      <div class="ai-result-header">
+        <span class="ai-time-badge">⚡ Đã giải trong ${elapsed}s (${successfulModel})</span>
+        <button class="btn-copy-quick" id="btnQuickCopyAi">📋 Copy tất cả</button>
+      </div>
+    `;
+    const htmlBody = renderMarkdown(solvedText);
+    const fullHtml = htmlHeader + htmlBody;
+
+    if (aiContent) {
+      aiContent.innerHTML = fullHtml;
+    }
+
+    if (modelSelect) modelSelect.value = successfulModel;
+    chrome.storage.local.set({
+      'saved_ai_html': fullHtml,
+      'saved_ai_raw': solvedText,
+      'gemini_model': successfulModel
+    });
+    showToast(`✓ Gemini (${successfulModel}) giải xong trong ${elapsed}s!`);
+  } else if (lastError) {
     if (aiContent) {
       aiContent.innerHTML = `
         <div style="padding: 12px; background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); border-radius: 8px; color: #fecdd3;">
@@ -444,17 +461,19 @@ safeListen('btnSolve', 'click', async () => {
 
 function renderMarkdown(md) {
   let html = md
-    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+    .replace(/^### (.*$)/gim, '<h3 class="ai-q-title">$1</h3>')
+    .replace(/^## (.*$)/gim, '<h2 class="ai-sec-title">$1</h2>')
+    .replace(/^# (.*$)/gim, '<h1 class="ai-main-title">$1</h1>')
+    .replace(/^(?:---|___|\*\*\*)$/gim, '<hr class="ai-divider">')
     .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>')
+    .replace(/(?:ĐÁP ÁN ĐÚNG|CORRECT ANSWER):?/gi, '<span class="ai-badge-correct">✅ ĐÁP ÁN ĐÚNG:</span>')
+    .replace(/(?:GIẢI THÍCH|EXPLANATION):?/gi, '<span class="ai-badge-explain">💡 GIẢI THÍCH:</span>')
     .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-    .replace(/^\- (.*$)/gim, '<li>$1</li>')
-    .replace(/^\* (.*$)/gim, '<li>$1</li>')
+    .replace(/^\s*[\-\*]\s+(.*$)/gim, '<li class="ai-li">$1</li>')
     .replace(/\n\n/gim, '</p><p>')
     .replace(/\n/gim, '<br>');
-  return `<p>${html}</p>`;
+  return `<div class="ai-rendered-body"><p>${html}</p></div>`;
 }
 
 // Cài đặt API Key
