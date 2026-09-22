@@ -2577,16 +2577,18 @@
       }
     } catch (e) {}
 
-    // Cách 2: Fetch Blob trực tiếp với timeout 1500ms (tránh treo trình duyệt)
+    // Cách 2: Fetch Blob trực tiếp với timeout an toàn 800ms
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1500);
+      const timeoutId = setTimeout(() => controller.abort(), 800);
       const res = await fetch(src, { signal: controller.signal });
       clearTimeout(timeoutId);
       const blob = await res.blob();
       return new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(null), 500);
         const reader = new FileReader();
         reader.onloadend = () => {
+          clearTimeout(timer);
           const result = reader.result;
           if (typeof result === 'string' && result.includes(',')) {
             const parts = result.split(',');
@@ -2596,7 +2598,10 @@
             resolve(null);
           }
         };
-        reader.onerror = () => resolve(null);
+        reader.onerror = () => {
+          clearTimeout(timer);
+          resolve(null);
+        };
         reader.readAsDataURL(blob);
       });
     } catch (e) {
@@ -2705,15 +2710,12 @@
         .replace(/\n{3,}/g, '\n\n')
         .trim();
 
-      // 3. Trích xuất hình ảnh trong câu hỏi (Sơ đồ, bảng biểu, ảnh code)
-      const promptImgs = Array.from(container.querySelectorAll('img:not([alt*="avatar"]):not([src*="icon"])'));
-      const images = [];
-      for (const img of promptImgs) {
-        if (img.closest('label, li.rc-Option, [role="radio"], [role="checkbox"]')) continue;
-        if (img.naturalWidth > 0 && (img.naturalWidth < 25 || img.naturalHeight < 25)) continue;
-        const b64 = await extractImageBase64(img);
-        if (b64) images.push(b64);
-      }
+      // 3. Trích xuất hình ảnh trong câu hỏi (Sơ đồ, bảng biểu, ảnh code - chạy song song không làm nghẽn)
+      const promptImgs = Array.from(container.querySelectorAll('img:not([alt*="avatar"]):not([src*="icon"])')).filter(img =>
+        !img.closest('label, li.rc-Option, [role="radio"], [role="checkbox"]') &&
+        !(img.naturalWidth > 0 && (img.naturalWidth < 25 || img.naturalHeight < 25))
+      );
+      const images = (await Promise.all(promptImgs.map(img => extractImageBase64(img).catch(() => null)))).filter(Boolean);
 
       // 4. Trích xuất các phương án lựa chọn
       const optEls = Array.from(container.querySelectorAll(
