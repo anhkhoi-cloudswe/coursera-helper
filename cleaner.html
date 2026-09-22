@@ -38,10 +38,10 @@
       --radius-full: 9999px;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
+    html, body {
+      height: 100vh;
+      max-height: 100vh;
+      overflow: hidden; /* Cố định 1 màn hình, không xuất hiện thanh cuộn trang */
     }
 
     body {
@@ -52,21 +52,21 @@
         radial-gradient(circle at 100% 100%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
       background-attachment: fixed;
       color: var(--text);
-      min-height: 100vh;
       display: flex;
       flex-direction: column;
-      padding: 20px 24px;
+      padding: 12px 18px;
       letter-spacing: -0.01em;
     }
 
     .app-wrapper {
-      max-width: 1440px;
+      max-width: 1600px;
       width: 100%;
+      height: 100%;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 18px;
-      flex: 1;
+      gap: 10px;
+      min-height: 0; /* Giúp flexbox co giãn vừa khít màn hình */
     }
 
     /* Top Navigation Bar */
@@ -74,53 +74,53 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 14px 22px;
+      padding: 8px 16px;
       background: var(--card-bg);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-      flex-wrap: wrap;
-      gap: 16px;
+      border-radius: var(--radius-md);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      flex-shrink: 0;
+      gap: 12px;
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 10px;
     }
 
     .brand-icon {
-      width: 42px;
-      height: 42px;
-      border-radius: 12px;
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
       background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 0 20px var(--primary-glow);
+      box-shadow: 0 0 16px var(--primary-glow);
     }
 
     .brand-icon svg {
-      width: 22px;
-      height: 22px;
+      width: 18px;
+      height: 18px;
       color: white;
     }
 
     .brand-info h1 {
-      font-size: 1.125rem;
+      font-size: 0.98rem;
       font-weight: 700;
       color: var(--text);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
 
     .version-tag {
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       font-weight: 600;
-      padding: 2px 7px;
+      padding: 1px 6px;
       background: var(--primary-light);
       border: 1px solid rgba(99, 102, 241, 0.3);
       color: #a5b4fc;
@@ -129,29 +129,28 @@
     }
 
     .brand-info p {
-      font-size: 0.815rem;
+      font-size: 0.74rem;
       color: var(--text-muted);
-      margin-top: 2px;
+      margin-top: 1px;
     }
 
     .nav-actions {
       display: flex;
       align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
+      gap: 8px;
     }
 
     /* Buttons */
     .btn {
       font-family: inherit;
-      font-size: 0.84rem;
+      font-size: 0.8rem;
       font-weight: 600;
-      padding: 8px 14px;
+      padding: 6px 12px;
       border-radius: var(--radius-sm);
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
       border: 1px solid transparent;
       outline: none;
@@ -223,7 +222,7 @@
 
     .kbd {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.7rem;
+      font-size: 0.68rem;
       padding: 2px 5px;
       border-radius: 4px;
       background: rgba(0, 0, 0, 0.3);
@@ -235,8 +234,8 @@
     .metrics-bar {
       display: flex;
       align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
+      gap: 10px;
+      flex-shrink: 0;
     }
 
     .metric-chip {
@@ -244,11 +243,11 @@
       backdrop-filter: blur(12px);
       border: 1px solid var(--border);
       border-radius: var(--radius-full);
-      padding: 6px 14px;
-      font-size: 0.8rem;
+      padding: 4px 12px;
+      font-size: 0.75rem;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
 
     .metric-chip span {
@@ -262,8 +261,8 @@
     }
 
     .metric-dot {
-      width: 7px;
-      height: 7px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
       background: var(--emerald);
       box-shadow: 0 0 8px var(--emerald);
@@ -273,14 +272,23 @@
     .workspace-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 18px;
+      gap: 12px;
       flex: 1;
-      min-height: 540px;
+      min-height: 0;
+      height: 100%;
     }
 
     @media (max-width: 992px) {
+      html, body {
+        overflow: auto; /* Trên màn hình quá nhỏ thì cho cuộn để tránh đè chữ */
+        height: auto;
+      }
       .workspace-grid {
         grid-template-columns: 1fr;
+        height: auto;
+      }
+      .editor-body {
+        min-height: 300px;
       }
     }
 
@@ -290,12 +298,14 @@
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
+      border-radius: var(--radius-md);
       display: flex;
       flex-direction: column;
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.04);
       overflow: hidden;
       transition: border-color 0.2s ease;
+      height: 100%;
+      min-height: 0;
     }
 
     .editor-card:focus-within {
@@ -303,22 +313,22 @@
     }
 
     .card-header {
-      padding: 12px 18px;
+      padding: 8px 14px;
       border-bottom: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.015);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      flex-wrap: wrap;
-      gap: 10px;
+      flex-shrink: 0;
+      gap: 8px;
     }
 
     .card-title {
-      font-size: 0.88rem;
+      font-size: 0.85rem;
       font-weight: 600;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 7px;
       color: var(--text);
     }
 
@@ -329,24 +339,24 @@
     .tab-pills {
       display: flex;
       background: rgba(0, 0, 0, 0.25);
-      padding: 3px;
+      padding: 2px;
       border-radius: var(--radius-sm);
       border: 1px solid var(--border);
     }
 
     .tab-btn {
       font-family: inherit;
-      font-size: 0.78rem;
+      font-size: 0.76rem;
       font-weight: 600;
-      padding: 5px 12px;
-      border-radius: 6px;
+      padding: 4px 10px;
+      border-radius: 5px;
       border: none;
       background: transparent;
       color: var(--text-muted);
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       transition: all 0.15s ease;
     }
 
@@ -366,22 +376,24 @@
       display: flex;
       flex-direction: column;
       position: relative;
-      min-height: 380px;
+      min-height: 0;
+      overflow: hidden;
     }
 
     textarea {
       width: 100%;
-      flex: 1;
-      padding: 18px 20px;
+      height: 100%;
+      padding: 14px 16px;
       background: transparent;
       border: none;
       color: var(--text);
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.84rem;
-      line-height: 1.65;
+      font-size: 0.82rem;
+      line-height: 1.6;
       resize: none;
       outline: none;
       white-space: pre-wrap;
+      overflow-y: auto;
     }
 
     textarea::placeholder {
@@ -406,9 +418,9 @@
 
     /* AI Answer Staged Render */
     .ai-render-area {
-      padding: 22px 24px;
-      line-height: 1.75;
-      font-size: 0.9rem;
+      padding: 16px 18px;
+      line-height: 1.7;
+      font-size: 0.88rem;
       color: #e2e8f0;
       overflow-y: auto;
       flex: 1;
@@ -416,13 +428,13 @@
 
     .ai-render-area h1, .ai-render-area h2, .ai-render-area h3 {
       color: #818cf8;
-      margin-top: 18px;
-      margin-bottom: 8px;
+      margin-top: 14px;
+      margin-bottom: 6px;
       font-weight: 700;
     }
 
     .ai-render-area p {
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
 
     .ai-render-area strong {
@@ -432,31 +444,32 @@
 
     .ai-render-area blockquote {
       border-left: 3px solid var(--primary);
-      padding: 8px 14px;
-      margin: 12px 0;
+      padding: 6px 12px;
+      margin: 10px 0;
       background: rgba(99, 102, 241, 0.05);
       border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
       color: #c7d2fe;
     }
 
     .ai-render-area ul, .ai-render-area ol {
-      margin-left: 20px;
-      margin-bottom: 14px;
+      margin-left: 18px;
+      margin-bottom: 10px;
     }
 
     .ai-render-area li {
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
 
     .card-footer {
-      padding: 8px 18px;
+      padding: 5px 14px;
       border-top: 1px solid var(--border);
       background: rgba(0, 0, 0, 0.15);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       color: var(--text-dim);
+      flex-shrink: 0;
     }
 
     /* Settings Modal / Popover */
