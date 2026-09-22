@@ -412,37 +412,134 @@
   function isCurrentLessonCompletedOnSidebar() {
     try {
       const allLessonLinks = Array.from(document.querySelectorAll(
-        'nav a[href*="/learn/"], aside a[href*="/learn/"], [role="navigation"] a[href*="/learn/"], .rc-ItemLink, .rc-ItemRow'
+        'nav a[href*="/learn/"], aside a[href*="/learn/"], [role="navigation"] a[href*="/learn/"], [role="tree"] a, .rc-ItemLink, .rc-ItemRow, [data-testid*="item-row"]'
       ));
 
       const currentPath = window.location.pathname;
-      const currentLink = allLessonLinks.find(link => {
+      let currentLink = allLessonLinks.find(link => {
         const href = (link.getAttribute('href') || '').split('?')[0].split('#')[0];
         return (
           link.getAttribute('aria-current') === 'true' ||
           link.getAttribute('aria-current') === 'page' ||
           link.classList.contains('active') ||
+          link.classList.contains('selected') ||
           (href && (href === currentPath || currentPath.endsWith(href) || (href.length > 8 && currentPath.includes(href))))
         );
       });
 
+      if (!currentLink) {
+        currentLink = document.querySelector('nav [aria-current="page"], [role="navigation"] [aria-current="page"], [aria-current="true"]');
+      }
+
       if (!currentLink) return false;
 
-      const container = currentLink.closest('li, div[role="listitem"], .rc-ItemRow') || currentLink.parentElement;
+      const container = currentLink.closest('li, div[role="listitem"], div[role="treeitem"], .rc-ItemRow, [class*="itemRow" i]') || currentLink.parentElement;
       const targetArea = container || currentLink;
 
-      // Kiểm tra icon hoặc text completed trong container
+      // Kiểm tra icon tick xanh hoặc text completed trong container (kể cả thẻ ẩn .cds-visuallyHidden)
+      const allText = (targetArea.textContent || '').toLowerCase();
       const hasCompletedIndicator = (
-        targetArea.querySelector('svg[data-testid*="completed"], svg[aria-label*="Completed" i], svg[aria-label*="Đã hoàn thành" i], [class*="completed" i], [class*="success" i], [aria-label*="Completed" i]') !== null ||
-        (targetArea.innerText || '').includes('Completed') ||
-        (targetArea.innerText || '').includes('Đã hoàn thành') ||
-        targetArea.getAttribute('aria-label')?.includes('Completed')
+        targetArea.querySelector(
+          'svg[data-testid*="completed"], svg[aria-label*="Completed" i], svg[aria-label*="Đã hoàn thành" i], ' +
+          'svg[aria-label*="Hoàn thành" i], svg[class*="completed" i], svg[class*="success" i], ' +
+          '[class*="completed" i], [class*="success" i], [aria-label*="Completed" i], [aria-label*="Đã hoàn thành" i], ' +
+          '[data-testid*="check-circle"], svg[data-testid*="check"]'
+        ) !== null ||
+        allText.includes('completed') ||
+        allText.includes('đã hoàn thành') ||
+        targetArea.getAttribute('aria-label')?.toLowerCase().includes('completed') ||
+        targetArea.getAttribute('aria-label')?.toLowerCase().includes('đã hoàn thành')
       );
 
       return hasCompletedIndicator;
     } catch (e) {
       return false;
     }
+  }
+
+  // Kiểm tra toàn diện xem bài học hiện tại đã hoàn tất hay chưa (Sidebar + Page elements)
+  function isCurrentLessonCompleted() {
+    // 1. Kiểm tra trên Sidebar (nguồn chuẩn xác nhất)
+    if (isCurrentLessonCompletedOnSidebar()) return true;
+
+    // 2. Kiểm tra thông báo hoàn thành trên chính trang bài học
+    const pageText = (document.body.textContent || '').toLowerCase();
+    if (
+      pageText.includes("you've completed this video") ||
+      pageText.includes("you've completed this item") ||
+      pageText.includes("đã hoàn thành bài học này") ||
+      pageText.includes("great job! you completed")
+    ) {
+      return true;
+    }
+
+    // 3. Kiểm tra nút Mark as completed đã đổi trạng thái thành Completed
+    const markButtons = Array.from(document.querySelectorAll('button[data-testid*="mark-complete"], [data-testid*="mark-complete"], button.cds-button'));
+    for (const btn of markButtons) {
+      if (isButtonAlreadyCompleted(btn)) return true;
+    }
+
+    return false;
+  }
+
+  // Kích thích video Coursera ghi nhận 100% thời lượng qua các mốc Milestone
+  function triggerVideoPlaybackProgress(videos) {
+    for (const v of videos) {
+      try {
+        v.muted = true;
+        v.playbackRate = 16;
+        const dur = (v.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 2) ? v.duration : 0;
+        if (dur > 0) {
+          // Bắn chuỗi sự kiện timeupdate qua các mốc thời gian để beacon tracking Coursera ghi nhận
+          const milestones = [dur * 0.25, dur * 0.5, dur * 0.75, dur * 0.95, Math.max(0, dur - 0.5)];
+          for (const t of milestones) {
+            v.currentTime = t;
+            v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+          }
+        } else {
+          v.currentTime = 999999;
+        }
+        v.play().catch(() => {});
+        v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+        v.dispatchEvent(new Event('ended', { bubbles: true }));
+      } catch (e) {
+        console.error('CourseraHelper video progress error:', e);
+      }
+    }
+  }
+
+  // Chờ thích ứng thông minh: Nếu video nhận tín hiệu nhanh thì pass ngay, nếu chậm thì kiên nhẫn đợi đến khi có tick xanh
+  async function waitForLessonTickOrAction(maxWaitSeconds = 20) {
+    const startTime = performance.now();
+    const intervalMs = 250;
+    const maxChecks = Math.ceil((maxWaitSeconds * 1000) / intervalMs);
+
+    for (let i = 0; i < maxChecks; i++) {
+      await new Promise(r => setTimeout(r, intervalMs));
+
+      // 1. Kiểm tra ngay lập tức: Nếu đã có tick xanh -> Thoát và pass ngay!
+      if (isCurrentLessonCompleted()) {
+        const elapsedSec = ((performance.now() - startTime) / 1000).toFixed(1);
+        showInPageToast(`✅ [Auto-Skip] Đã có tick xanh (${elapsedSec}s)! Chuyển ngay bài tiếp...`);
+        return true;
+      }
+
+      const elapsed = Math.round((performance.now() - startTime) / 1000);
+
+      // 2. Kích hoạt nút phụ Mark as completed nếu có
+      const markBtn = findMarkAsCompletedButton();
+      if (markBtn) triggerClick(markBtn);
+
+      // 3. Mỗi 2 giây: Nếu Coursera phản hồi chậm, kích thích lại player và cập nhật thông báo
+      if (i > 0 && i % 8 === 0) {
+        const videos = findVideos();
+        triggerVideoPlaybackProgress(videos);
+        showInPageToast(`⏳ [Auto-Skip] Video phản hồi chậm, đang kiên nhẫn đợi tick xanh (${elapsed}s)...`);
+      }
+    }
+
+    // Đã chờ hết maxWaitSeconds
+    return isCurrentLessonCompleted();
   }
 
   // Kiểm tra xem có đang ở trang kết quả điểm của Quiz/Graded Assignment không (ví dụ "Your grade: 90%")
@@ -605,38 +702,18 @@
     // 2. Nếu có Video trên trang
     const videos = findVideos();
     if (videos.length > 0) {
-      for (const v of videos) {
-        try {
-          v.muted = true;
-          v.playbackRate = 16;
-          const dur = (v.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 2) ? v.duration : 0;
-          if (dur > 0) {
-            v.currentTime = Math.max(0, dur - 1.0);
-          } else {
-            v.currentTime = 999999;
-          }
-          v.play().catch(() => {});
-          v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-        } catch (e) {
-          console.error(e);
-        }
+      if (isCurrentLessonCompleted()) {
+        showInPageToast('✅ Bài này đã có tick xanh từ trước! Chuyển ngay bài tiếp...');
+        setTimeout(() => navigateToNextLesson(), 400);
+        return true;
       }
 
-      showInPageToast('⏩ Đã tua Video tới cuối! Đang kiểm tra tick xanh...');
-      setTimeout(() => {
-        const markBtn = findMarkAsCompletedButton();
-        if (markBtn) triggerClick(markBtn);
+      triggerVideoPlaybackProgress(videos);
+      showInPageToast('⏩ Đã tua Video! Đang kiểm tra tick xanh...');
 
-        for (const v of videos) {
-          try {
-            v.dispatchEvent(new Event('ended', { bubbles: true }));
-          } catch (e) {}
-        }
-
-        setTimeout(() => {
-          navigateToNextLesson();
-        }, 800);
-      }, 1500);
+      waitForLessonTickOrAction(16).then(() => {
+        navigateToNextLesson();
+      });
       return true;
     }
 
@@ -836,7 +913,7 @@
     });
   }
 
-  // Xử lý bài Video với cơ chế chờ video mount vào DOM và kiểm tra tick xanh hoàn tất
+  // Xử lý bài Video với cơ chế thích ứng thông minh: Nhận nhanh pass nhanh, nhận chậm kiên nhẫn đợi tick xanh
   async function processVideoLectureStep(retryCount = 0) {
     const videos = findVideos();
     if (videos.length === 0) {
@@ -852,57 +929,24 @@
       return;
     }
 
-    // 1. Tua video đến gần cuối và phát ở tốc độ 16x để player ghi nhận tiến độ
-    for (const v of videos) {
-      try {
-        v.muted = true;
-        v.playbackRate = 16;
-        const dur = (v.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 2) ? v.duration : 0;
-        if (dur > 0) {
-          v.currentTime = Math.max(0, dur - 1.0);
-        } else {
-          v.currentTime = 999999;
-        }
-        v.play().catch(() => {});
-        v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-      } catch (e) {
-        console.error('CourseraHelper video play error:', e);
-      }
+    // Nếu bài này vốn dĩ đã có tick xanh từ trước -> Chuyển ngay lập tức!
+    if (isCurrentLessonCompleted()) {
+      showInPageToast('✅ [Auto-Skip] Bài này đã có tick xanh từ trước! Chuyển ngay bài tiếp...');
+      navigateToNextLesson();
+      setTimeout(() => {
+        isStepInProgress = false;
+      }, 1200);
+      return;
     }
 
-    showInPageToast('⏩ [Auto-Skip] Đã tua Video tới cuối! Đang chờ Coursera ghi nhận tick xanh...');
+    // 1. Tua video và phát ở 16x kèm gửi chuỗi milestone progress để Coursera player nhận đủ 100%
+    triggerVideoPlaybackProgress(videos);
+    showInPageToast('⏩ [Auto-Skip] Đã tua Video! Đang theo dõi tín hiệu tick xanh...');
 
-    // 2. Chờ video hoàn tất và kiểm tra tick xanh trong tối đa 3.5 giây
-    let verifiedCompleted = false;
-    for (let check = 0; check < 7; check++) {
-      await new Promise(r => setTimeout(r, 450));
-
-      // Bấm Mark as completed nếu có nút phụ
-      const markBtn = findMarkAsCompletedButton();
-      if (markBtn) triggerClick(markBtn);
-
-      // Gửi event ended cho video
-      for (const v of videos) {
-        try {
-          if (v.ended || (v.duration && v.currentTime >= v.duration - 0.2)) {
-            v.dispatchEvent(new Event('ended', { bubbles: true }));
-          }
-        } catch (e) {}
-      }
-
-      // Kiểm tra xem bài học trên sidebar đã hiện tick xanh chưa
-      if (isCurrentLessonCompletedOnSidebar()) {
-        verifiedCompleted = true;
-        showInPageToast('✅ [Auto-Skip] Đã xác nhận tick xanh hoàn thành! Đang chuyển bài tiếp...');
-        break;
-      }
-    }
-
-    if (!verifiedCompleted) {
-      const markBtn = findMarkAsCompletedButton();
-      if (markBtn) triggerClick(markBtn);
-      await new Promise(r => setTimeout(r, 350));
-    }
+    // 2. Cơ chế chờ thích ứng thông minh:
+    // - Video nhận tín hiệu nhanh -> Có tick trong 0.5s - 1.5s -> Chuyển bài ngay lập tức!
+    // - Video nhận tín hiệu chậm -> Kiên nhẫn đợi (kèm kích thích nhắc nhở định kỳ) cho tới khi có tick xanh (tối đa 20s)!
+    await waitForLessonTickOrAction(20);
 
     navigateToNextLesson();
     setTimeout(() => {
@@ -910,34 +954,36 @@
     }, 1500);
   }
 
-  // Xử lý bài đọc Reading (Tự động bấm Mark as completed và chuyển tiếp)
-  function processReadingStep() {
+  // Xử lý bài đọc Reading (Tự động bấm Mark as completed và chờ tick xanh)
+  async function processReadingStep() {
     showInPageToast('📖 [Auto-Skip] Đang đọc tài liệu...');
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 
-    setTimeout(() => {
-      const markBtn = findMarkAsCompletedButton();
-      if (markBtn) {
-        showInPageToast('✅ [Auto-Skip] Đã bấm "Mark as completed"!');
-        triggerClick(markBtn);
+    await new Promise(r => setTimeout(r, 600));
 
-        // Chờ 1.2s để Coursera tick xanh và lưu tiến độ lên máy chủ
-        setTimeout(() => {
-          navigateToNextLesson();
-          setTimeout(() => {
-            isStepInProgress = false;
-          }, 1500);
-        }, 1200);
-      } else {
-        showInPageToast('📖 Đã đọc xong! Đang chuyển bài tiếp theo...');
-        setTimeout(() => {
-          navigateToNextLesson();
-          setTimeout(() => {
-            isStepInProgress = false;
-          }, 1500);
-        }, 800);
-      }
-    }, 800);
+    // Nếu bài đọc đã có tick xanh từ trước
+    if (isCurrentLessonCompleted()) {
+      showInPageToast('✅ [Auto-Skip] Bài đọc đã có tick xanh! Chuyển ngay bài tiếp...');
+      navigateToNextLesson();
+      setTimeout(() => {
+        isStepInProgress = false;
+      }, 1200);
+      return;
+    }
+
+    const markBtn = findMarkAsCompletedButton();
+    if (markBtn) {
+      showInPageToast('✅ [Auto-Skip] Đã bấm "Mark as completed"! Đang kiểm tra tick...');
+      triggerClick(markBtn);
+      await waitForLessonTickOrAction(12);
+    } else {
+      await waitForLessonTickOrAction(6);
+    }
+
+    navigateToNextLesson();
+    setTimeout(() => {
+      isStepInProgress = false;
+    }, 1500);
   }
 
   // ==========================================

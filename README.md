@@ -1,11 +1,11 @@
 # Coursera Helper — Quiz Cleaner & AI Solver 🚀
 
-![Version](https://img.shields.io/badge/version-2.1.2-indigo.svg)
+![Version](https://img.shields.io/badge/version-2.1.3-indigo.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Gemini API](https://img.shields.io/badge/AI-Gemini%202.0%20Flash-emerald.svg)
 ![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge-blue.svg)
 
-> **Coursera Helper** là công cụ hỗ trợ học tập toàn diện trên nền tảng Coursera: Tự động loại bỏ prompt injection ẩn, giải bài tập trắc nghiệm bằng Gemini AI siêu tốc (2s), tua video thông minh có xác thực tick xanh, và tự động chấm điểm Peer Review.
+> **Coursera Helper** là công cụ hỗ trợ học tập toàn diện trên nền tảng Coursera: Tự động loại bỏ prompt injection ẩn, giải bài tập trắc nghiệm bằng Gemini AI siêu tốc (2s), tua video thông minh thích ứng theo tick xanh (nhanh pass ngay, chậm kiên nhẫn đợi), và tự động chấm điểm Peer Review.
 
 ---
 
@@ -16,8 +16,10 @@
 - **Tự động tick đáp án**: Nhận diện nguyên văn lựa chọn (Radio / Checkbox) và tự động tích chọn chính xác 100%.
 - **Hoàn tất tự động**: Tự động tick **Coursera Honor Code** (`#agreement-checkbox-base`), tự bấm nút **Submit** và tự xác nhận popup *"Ready to submit?"*.
 
-### 2. 🚀 Auto-Skip Module & Tua Video Thông Minh
-- **Kiểm tra Tick Xanh an toàn**: Video được tua đến gần cuối (`duration - 1.0s`) và phát ở tốc độ `16x`. Extension liên tục kiểm tra biểu tượng tick xanh hoàn thành (`svg[data-testid*="completed"]`) trên sidebar trước khi chuyển bài, không chuyển bài mù quáng.
+### 2. 🚀 Auto-Skip Module & Tua Video Thích Ứng Thông Minh (Adaptive Video Engine)
+- **Cơ chế tùy cơ ứng biến**:
+  - *Video nhận tín hiệu nhanh*: Nhận diện tick xanh ngay trong 0.5s - 1.5s và **chuyển bài ngay lập tức**, không tốn một giây thừa.
+  - *Video nhận tín hiệu chậm*: Hệ thống **kiên nhẫn đợi** cho tới khi có tick xanh (tối đa 20s), kết hợp chuỗi sự kiện Milestone (`timeupdate` + `ended` + kích thích player) định kỳ mỗi 2s để Coursera ghi nhận 100% thời lượng. Đảm bảo **100% video đều có tick xanh** trước khi chuyển bài.
 - **Duyệt bài liên tục**: Tự động đọc bài viết (Reading), tua video, giải quiz và phát hiện nút **`Next item →`** để thoát ra danh sách bài tiếp theo.
 
 ### 3. ⭐ Tự Động Chấm Điểm Peer Review (4 Bài)
