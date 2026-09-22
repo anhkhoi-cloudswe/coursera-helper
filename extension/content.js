@@ -790,32 +790,63 @@
     return null;
   }
 
-  // Tìm nút xác nhận Submit (popup xác nhận của Coursera)
-  function findSubmitConfirmButton() {
-    const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+  // Tìm nút xác nhận Submit (popup xác nhận "Ready to submit?" của Coursera)
+  function findSubmitConfirmButton(originalSubmitBtn = null) {
+    // 1. Tìm container modal xác nhận (dựa vào tiêu đề 'Ready to submit' hoặc các class modal CDS)
+    const candidates = Array.from(document.querySelectorAll('*')).filter(el => {
+      if (el.tagName === 'BODY' || el.tagName === 'HTML' || el.children.length === 0) return false;
+      const text = (el.innerText || '').toLowerCase();
+      return (
+        text.includes('ready to submit') ||
+        text.includes('sẵn sàng nộp bài') ||
+        text.includes('are you sure you want to submit')
+      );
+    });
+
+    let modalContainer = null;
+    if (candidates.length > 0) {
+      // Sắp xếp container từ nhỏ đến lớn để lấy đúng hộp thoại popup
+      candidates.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
+      modalContainer = candidates[0].closest('div[class*="dialog" i], div[class*="modal" i], [role="dialog"], [aria-modal="true"]') || candidates[0];
+    }
+
+    if (!modalContainer) {
+      modalContainer = document.querySelector('[role="dialog"], [aria-modal="true"], .rc-Dialog, .cds-Modal, [data-testid*="dialog"], [data-testid*="modal"]');
+    }
+
+    // 2. Tìm nút Submit xác nhận bên trong modal (hoặc toàn trang nếu có modal)
+    const searchRoot = modalContainer || document;
+    const allBtns = Array.from(searchRoot.querySelectorAll('button, [role="button"], a.cds-button'));
+
     for (const btn of allBtns) {
+      if (originalSubmitBtn && (btn === originalSubmitBtn || originalSubmitBtn.contains(btn))) continue;
+      if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+
       const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+      // Bỏ qua nút Cancel hoặc Đóng
+      if (txt.includes('cancel') || txt.includes('hủy') || txt.includes('close')) continue;
+
       if (
         txt === 'submit' ||
         txt === 'yes, submit' ||
+        txt === 'nộp bài' ||
         txt === 'confirm' ||
-        txt === 'xác nhận' ||
-        txt === 'ok'
+        txt === 'xác nhận'
       ) {
-        // Chỉ chọn nếu đang trong modal/dialog
-        if (btn.closest('[role="dialog"], [aria-modal="true"], .rc-Dialog, [data-testid*="dialog"], [data-testid*="modal"]')) {
-          return btn;
-        }
+        return btn;
       }
     }
-    // Fallback: nút submit không phải trong form quiz chính
-    const dialogSubmit = document.querySelector(
-      '[role="dialog"] button, [aria-modal="true"] button, .rc-Dialog button'
-    );
-    if (dialogSubmit && !dialogSubmit.disabled) {
-      const txt = (dialogSubmit.innerText || '').trim().toLowerCase();
-      if (txt && txt.length < 20) return dialogSubmit;
+
+    // Fallback: Tìm nút có nền xanh / primary bên cạnh nút "Cancel" trong modal
+    if (modalContainer) {
+      const modalBtns = Array.from(modalContainer.querySelectorAll('button, [role="button"]'));
+      const nonCancel = modalBtns.find(b => {
+        const t = (b.innerText || '').toLowerCase().trim();
+        return t && !t.includes('cancel') && !t.includes('hủy') && !t.includes('close') && b.offsetHeight > 20;
+      });
+      if (nonCancel) return nonCancel;
     }
+
     return null;
   }
 
@@ -987,14 +1018,34 @@
     triggerClick(submitBtn);
     showInPageToast('📤 Đã bấm nút Submit! Đang kiểm tra xác nhận...');
 
-    // 4. Chờ popup/modal xác nhận nếu có
-    await new Promise(r => setTimeout(r, 1500));
-    const confirmBtn = findSubmitConfirmButton();
+    // 4. Chờ popup/modal xác nhận xuất hiện ("Ready to submit?") và bấm xác nhận
+    showInPageToast('⏳ Đang chờ xác nhận "Ready to submit?"...', false, 4000);
+    let confirmBtn = null;
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 300));
+      confirmBtn = findSubmitConfirmButton(submitBtn);
+      if (confirmBtn) break;
+    }
+
     if (confirmBtn) {
-      triggerClick(confirmBtn);
-      showInPageToast('🎉 Đã xác nhận nộp bài thành công!');
+      confirmBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await new Promise(r => setTimeout(r, 200));
+
+      // Hiệu ứng viền xanh dương phát sáng nổi bật
+      confirmBtn.style.outline = '3px solid #3b82f6';
+      confirmBtn.style.boxShadow = '0 0 16px rgba(59, 130, 246, 0.85)';
+
+      // Kích hoạt click đầy đủ sự kiện SyntheticEvent + native click
+      ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+        confirmBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+      });
+      try {
+        confirmBtn.click();
+      } catch (e) {}
+
+      showInPageToast('🎉 Đã bấm xác nhận Submit thành công! Bài thi đã được nộp trọn vẹn!');
     } else {
-      showInPageToast('🎉 Đã nộp bài thành công!');
+      showInPageToast('🎉 Đã bấm Submit bài thi!');
     }
     return true;
   }
