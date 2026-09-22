@@ -69,8 +69,9 @@ chrome.storage.local.get([
 ], (res) => {
   if (res.gemini_api_key && apiKeyInput) apiKeyInput.value = res.gemini_api_key;
   if (modelSelect) {
-    // Tự động nâng cấp nếu model cũ là gemini-2.0-flash đã bị Google khai tử
-    const m = res.gemini_model && res.gemini_model !== 'gemini-2.0-flash' ? res.gemini_model : 'gemini-2.5-flash';
+    // Tự động nâng cấp model lên gemini-3.6-flash chuẩn mới nhất của Google
+    const isOld = !res.gemini_model || ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.5-flash'].includes(res.gemini_model);
+    const m = isOld ? 'gemini-3.6-flash' : res.gemini_model;
     modelSelect.value = m;
   }
 
@@ -336,42 +337,65 @@ safeListen('btnSolve', 'click', async () => {
     aiContent.innerHTML = `
       <div class="ai-empty-state">
         <div class="spinner"></div>
-        <p style="color: #a5b4fc; font-weight: 600;">Gemini đang phân tích và giải đề...</p>
+        <p style="color: #a5b4fc; font-weight: 600;">Gemini 3.6 Flash đang giải đề...</p>
       </div>
     `;
   }
 
-  try {
-    // 1. Quét danh sách model được cấp phép cho API Key này
-    let models = await getAvailableGeminiModels(apiKey);
+  const systemPrompt = "Bạn là chuyên gia an toàn thông tin & bảo mật xuất sắc. Hãy giải các câu hỏi trắc nghiệm sau. Với mỗi câu hỏi: chỉ rõ ĐÁP ÁN ĐÚNG (in đậm) và GIẢI THÍCH NGẮN GỌN (1-2 câu). Trình bày mạch lạc, dễ đọc.";
+  const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
 
-    if (!models || models.length === 0) {
-      // Danh sách dự phòng nếu không thể gọi endpoint list
-      models = [
-        { name: 'gemini-1.5-flash', version: 'v1beta' },
-        { name: 'gemini-1.5-flash', version: 'v1' },
-        { name: 'gemini-1.5-flash-latest', version: 'v1beta' },
-        { name: 'gemini-1.5-pro', version: 'v1beta' },
-        { name: 'gemini-1.5-pro', version: 'v1' },
-        { name: 'gemini-2.5-flash', version: 'v1beta' }
-      ];
-    } else {
-      populateModelSelect(models, modelSelect?.value);
+  const chosenModel = modelSelect?.value || 'gemini-3.6-flash';
+  const modelsToTry = Array.from(new Set([
+    chosenModel,
+    'gemini-3.6-flash',
+    'gemini-3.6-pro',
+    'gemini-3.5-flash'
+  ]));
+
+  let solved = false;
+  let lastError = null;
+
+  for (const model of modelsToTry) {
+    // 1. Thử gọi qua Google Interactions API (chuẩn khuyến nghị 2026 của Google)
+    try {
+      const resInteractions = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
+        body: JSON.stringify({
+          model: model,
+          input: fullPrompt,
+          store: false
+        })
+      });
+
+      const data = await resInteractions.json();
+      if (!data.error) {
+        const text = data.outputs?.[0]?.text || data.output_text || data.output;
+        if (text) {
+          const htmlResult = renderMarkdown(text);
+          if (aiContent) aiContent.innerHTML = htmlResult;
+          if (modelSelect) modelSelect.value = model;
+          chrome.storage.local.set({ 'saved_ai_html': htmlResult, 'gemini_model': model });
+          showToast(`✓ Gemini (${model}) đã giải xong!`);
+          solved = true;
+          break;
+        }
+      } else {
+        lastError = new Error(data.error.message || 'Lỗi Interactions API');
+      }
+    } catch (e) {
+      lastError = e;
     }
 
-    const preferred = selectOptimalModel(models, modelSelect?.value);
-    const modelsToTry = [preferred, ...models.filter(m => m.name !== preferred.name)];
-
-    let solved = false;
-    let lastError = null;
-
-    for (const m of modelsToTry) {
+    // 2. Thử gọi qua generateContent endpoint
+    for (const ver of ['v1beta', 'v1']) {
       try {
-        const systemPrompt = "Bạn là chuyên gia an ninh mạng xuất sắc. Hãy giải các câu hỏi trắc nghiệm sau. Với mỗi câu hỏi: chỉ rõ ĐÁP ÁN ĐÚNG (in đậm) và GIẢI THÍCH NGẮN GỌN (1-2 câu). Trình bày mạch lạc, dễ đọc.";
-        const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
-
-        const url = `https://generativelanguage.googleapis.com/${m.version}/models/${m.name}:generateContent?key=${apiKey}`;
-        const res = await fetch(url, {
+        const url = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`;
+        const resGen = await fetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -382,45 +406,35 @@ safeListen('btnSolve', 'click', async () => {
           })
         });
 
-        const data = await res.json();
-        if (data.error) {
-          const errMsg = data.error.message || 'Lỗi API';
-          if (errMsg.includes('not found') || errMsg.includes('no longer available') || data.error.code === 404) {
-            console.warn(`[CourseraHelper] Model ${m.name} không khả dụng, thử model tiếp theo...`);
-            lastError = new Error(errMsg);
-            continue;
-          }
-          throw new Error(errMsg);
-        }
-
-        const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!candidate) throw new Error('Không có phản hồi từ AI');
-
-        const htmlResult = renderMarkdown(candidate);
-        if (aiContent) aiContent.innerHTML = htmlResult;
-
-        if (modelSelect) modelSelect.value = m.name;
-        chrome.storage.local.set({ 'saved_ai_html': htmlResult, 'gemini_model': m.name });
-        showToast(`✓ Gemini (${m.name}) đã giải xong!`);
-        solved = true;
-        break;
-      } catch (err) {
-        lastError = err;
-        if (err.message && (err.message.includes('not found') || err.message.includes('no longer available'))) {
+        const dataGen = await resGen.json();
+        if (dataGen.error) {
+          lastError = new Error(dataGen.error.message || 'Lỗi API');
           continue;
         }
-        throw err;
+
+        const candidate = dataGen.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (candidate) {
+          const htmlResult = renderMarkdown(candidate);
+          if (aiContent) aiContent.innerHTML = htmlResult;
+          if (modelSelect) modelSelect.value = model;
+          chrome.storage.local.set({ 'saved_ai_html': htmlResult, 'gemini_model': model });
+          showToast(`✓ Gemini (${model}) đã giải xong!`);
+          solved = true;
+          break;
+        }
+      } catch (e) {
+        lastError = e;
       }
     }
 
-    if (!solved && lastError) {
-      throw lastError;
-    }
-  } catch (err) {
+    if (solved) break;
+  }
+
+  if (!solved && lastError) {
     if (aiContent) {
       aiContent.innerHTML = `
         <div style="padding: 12px; background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); border-radius: 8px; color: #fecdd3;">
-          <strong style="color: #f43f5e;">Lỗi:</strong> ${err.message}<br><br>
+          <strong style="color: #f43f5e;">Lỗi:</strong> ${lastError.message}<br><br>
           <span style="font-size: 11px; color: #94a3b8;">Mẹo: Kiểm tra lại API Key hoặc dùng nút "Prompt" để dán vào gemini.google.com</span>
         </div>
       `;
@@ -479,9 +493,9 @@ safeListen('btnSaveKey', 'click', async () => {
     });
   } else {
     // Nếu không list được models, vẫn lưu key với model mặc định
-    const fallbackModel = modelSelect?.value || 'gemini-1.5-flash';
+    const fallbackModel = modelSelect?.value || 'gemini-3.6-flash';
     chrome.storage.local.set({ 'gemini_api_key': key, 'gemini_model': fallbackModel }, () => {
-      showToast('✓ Đã lưu cài đặt API Key!');
+      showToast(`✓ Đã lưu cài đặt (${fallbackModel})!`);
       if (settingsBox) settingsBox.style.display = 'none';
     });
   }
