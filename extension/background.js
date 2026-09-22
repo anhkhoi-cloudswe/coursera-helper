@@ -9,8 +9,11 @@ chrome.sidePanel
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "open_side_panel") {
     if (sender.tab && sender.tab.id) {
-      chrome.sidePanel.open({ tabId: sender.tab.id });
+      chrome.sidePanel.open({ tabId: sender.tab.id })
+        .then(() => sendResponse({ success: true }))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true; // Asynchronous response
     }
   }
-  return true;
+  return false;
 });
