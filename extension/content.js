@@ -201,7 +201,7 @@
       }
       try {
         if (isExtensionContextValid()) {
-          await chrome.storage.local.set({ 'gemini_api_key': val, 'gemini_model': 'gemini-3.6-flash' });
+          await chrome.storage.local.set({ 'gemini_api_key': val, 'gemini_model': 'gemini-2.5-flash' });
         }
         showInPageToast('✅ Đã lưu Gemini API Key thành công!');
         modal.remove();
@@ -1567,7 +1567,10 @@
       return;
     }
 
-    const model = (savedModel && savedModel.includes('3.')) ? savedModel : 'gemini-3.6-flash';
+    // Tên model fake không tồn tại trong API
+    const FAKE_PREFIXES = ['gemini-3.6', 'gemini-3.8', 'gemini-3.5', 'gemini-3.'];
+    const isRealModelName = (n) => n && !FAKE_PREFIXES.some(p => n.startsWith(p));
+    const model = isRealModelName(savedModel) ? savedModel : 'gemini-2.5-flash';
     const BATCH_SIZE = 12;
     const totalBatches = Math.ceil(questions.length / BATCH_SIZE);
 
@@ -3119,7 +3122,9 @@
       return;
     }
 
-    const model = (savedModel && savedModel.includes('3.')) ? savedModel : 'gemini-3.6-flash';
+    const FAKE_PREFIXES_B = ['gemini-3.6', 'gemini-3.8', 'gemini-3.5', 'gemini-3.'];
+    const isRealModelNameB = (n) => n && !FAKE_PREFIXES_B.some(p => n.startsWith(p));
+    const model = isRealModelNameB(savedModel) ? savedModel : 'gemini-2.5-flash';
     const BATCH_SIZE = 12;
     const totalQuestions = questions.length;
     const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
@@ -3274,21 +3279,17 @@
       return p;
     });
 
-    // Chuẩn hóa model: Luôn ưu tiên các model từ 3.6 Flash trở lên
-    let normalizedPreferred = preferredModel;
-    // Chuẩn hóa: Chỉ dùng model từ 3.6 trở lên, loại bỏ toàn bộ model cũ/deprecated
-    const DEPRECATED_MODELS = ['gemini-2.5', 'gemini-2.0', 'gemini-1.5', 'gemini-3.5', 'gemini-pro', 'gemini-flash'];
-    const isDeprecated = (name) => !name || DEPRECATED_MODELS.some(d => name.includes(d)) || !name.match(/3\.[6-9]|3\.[1-9][0-9]/);
-    if (isDeprecated(normalizedPreferred)) {
-      normalizedPreferred = 'gemini-3.6-flash';
-    }
+    // Chỉ dùng các tên model thực tồn tại trong Google Gemini API
+    const FAKE_PREFIXES_C = ['gemini-3.6', 'gemini-3.8', 'gemini-3.5', 'gemini-3.'];
+    const isRealName = (n) => n && !FAKE_PREFIXES_C.some(p => n.startsWith(p));
+    const normalizedPreferred = isRealName(preferredModel) ? preferredModel : 'gemini-2.5-flash';
 
     const modelsToTry = [
       normalizedPreferred,
-      'gemini-3.6-flash',
-      'gemini-3.8-flash',
-      'gemini-3.6-pro'
-    ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash'
+    ].filter((m, idx, arr) => m && arr.indexOf(m) === idx && isRealName(m));
 
     let lastErrorMessage = '';
     for (const model of modelsToTry) {

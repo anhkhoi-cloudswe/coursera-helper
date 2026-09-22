@@ -65,8 +65,13 @@ chrome.storage.local.get([
 ], (res) => {
   if (res.gemini_api_key && apiKeyInput) apiKeyInput.value = res.gemini_api_key;
   if (modelSelect) {
-    const m = (res.gemini_model && res.gemini_model.includes('3.')) ? res.gemini_model : 'gemini-3.6-flash';
-    modelSelect.value = m;
+    const m = res.gemini_model || 'gemini-2.5-flash';
+    // Nếu đang lưu tên model cũ không tồn tại, reset về mặc định
+    const fakeModels = ['gemini-3.6', 'gemini-3.8', 'gemini-3.5', 'gemini-3.'];
+    const isFake = fakeModels.some(p => m.startsWith(p));
+    const validName = isFake ? 'gemini-2.5-flash' : m;
+    if (isFake) chrome.storage.local.set({ 'gemini_model': 'gemini-2.5-flash' });
+    modelSelect.value = validName;
   }
 
   if (chkAutoFillQuiz) {
@@ -291,28 +296,38 @@ async function getAvailableGeminiModels(apiKey) {
   return [];
 }
 
+// Tên model fake không tồn tại trong Google API
+const FAKE_MODEL_PREFIXES = ['gemini-3.6', 'gemini-3.8', 'gemini-3.5', 'gemini-3.'];
+function isRealModel(name) {
+  if (!name) return false;
+  return !FAKE_MODEL_PREFIXES.some(p => name.startsWith(p));
+}
+
 function selectOptimalModel(supportedModels, userPreferred) {
-  const cleanPreferred = (userPreferred && userPreferred.includes('3.')) ? userPreferred : null;
+  // Bỏ qua nếu user đang chọn model fake (không tồn tại trong API)
+  const validPreferred = (userPreferred && isRealModel(userPreferred)) ? userPreferred : null;
 
   if (!supportedModels || supportedModels.length === 0) {
-    return { name: cleanPreferred || 'gemini-3.6-flash', version: 'v1beta' };
+    return { name: validPreferred || 'gemini-2.5-flash', version: 'v1beta' };
   }
 
-  // 1. Nếu user từng chọn một model hợp lệ và model đó có trong danh sách
-  if (cleanPreferred) {
-    const found = supportedModels.find(m => m.name === cleanPreferred);
+  // 1. Nếu user đã chọn model hợp lệ và model đó có trong danh sách API
+  if (validPreferred) {
+    const found = supportedModels.find(m => m.name === validPreferred);
     if (found) return found;
   }
 
-  // 2. Thứ tự ưu tiên các model từ Gemini 3.6 Flash trở lên
+  // 2. Thứ tự ưu tiên các model thực có trong Google Gemini API
   const priorities = [
-    'gemini-3.6-flash',
-    'gemini-3.8-flash',
-    'gemini-3.6-pro'
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro'
   ];
 
   for (const p of priorities) {
-    const match = supportedModels.find(m => m.name === p);
+    const match = supportedModels.find(m => m.name === p || m.name.startsWith(p));
     if (match) return match;
   }
 
@@ -324,7 +339,7 @@ function selectOptimalModel(supportedModels, userPreferred) {
   const anyGemini = supportedModels.find(m => m.name.toLowerCase().includes('gemini'));
   if (anyGemini) return anyGemini;
 
-  return supportedModels[0] || { name: 'gemini-3.6-flash', version: 'v1beta' };
+  return supportedModels[0] || { name: 'gemini-2.5-flash', version: 'v1beta' };
 }
 
 function populateModelSelect(supportedModels, activeModelName) {
@@ -607,14 +622,15 @@ QUY TẮC GIẢI & TRÌNH BÀY:
 `;
   const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
 
-  let chosenModel = (modelSelect?.value && modelSelect.value.includes('3.')) ? modelSelect.value : 'gemini-3.6-flash';
+  const rawModel = modelSelect?.value || '';
+  let chosenModel = (rawModel && isRealModel(rawModel)) ? rawModel : 'gemini-2.5-flash';
 
   const modelsToTry = Array.from(new Set([
     chosenModel,
-    'gemini-3.6-flash',
-    'gemini-3.8-flash',
-    'gemini-3.6-pro'
-  ])).filter(m => m && !['gemini-2.5', 'gemini-2.0', 'gemini-1.5', 'gemini-3.5'].some(d => m.includes(d)));
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash'
+  ])).filter(m => m && isRealModel(m));
 
   const startTime = performance.now();
   let solved = false;
@@ -854,7 +870,8 @@ safeListen('btnSaveKey', 'click', async () => {
     });
   } else {
     // Nếu không list được models, vẫn lưu key với model mặc định
-    let fallbackModel = (modelSelect?.value && modelSelect.value.includes('3.')) ? modelSelect.value : 'gemini-3.6-flash';
+    const rawFb = modelSelect?.value || '';
+    let fallbackModel = (rawFb && isRealModel(rawFb)) ? rawFb : 'gemini-2.5-flash';
     chrome.storage.local.set({ 'gemini_api_key': key, 'gemini_model': fallbackModel }, () => {
       showToast(`✓ Đã lưu cài đặt (${fallbackModel})!`);
       if (settingsBox) settingsBox.style.display = 'none';
@@ -927,7 +944,7 @@ async function solveFullQuizBatchPipeline(questions, tabId) {
     return;
   }
 
-  const model = (savedModel && savedModel.includes('3.')) ? savedModel : 'gemini-3.6-flash';
+  const model = (savedModel && isRealModel(savedModel)) ? savedModel : 'gemini-2.5-flash';
   const BATCH_SIZE = 10; // Gửi nhiều câu 1 lần để giải nhanh, ít API call hơn
   const totalQuestions = questions.length;
   const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
@@ -1124,17 +1141,14 @@ async function callGeminiMultimodalParts(apiKey, preferredModel, parts) {
     return p;
   });
 
-  let normalizedPreferred = preferredModel;
-  if (!normalizedPreferred || !normalizedPreferred.includes('3.')) {
-    normalizedPreferred = 'gemini-3.6-flash';
-  }
+  const normalizedPreferred = (preferredModel && isRealModel(preferredModel)) ? preferredModel : 'gemini-2.5-flash';
 
   const modelsToTry = [
     normalizedPreferred,
-    'gemini-3.6-flash',
-    'gemini-3.8-flash',
-    'gemini-3.6-pro'
-  ].filter((m, idx, arr) => m && arr.indexOf(m) === idx && !['gemini-2.5', 'gemini-2.0', 'gemini-1.5', 'gemini-3.5'].some(d => m.includes(d)));
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash'
+  ].filter((m, idx, arr) => m && arr.indexOf(m) === idx && isRealModel(m));
 
   let lastError = null;
 
