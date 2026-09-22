@@ -3276,7 +3276,10 @@
 
     // Chuẩn hóa model: Luôn ưu tiên các model từ 3.6 Flash trở lên
     let normalizedPreferred = preferredModel;
-    if (!normalizedPreferred || !normalizedPreferred.includes('3.')) {
+    // Chuẩn hóa: Chỉ dùng model từ 3.6 trở lên, loại bỏ toàn bộ model cũ/deprecated
+    const DEPRECATED_MODELS = ['gemini-2.5', 'gemini-2.0', 'gemini-1.5', 'gemini-3.5', 'gemini-pro', 'gemini-flash'];
+    const isDeprecated = (name) => !name || DEPRECATED_MODELS.some(d => name.includes(d)) || !name.match(/3\.[6-9]|3\.[1-9][0-9]/);
+    if (isDeprecated(normalizedPreferred)) {
       normalizedPreferred = 'gemini-3.6-flash';
     }
 
@@ -3284,9 +3287,7 @@
       normalizedPreferred,
       'gemini-3.6-flash',
       'gemini-3.8-flash',
-      'gemini-3.6-pro',
-      'gemini-3.5-flash',
-      'gemini-3.5-pro'
+      'gemini-3.6-pro'
     ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
     let lastErrorMessage = '';

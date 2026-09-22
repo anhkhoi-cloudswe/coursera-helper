@@ -308,9 +308,7 @@ function selectOptimalModel(supportedModels, userPreferred) {
   const priorities = [
     'gemini-3.6-flash',
     'gemini-3.8-flash',
-    'gemini-3.6-pro',
-    'gemini-3.5-flash',
-    'gemini-3.5-pro'
+    'gemini-3.6-pro'
   ];
 
   for (const p of priorities) {
@@ -615,10 +613,8 @@ QUY TẮC GIẢI & TRÌNH BÀY:
     chosenModel,
     'gemini-3.6-flash',
     'gemini-3.8-flash',
-    'gemini-3.6-pro',
-    'gemini-3.5-flash',
-    'gemini-3.5-pro'
-  ])).filter(Boolean);
+    'gemini-3.6-pro'
+  ])).filter(m => m && !['gemini-2.5', 'gemini-2.0', 'gemini-1.5', 'gemini-3.5'].some(d => m.includes(d)));
 
   const startTime = performance.now();
   let solved = false;
@@ -1137,10 +1133,8 @@ async function callGeminiMultimodalParts(apiKey, preferredModel, parts) {
     normalizedPreferred,
     'gemini-3.6-flash',
     'gemini-3.8-flash',
-    'gemini-3.6-pro',
-    'gemini-3.5-flash',
-    'gemini-3.5-pro'
-  ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
+    'gemini-3.6-pro'
+  ].filter((m, idx, arr) => m && arr.indexOf(m) === idx && !['gemini-2.5', 'gemini-2.0', 'gemini-1.5', 'gemini-3.5'].some(d => m.includes(d)));
 
   let lastError = null;
 
