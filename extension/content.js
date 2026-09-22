@@ -228,60 +228,187 @@
     return videos;
   }
 
-  // Tìm nút "Go to next item" hoặc nút chuyển bài
-  function findNextButton() {
-    // 1. Theo testid chuẩn của Coursera
-    const testIdBtn = document.querySelector(
-      'button[data-testid="next-item-button"], a[data-testid="next-item-button"], [data-testid="navigation-next-button"]'
+  // ==========================================
+  // 3. CÁC HÀM TÌM KIẾM NÚT & ĐIỀU HƯỚNG COURSERA (CỰC KỲ CHÍNH XÁC)
+  // ==========================================
+
+  // A. Tìm nút "Mark as completed" (cho bài đọc / Reading / Supplement)
+  function findMarkAsCompletedButton() {
+    // 1. Selector trực tiếp data-testid / data-e2e
+    const directBtn = document.querySelector(
+      'button[data-testid="mark-complete-button"], button[data-testid*="mark-complete"], button[data-e2e="mark-complete-button"], [data-testid*="mark-complete"], button[aria-label*="mark as complete" i], button[aria-label*="đánh dấu" i]'
     );
-    if (testIdBtn) return testIdBtn;
+    if (directBtn && !isButtonAlreadyCompleted(directBtn)) return directBtn;
 
-    // 2. Tìm theo text "Go to next item", "Next item", "Tiếp theo"
-    const allClickables = Array.from(document.querySelectorAll('button, a, [role="button"]'));
-    const byText = allClickables.find(el => {
-      const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-      return (
-        txt.includes('go to next item') ||
-        txt.includes('next item') ||
-        txt.includes('chuyển sang bài tiếp') ||
-        txt.includes('bài tiếp theo')
-      );
-    });
-    if (byText) return byText;
+    // 2. Quét tất cả button / thẻ click trên trang tìm theo text
+    const allButtons = Array.from(document.querySelectorAll('button, [role="button"], a.cds-button'));
+    for (const btn of allButtons) {
+      const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+      if (!txt || txt.length > 50) continue;
+      
+      // Bỏ qua nếu là nút đã hoàn thành
+      if (txt === 'completed' || txt === 'đã hoàn thành' || txt.includes('completed ✓') || txt.includes('✓')) {
+        continue;
+      }
 
-    // 3. Tìm theo aria-label
-    const byAria = document.querySelector('button[aria-label*="next" i], a[aria-label*="next" i]');
-    if (byAria) return byAria;
-
-    // 4. Tìm trong thanh điều hướng bài học bên trái (Left Sidebar Navigation)
-    const activeItem = document.querySelector('[aria-current="true"], [aria-current="page"], .rc-ItemLink.active, [data-testid*="active-item"]');
-    if (activeItem) {
-      const nextContainer = activeItem.closest('li, [role="listitem"], .rc-ModuleExam, .rc-ItemRow')?.nextElementSibling;
-      if (nextContainer) {
-        const nextLink = nextContainer.querySelector('a, button, [role="button"]');
-        if (nextLink) return nextLink;
+      if (
+        txt === 'mark as completed' ||
+        txt === 'mark as complete' ||
+        txt === 'mark complete' ||
+        txt.includes('mark as completed') ||
+        txt.includes('mark as complete') ||
+        txt.includes('đánh dấu đã hoàn thành') ||
+        txt.includes('đánh dấu là đã hoàn thành') ||
+        txt.includes('đánh dấu hoàn thành')
+      ) {
+        return btn;
       }
     }
 
     return null;
   }
 
-  // Tìm nút bắt đầu trên trang tổng quan Module (Overview page: /home/module/1)
+  function isButtonAlreadyCompleted(btn) {
+    if (!btn) return false;
+    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return true;
+    const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+    return txt === 'completed' || txt.includes('completed') || txt.includes('đã hoàn thành');
+  }
+
+  // B. Tìm nút "Go to next item" hoặc nút chuyển bài ở cuối trang
+  function findNextButton() {
+    // 1. Theo testid chuẩn của Coursera
+    const testIdBtn = document.querySelector(
+      'button[data-testid="next-item-button"], a[data-testid="next-item-button"], [data-testid*="next-item"], [data-testid*="navigation-next"], button[data-e2e="next-item-button"], a[data-e2e="next-item-button"]'
+    );
+    if (testIdBtn) return testIdBtn;
+
+    // 2. Tìm theo text "Go to next item", "Next item", "Tiếp theo"
+    const allClickables = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    for (const el of allClickables) {
+      const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+      if (
+        txt === 'go to next item' ||
+        txt.startsWith('go to next item') ||
+        txt === 'next item' ||
+        txt.startsWith('next item') ||
+        txt === 'chuyển sang bài tiếp theo' ||
+        txt === 'bài tiếp theo' ||
+        txt.includes('go to next item') ||
+        txt.includes('next item')
+      ) {
+        return el;
+      }
+    }
+
+    // 3. Tìm theo aria-label
+    const byAria = document.querySelector('button[aria-label*="next" i], a[aria-label*="next" i]');
+    if (byAria) return byAria;
+
+    return null;
+  }
+
+  // C. Tìm link bài học tiếp theo trên Menu điều hướng bên trái (Left Sidebar Navigation)
+  // Đây là cứu cánh tối thượng giúp không bao giờ bị kẹt dù nút dưới cùng có bị ẩn hay disable
+  function findNextSidebarLink() {
+    try {
+      const allLessonLinks = Array.from(document.querySelectorAll(
+        'nav a[href*="/learn/"], aside a[href*="/learn/"], [role="navigation"] a[href*="/learn/"], .rc-ItemLink, a[href*="/lecture/"], a[href*="/supplement/"], a[href*="/item/"], a[href*="/quiz/"], a[href*="/exam/"]'
+      ));
+
+      if (allLessonLinks.length === 0) return null;
+
+      // Lọc bỏ các href trùng lặp
+      const uniqueLinks = [];
+      const seenPaths = new Set();
+      for (const link of allLessonLinks) {
+        const href = link.getAttribute('href') || '';
+        const cleanPath = href.split('?')[0].split('#')[0];
+        if (cleanPath && !seenPaths.has(cleanPath)) {
+          seenPaths.add(cleanPath);
+          uniqueLinks.push(link);
+        }
+      }
+
+      const currentPath = window.location.pathname;
+
+      // Tìm vị trí bài học hiện tại trong danh sách
+      let currentIndex = uniqueLinks.findIndex(link => {
+        const href = link.getAttribute('href') || '';
+        const cleanPath = href.split('?')[0].split('#')[0];
+        return cleanPath === currentPath || currentPath.endsWith(cleanPath) || (cleanPath.length > 5 && currentPath.includes(cleanPath));
+      });
+
+      // Nếu không khớp URL tuyệt đối, thử tìm theo thuộc tính active của DOM
+      if (currentIndex === -1) {
+        currentIndex = uniqueLinks.findIndex(link => {
+          return (
+            link.getAttribute('aria-current') === 'true' ||
+            link.getAttribute('aria-current') === 'page' ||
+            link.classList.contains('active') ||
+            link.classList.contains('selected') ||
+            link.closest('.active') !== null ||
+            link.closest('[aria-current="true"]') !== null
+          );
+        });
+      }
+
+      // Trả về link bài học liền kề tiếp theo
+      if (currentIndex !== -1 && currentIndex + 1 < uniqueLinks.length) {
+        return uniqueLinks[currentIndex + 1];
+      }
+    } catch (err) {
+      console.warn('CourseraHelper: Lỗi khi tìm link sidebar tiếp theo', err);
+    }
+    return null;
+  }
+
+  // D. Chuyển sang bài học tiếp theo (Ưu tiên nút Next -> fallback Sidebar)
+  function navigateToNextLesson() {
+    // 1. Thử nút Go to next item
+    const nextBtn = findNextButton();
+    if (nextBtn && !nextBtn.disabled && nextBtn.getAttribute('aria-disabled') !== 'true') {
+      showInPageToast('➡️ Đang chuyển sang bài học tiếp theo...');
+      triggerClick(nextBtn);
+      return true;
+    }
+
+    // 2. Thử link bài tiếp theo trên menu bên trái
+    const nextSidebarLink = findNextSidebarLink();
+    if (nextSidebarLink) {
+      const linkText = (nextSidebarLink.innerText || nextSidebarLink.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 35);
+      showInPageToast(`➡️ Đang mở bài tiếp theo: ${linkText || 'Bài học tiếp'}...`);
+      triggerClick(nextSidebarLink);
+      return true;
+    }
+
+    // 3. Nếu nút nextBtn bị disabled hoặc chưa bấm được, vẫn click thử
+    if (nextBtn) {
+      showInPageToast('➡️ Thử bấm nút chuyển tiếp...');
+      triggerClick(nextBtn);
+      return true;
+    }
+
+    // Không còn bài nào tiếp theo -> Hoàn thành Module!
+    showInPageToast('🎉 CHÚC MỪNG! Đã hoàn thành tất cả bài học trong Module!');
+    chrome.storage.local.set({ auto_skip_active: false });
+    updateFloatingHUD(false);
+    return false;
+  }
+
+  // E. Tìm nút bắt đầu trên trang tổng quan Module (Overview page: /home/module/1)
   function findOverviewStartElement() {
-    // 1. Tìm nút "Get started"
-    const clickables = Array.from(document.querySelectorAll('button, a, [role="button"], span, div'));
+    const clickables = Array.from(document.querySelectorAll('button, a, [role="button"], span'));
     const startBtn = clickables.find(el => {
       const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-      if (el.children.length > 3) return false; // bỏ qua container cha lớn
+      if (el.children.length > 2) return false;
       return t === 'get started' || t === 'bắt đầu' || t.startsWith('get started') || t.startsWith('bắt đầu');
     });
 
     if (startBtn) {
-      const parentBtn = startBtn.closest('button, a, [role="button"]');
-      return parentBtn || startBtn;
+      return startBtn.closest('button, a, [role="button"]') || startBtn;
     }
 
-    // 2. Tìm liên kết bài học đầu tiên trong danh sách của Module
     const firstLecture = document.querySelector(
       'a[href*="/lecture/"], a[href*="/item/"], a[href*="/supplement/"]'
     );
@@ -291,81 +418,82 @@
   }
 
   // ==========================================
-  // 4. HÀNH ĐỘNG ĐIỀU KHIỂN VIDEO CỤ THỂ
+  // 4. HÀNH ĐỘNG TUA 1 BÀI (VIDEO HOẶC READING)
   // ==========================================
-
-  // Tua 1 video tới giây cuối và chuyển bài
   function completeCourseraVideo() {
-    const isOverview = window.location.href.includes('/home/module/') || window.location.href.includes('/module/');
-    
-    // Nếu đang ở trang tổng quan Module: bấm "Get started" để vào bài học
-    if (isOverview) {
+    const currentUrl = window.location.href;
+
+    // 1. Nếu ở trang tổng quan Module
+    if (currentUrl.includes('/home/module/') || currentUrl.includes('/module/')) {
       const startEl = findOverviewStartElement();
       if (startEl) {
         showInPageToast('🚀 Đang mở bài học đầu tiên trong Module...');
         triggerClick(startEl);
         return true;
       }
-      showInPageToast('⚠️ Không tìm thấy nút Get started hoặc bài học!', true);
+      showInPageToast('⚠️ Không tìm thấy nút bắt đầu!', true);
       return false;
     }
 
+    // 2. Nếu có Video trên trang
     const videos = findVideos();
     if (videos.length > 0) {
-      let found = false;
       for (const v of videos) {
         try {
-          v.muted = true; // Bật mute để tránh vi phạm browser autoplay policy
+          v.muted = true;
           v.playbackRate = 16;
           if (v.duration && !isNaN(v.duration) && isFinite(v.duration)) {
-            v.currentTime = Math.max(0, v.duration - 0.5);
+            v.currentTime = Math.max(0, v.duration - 0.2);
           } else {
             v.currentTime = 999999;
           }
           v.play().catch(() => {});
           v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
           v.dispatchEvent(new Event('ended', { bubbles: true }));
-          found = true;
         } catch (e) {
           console.error(e);
         }
       }
 
-      if (found) {
-        showInPageToast('⏩ Đã tua video tới cuối! Đang bấm "Go to next item"...');
+      showInPageToast('⏩ Đã tua Video tới cuối! Đang chuyển bài tiếp...');
+      setTimeout(() => {
+        const markBtn = findMarkAsCompletedButton();
+        if (markBtn) triggerClick(markBtn);
+
         setTimeout(() => {
-          const nextBtn = findNextButton();
-          if (nextBtn) {
-            triggerClick(nextBtn);
-          } else {
-            showInPageToast('ℹ️ Đã tua xong! Vui lòng bấm nút tiếp theo trên màn hình.', true);
-          }
-        }, 1200);
-        return true;
-      }
+          navigateToNextLesson();
+        }, 500);
+      }, 1200);
+      return true;
     }
 
-    // Nếu là bài đọc (Reading / Supplement)
-    const isReading = window.location.href.includes('/supplement/') || window.location.href.includes('/item/');
-    if (isReading) {
+    // 3. Nếu là bài đọc Reading / Supplement có nút "Mark as completed"
+    const markBtn = findMarkAsCompletedButton();
+    if (markBtn) {
       window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-      showInPageToast('📖 Đã cuộn đọc hết trang! Đang chuyển bài tiếp...');
+      showInPageToast('✅ Đã bấm "Mark as completed"! Đang chuyển bài tiếp...');
+      triggerClick(markBtn);
       setTimeout(() => {
-        const nextBtn = findNextButton();
-        if (nextBtn) triggerClick(nextBtn);
+        navigateToNextLesson();
       }, 1000);
       return true;
     }
 
-    // Thử bấm trực tiếp nút Next nếu có
-    const nextBtn = findNextButton();
-    if (nextBtn) {
-      showInPageToast('⏩ Đang chuyển sang bài tiếp theo...');
-      triggerClick(nextBtn);
+    // 4. Nếu là bài đọc Reading nói chung (đã hoàn thành hoặc không có nút mark)
+    if (currentUrl.includes('/supplement/') || currentUrl.includes('/item/')) {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      showInPageToast('📖 Đang chuyển sang bài tiếp theo...');
+      setTimeout(() => {
+        navigateToNextLesson();
+      }, 600);
       return true;
     }
 
-    showInPageToast('⚠️ Không tìm thấy Video hoặc nút Next trên trang này!', true);
+    // 5. Thử chuyển tiếp trực tiếp
+    const ok = navigateToNextLesson();
+    if (ok) return true;
+
+    showInPageToast('⚠️ Không tìm thấy bài học hoặc nút chuyển tiếp!', true);
     return false;
   }
 
@@ -386,12 +514,14 @@
 
   // ==========================================
   // 5. ENGINE AUTO-SKIP HẾT TOÀN BỘ MODULE (TỰ ĐỘNG BỀN VỮNG)
+  // Xử lý thông minh Video, Reading (Mark as completed) và SPA Routing
   // ==========================================
-  let autoSkipTimer = null;
-  let lastProcessedUrl = '';
-  let lastActionTime = 0;
+  let isStepInProgress = false;
+  let autoSkipHeartbeat = null;
+  let lastEvaluatedUrl = '';
+  let lastActionTimestamp = 0;
 
-  function runAutoSkipStep() {
+  function executeAutoSkipStep() {
     chrome.storage.local.get(['auto_skip_active'], (res) => {
       if (!res.auto_skip_active) {
         stopAutoSkipLoop();
@@ -400,115 +530,230 @@
 
       updateFloatingHUD(true);
 
+      // Nếu bước trước đang trong quá trình thực thi (chưa hết timeout), không ngắt
+      if (isStepInProgress) {
+        // Tự động gỡ khóa nếu kẹt quá 10 giây
+        if (Date.now() - lastActionTimestamp > 10000) {
+          isStepInProgress = false;
+        } else {
+          return;
+        }
+      }
+
       const currentUrl = window.location.href;
       const now = Date.now();
 
-      // Cooldown chống spam cùng 1 trang trong vòng 3.5 giây
-      if (currentUrl === lastProcessedUrl && (now - lastActionTime < 3500)) {
-        return;
-      }
-
-      // TRƯỜNG HỢP A: Gặp bài kiểm tra / Quiz / Exam -> Tạm dừng an toàn để người dùng làm hoặc dùng AI giải
-      if (currentUrl.includes('/quiz/') || currentUrl.includes('/exam/') || currentUrl.includes('/assignment/')) {
-        showInPageToast('⚠️ Gặp bài Quiz/Bài tập! Tạm dừng Auto-Skip để bạn kiểm tra hoặc dùng AI giải.', true);
-        chrome.storage.local.set({ 'auto_skip_active': false });
+      // TRƯỜNG HỢP A: Gặp Quiz / Exam / Assignment -> Dừng an toàn để người dùng làm hoặc AI giải
+      if (
+        currentUrl.includes('/quiz/') ||
+        currentUrl.includes('/exam/') ||
+        currentUrl.includes('/assignment/') ||
+        currentUrl.includes('/ungradedLti/')
+      ) {
+        showInPageToast('⏸️ Gặp bài Quiz / Bài tập! Tạm dừng Auto-Skip để bạn làm hoặc giải với AI.', true);
+        chrome.storage.local.set({ auto_skip_active: false });
         updateFloatingHUD(false);
+        stopAutoSkipLoop();
         return;
       }
 
-      // TRƯỜNG HỢP B: Đang ở trang tổng quan Module (/home/module/1)
+      // TRƯỜNG HỢP B: Đang ở trang tổng quan Module (/home/module/...)
       if (currentUrl.includes('/home/module/') || currentUrl.includes('/module/')) {
+        isStepInProgress = true;
+        lastActionTimestamp = now;
+        lastEvaluatedUrl = currentUrl;
+
         const startEl = findOverviewStartElement();
         if (startEl) {
-          lastProcessedUrl = currentUrl;
-          lastActionTime = now;
-          showInPageToast('🚀 [Auto-Skip] Đang bấm "Get started" để vào bài học...');
+          showInPageToast('🚀 [Auto-Skip] Bấm "Get started" để vào bài học...');
           triggerClick(startEl);
         }
+        setTimeout(() => {
+          isStepInProgress = false;
+        }, 2500);
         return;
       }
 
-      // TRƯỜNG HỢP C: Đang trong bài học (Video)
+      // TRƯỜNG HỢP C: Là bài giảng Video (/lecture/)
+      if (currentUrl.includes('/lecture/')) {
+        isStepInProgress = true;
+        lastActionTimestamp = now;
+        lastEvaluatedUrl = currentUrl;
+        processVideoLectureStep(0);
+        return;
+      }
+
+      // TRƯỜNG HỢP D: Bài đọc Reading / Supplement (/supplement/, /item/, /ungradedWidget/)
+      // hoặc trang có nút Mark as completed
+      const isReadingUrl = currentUrl.includes('/supplement/') || currentUrl.includes('/item/') || currentUrl.includes('/ungradedWidget/');
+      const hasMarkBtn = findMarkAsCompletedButton() !== null;
+
+      if (isReadingUrl || hasMarkBtn) {
+        isStepInProgress = true;
+        lastActionTimestamp = now;
+        lastEvaluatedUrl = currentUrl;
+        processReadingStep();
+        return;
+      }
+
+      // TRƯỜNG HỢP E: Trang có thẻ Video bất kể URL nào
       const videos = findVideos();
       if (videos.length > 0) {
-        lastProcessedUrl = currentUrl;
-        lastActionTime = now;
-
-        for (const v of videos) {
-          try {
-            v.muted = true;
-            v.playbackRate = 16;
-            if (v.duration && !isNaN(v.duration) && isFinite(v.duration)) {
-              v.currentTime = Math.max(0, v.duration - 0.5);
-            } else {
-              v.currentTime = 999999;
-            }
-            v.play().catch(() => {});
-            v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-            v.dispatchEvent(new Event('ended', { bubbles: true }));
-          } catch (e) {}
-        }
-
-        showInPageToast('🚀 [Auto-Skip] Đã hoàn thành Video! Đang chuyển bài tiếp theo...');
-
-        // Chờ 2 giây để server Coursera ghi nhận completed tick xanh rồi bấm Next
-        setTimeout(() => {
-          chrome.storage.local.get(['auto_skip_active'], (r) => {
-            if (!r.auto_skip_active) return;
-            const nextBtn = findNextButton();
-            if (nextBtn) {
-              triggerClick(nextBtn);
-            } else {
-              // Hết bài học trong module
-              showInPageToast('🎉 HOÀN THÀNH! Đã tự động duyệt hết toàn bộ bài học trong Module!');
-              chrome.storage.local.set({ 'auto_skip_active': false });
-              updateFloatingHUD(false);
-            }
-          });
-        }, 2000);
-
+        isStepInProgress = true;
+        lastActionTimestamp = now;
+        lastEvaluatedUrl = currentUrl;
+        processVideoLectureStep(0);
         return;
       }
 
-      // TRƯỜNG HỢP D: Đang trong bài đọc (Reading / Supplement)
-      const isContentItem = currentUrl.includes('/supplement/') || currentUrl.includes('/item/') || currentUrl.includes('/lecture/');
-      if (isContentItem) {
-        lastProcessedUrl = currentUrl;
-        lastActionTime = now;
-
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-        showInPageToast('🚀 [Auto-Skip] Đã đọc xong tài liệu! Đang chuyển tiếp...');
-
+      // TRƯỜNG HỢP F: Thử chuyển tiếp nếu trang không xác định
+      isStepInProgress = true;
+      lastActionTimestamp = now;
+      lastEvaluatedUrl = currentUrl;
+      setTimeout(() => {
+        navigateToNextLesson();
         setTimeout(() => {
-          chrome.storage.local.get(['auto_skip_active'], (r) => {
-            if (!r.auto_skip_active) return;
-            const nextBtn = findNextButton();
-            if (nextBtn) {
-              triggerClick(nextBtn);
-            } else {
-              showInPageToast('🎉 HOÀN THÀNH! Đã duyệt hết toàn bộ bài học trong Module!');
-              chrome.storage.local.set({ 'auto_skip_active': false });
-              updateFloatingHUD(false);
-            }
-          });
-        }, 1800);
-      }
+          isStepInProgress = false;
+        }, 1200);
+      }, 1500);
     });
   }
 
+  // Xử lý bài Video với cơ chế chờ video mount vào DOM (React SPA)
+  function processVideoLectureStep(retryCount = 0) {
+    const videos = findVideos();
+    if (videos.length === 0) {
+      if (retryCount < 8) {
+        showInPageToast(`⏳ [Auto-Skip] Đang tải Video... (${retryCount + 1}/8)`);
+        setTimeout(() => {
+          processVideoLectureStep(retryCount + 1);
+        }, 450);
+        return;
+      }
+      // Nếu sau 8 lần (khoảng 3.6s) vẫn không thấy video, có thể là bài text nằm trong URL /lecture/
+      showInPageToast('ℹ️ Không thấy Video, chuyển sang kiểm tra bài đọc...');
+      processReadingStep();
+      return;
+    }
+
+    // Đã có Video
+    for (const v of videos) {
+      try {
+        v.muted = true;
+        v.playbackRate = 16;
+        if (v.duration && !isNaN(v.duration) && isFinite(v.duration)) {
+          v.currentTime = Math.max(0, v.duration - 0.2);
+        } else {
+          v.currentTime = 999999;
+        }
+        v.play().catch(() => {});
+        v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+        v.dispatchEvent(new Event('ended', { bubbles: true }));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    showInPageToast('⏩ [Auto-Skip] Đã tua hết Video! Đang lưu tiến độ...');
+
+    setTimeout(() => {
+      // Bấm Mark as completed nếu có nút phụ
+      const markBtn = findMarkAsCompletedButton();
+      if (markBtn) triggerClick(markBtn);
+
+      setTimeout(() => {
+        navigateToNextLesson();
+        setTimeout(() => {
+          isStepInProgress = false;
+        }, 1500);
+      }, 500);
+    }, 1500);
+  }
+
+  // Xử lý bài đọc Reading (Tự động bấm Mark as completed và chuyển tiếp)
+  function processReadingStep() {
+    showInPageToast('📖 [Auto-Skip] Đang đọc tài liệu...');
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+
+    setTimeout(() => {
+      const markBtn = findMarkAsCompletedButton();
+      if (markBtn) {
+        showInPageToast('✅ [Auto-Skip] Đã bấm "Mark as completed"!');
+        triggerClick(markBtn);
+
+        // Chờ 1.2s để Coursera tick xanh và lưu tiến độ lên máy chủ
+        setTimeout(() => {
+          navigateToNextLesson();
+          setTimeout(() => {
+            isStepInProgress = false;
+          }, 1500);
+        }, 1200);
+      } else {
+        showInPageToast('📖 Đã đọc xong! Đang chuyển bài tiếp theo...');
+        setTimeout(() => {
+          navigateToNextLesson();
+          setTimeout(() => {
+            isStepInProgress = false;
+          }, 1500);
+        }, 800);
+      }
+    }, 800);
+  }
+
+  // Bắt sự kiện chuyển trang trong React Single Page App (SPA)
+  function setupSpaUrlWatcher() {
+    const handleUrlChange = () => {
+      const currentUrl = window.location.href;
+      if (currentUrl !== lastEvaluatedUrl) {
+        isStepInProgress = false; // Reset cờ khóa để trang mới được xử lý ngay
+        chrome.storage.local.get(['auto_skip_active'], (res) => {
+          if (res.auto_skip_active) {
+            // Chờ 800ms để DOM trang mới render
+            setTimeout(() => {
+              executeAutoSkipStep();
+            }, 800);
+          }
+        });
+      }
+    };
+
+    // Hook HTML5 History API
+    const origPush = history.pushState;
+    history.pushState = function(...args) {
+      const ret = origPush.apply(this, args);
+      setTimeout(handleUrlChange, 100);
+      return ret;
+    };
+
+    const origReplace = history.replaceState;
+    history.replaceState = function(...args) {
+      const ret = origReplace.apply(this, args);
+      setTimeout(handleUrlChange, 100);
+      return ret;
+    };
+
+    window.addEventListener('popstate', () => {
+      setTimeout(handleUrlChange, 100);
+    });
+  }
+
+  setupSpaUrlWatcher();
+
   function startAutoSkipLoop() {
-    if (autoSkipTimer) clearInterval(autoSkipTimer);
-    runAutoSkipStep();
-    autoSkipTimer = setInterval(runAutoSkipStep, 1800);
+    if (autoSkipHeartbeat) clearInterval(autoSkipHeartbeat);
+    isStepInProgress = false;
+    executeAutoSkipStep();
+    autoSkipHeartbeat = setInterval(executeAutoSkipStep, 1800);
     updateFloatingHUD(true);
     showInPageToast('🚀 Chế độ Auto-Skip Module đã BẬT!');
   }
 
   function stopAutoSkipLoop() {
-    if (autoSkipTimer) {
-      clearInterval(autoSkipTimer);
-      autoSkipTimer = null;
+    if (autoSkipHeartbeat) {
+      clearInterval(autoSkipHeartbeat);
+      autoSkipHeartbeat = null;
     }
+    isStepInProgress = false;
     updateFloatingHUD(false);
   }
 
@@ -521,7 +766,7 @@
     }
   });
 
-  // Lắng nghe thay đổi trạng thái từ Side Panel
+  // Lắng nghe thay đổi trạng thái từ Side Panel hoặc HUD
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.auto_skip_active !== undefined) {
       if (changes.auto_skip_active.newValue) {

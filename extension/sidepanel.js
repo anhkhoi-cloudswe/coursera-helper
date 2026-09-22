@@ -31,7 +31,6 @@ const settingsBox = document.getElementById('settingsBox');
 const apiKeyInput = document.getElementById('apiKeyInput');
 const modelSelect = document.getElementById('modelSelect');
 const chkAutoFillQuiz = document.getElementById('chkAutoFillQuiz');
-const btnAutoSkipModule = document.getElementById('btnAutoSkipModule');
 const toast = document.getElementById('toast');
 
 // =======================================================
@@ -104,25 +103,6 @@ safeListen('chkAutoFillQuiz', 'change', () => {
   }
 });
 
-// Lắng nghe thay đổi trạng thái auto skip từ storage
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.auto_skip_active !== undefined) {
-    updateAutoSkipButtonUI(changes.auto_skip_active.newValue);
-  }
-});
-
-function updateAutoSkipButtonUI(isActive) {
-  if (!btnAutoSkipModule) return;
-  if (isActive) {
-    btnAutoSkipModule.innerText = '🛑 Dừng Auto Skip';
-    btnAutoSkipModule.style.background = '#f43f5e';
-    btnAutoSkipModule.style.color = '#ffffff';
-  } else {
-    btnAutoSkipModule.innerText = '🚀 Auto Skip Hết Module';
-    btnAutoSkipModule.style.background = 'var(--emerald)';
-    btnAutoSkipModule.style.color = '#064e3b';
-  }
-}
 
 // =======================================================
 // 3. LÀM SẠCH BẪY COURSERA
@@ -812,141 +792,6 @@ safeListen('btnSaveKey', 'click', async () => {
   }
 });
 
-// =======================================================
-// 8. ĐIỀU KHIỂN VIDEO & AUTO-SKIP CHẮC CHẮN 100%
-// =======================================================
-
-// A. NÚT SKIP 1 VIDEO (Tua video đang mở hoặc bấm Next)
-safeListen('btnSkipVideo', 'click', async () => {
-  const tab = await getCourseraTab();
-  if (!tab || !tab.id) {
-    showToast('⚠️ Vui lòng mở trang Coursera!');
-    return;
-  }
-
-  showToast('⏳ Đang xử lý Video...');
-
-  chrome.tabs.sendMessage(tab.id, { action: 'skip_video' }, (res) => {
-    if (chrome.runtime.lastError || !res) {
-      executeDirectSkip(tab.id);
-    } else {
-      showToast('⏩ Đã tua Video & đang chuyển bài!');
-    }
-  });
-});
-
-// B. NÚT TỐC ĐỘ 16X
-safeListen('btnSpeed16', 'click', async () => {
-  const tab = await getCourseraTab();
-  if (!tab || !tab.id) {
-    showToast('⚠️ Vui lòng mở trang Coursera!');
-    return;
-  }
-
-  chrome.tabs.sendMessage(tab.id, { action: 'set_video_speed', speed: 16 }, (res) => {
-    if (chrome.runtime.lastError || !res) {
-      chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => {
-          const videos = Array.from(document.querySelectorAll('video'));
-          videos.forEach(v => { v.playbackRate = 16; v.play().catch(() => {}); });
-        }
-      });
-    }
-    showToast('⚡ Đã tăng tốc Video lên 16x!');
-  });
-});
-
-// C. NÚT AUTO-SKIP HẾT TOÀN BỘ MODULE (HANDS-FREE)
-safeListen('btnAutoSkipModule', 'click', async () => {
-  const tab = await getCourseraTab();
-  if (!tab || !tab.id) {
-    showToast('⚠️ Vui lòng mở trang Coursera!');
-    return;
-  }
-
-  chrome.storage.local.get(['auto_skip_active'], (res) => {
-    const nextState = !res.auto_skip_active;
-    chrome.storage.local.set({ 'auto_skip_active': nextState }, () => {
-      updateAutoSkipButtonUI(nextState);
-
-      if (nextState) {
-        showToast('🚀 Khởi động Auto-Skip Module!');
-        chrome.tabs.sendMessage(tab.id, { action: 'toggle_auto_skip' }, () => {
-          if (chrome.runtime.lastError) {
-            chrome.scripting.executeScript({
-              target: { tabId: tab.id },
-              files: ['content.js']
-            });
-          }
-        });
-      } else {
-        showToast('🛑 Đã dừng Auto-Skip');
-        chrome.tabs.sendMessage(tab.id, { action: 'toggle_auto_skip' }, () => {});
-      }
-    });
-  });
-});
-
-// Script dự phòng can thiệp trực tiếp DOM nếu tab chưa kịp load content script
-function executeDirectSkip(tabId) {
-  chrome.scripting.executeScript({
-    target: { tabId: tabId, allFrames: true },
-    func: () => {
-      const isOverview = window.location.href.includes('/home/module/') || window.location.href.includes('/module/');
-      if (isOverview) {
-        const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"], span'));
-        const startBtn = allBtns.find(el => {
-          const t = (el.innerText || el.textContent || '').trim().toLowerCase();
-          return t === 'get started' || t === 'bắt đầu' || t.startsWith('get started');
-        });
-        if (startBtn) {
-          (startBtn.closest('button, a') || startBtn).click();
-          return;
-        }
-        const firstItem = document.querySelector('a[href*="/lecture/"], a[href*="/item/"]');
-        if (firstItem) {
-          firstItem.click();
-          return;
-        }
-      }
-
-      const videos = Array.from(document.querySelectorAll('video'));
-      for (const v of videos) {
-        try {
-          v.muted = true;
-          v.playbackRate = 16;
-          if (v.duration && !isNaN(v.duration) && isFinite(v.duration)) {
-            v.currentTime = Math.max(0, v.duration - 0.5);
-          } else {
-            v.currentTime = 999999;
-          }
-          v.play().catch(() => {});
-          v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-          v.dispatchEvent(new Event('ended', { bubbles: true }));
-        } catch (e) {}
-      }
-
-      setTimeout(() => {
-        const clickables = Array.from(document.querySelectorAll('button, a, [role="button"]'));
-        const nextBtn = clickables.find(el => {
-          const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-          return txt.includes('go to next item') || txt.includes('next item');
-        });
-        if (nextBtn) {
-          nextBtn.click();
-        } else {
-          const activeItem = document.querySelector('[aria-current="true"], .rc-ItemLink.active');
-          if (activeItem) {
-            const nextContainer = activeItem.closest('li, [role="listitem"], .rc-ItemRow')?.nextElementSibling;
-            const nextLink = nextContainer?.querySelector('a, button');
-            if (nextLink) nextLink.click();
-          }
-        }
-      }, 1200);
-    }
-  });
-}
 
 // Mở trang Web
 safeListen('btnOpenWeb', 'click', () => {
