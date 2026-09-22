@@ -774,105 +774,184 @@
     return null;
   }
 
+  // Kích hoạt ô xác nhận Coursera Honor Code chuẩn xác 100%
+  async function tickHonorCodeAgreement() {
+    // 1. Tìm phần tử input
+    const input = document.getElementById('agreement-checkbox-base') ||
+                  document.querySelector('input[type="checkbox"][id*="agreement"]') ||
+                  document.querySelector('input[type="checkbox"][id*="honor"]') ||
+                  Array.from(document.querySelectorAll('input[type="checkbox"]')).find(cb => {
+                    const txt = (cb.closest('label, div[role="group"], section, fieldset')?.innerText || '').toLowerCase();
+                    return txt.includes('understand and agree') || txt.includes('honor code') || txt.includes('hiểu và đồng ý');
+                  });
+
+    if (!input) {
+      console.warn('CourseraHelper: Không tìm thấy ô Honor Code');
+      return false;
+    }
+
+    // Cuộn vào giữa màn hình
+    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await new Promise(r => setTimeout(r, 300));
+
+    // Nếu đã checked thì xong
+    if (input.checked || input.getAttribute('aria-checked') === 'true') {
+      highlightOptionCard(input);
+      return true;
+    }
+
+    // Tìm các phần tử liên quan
+    const label = input.closest('label') || document.querySelector(`label[for="${input.id}"]`);
+    const labelText = document.getElementById('agreement-checkbox-base-label-text') ||
+                      label?.querySelector('[id*="label-text"]') ||
+                      label?.querySelector('.cds-checkboxAndRadio-labelContent') ||
+                      label?.querySelector('.cds-checkboxAndRadio-customInput') ||
+                      label;
+
+    // PHƯƠNG PHÁP 1: Click duy nhất 1 lần vào text của label (như người dùng thật click vào chữ)
+    if (labelText) {
+      ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(type => {
+        labelText.dispatchEvent(new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          view: window
+        }));
+      });
+      try {
+        labelText.click();
+      } catch (e) {}
+    }
+
+    await new Promise(r => setTimeout(r, 350));
+    if (input.checked || input.getAttribute('aria-checked') === 'true') {
+      highlightOptionCard(input);
+      return true;
+    }
+
+    // PHƯƠNG PHÁP 2: Gọi input.click() trực tiếp
+    try {
+      input.focus();
+      input.click();
+    } catch (e) {}
+
+    await new Promise(r => setTimeout(r, 350));
+    if (input.checked || input.getAttribute('aria-checked') === 'true') {
+      highlightOptionCard(input);
+      return true;
+    }
+
+    // PHƯƠNG PHÁP 3: Thực thi trực tiếp trong Main World để can thiệp React value tracker của Coursera
+    try {
+      const script = document.createElement('script');
+      script.textContent = `(() => {
+        const el = document.getElementById('${input.id || 'agreement-checkbox-base'}');
+        if (!el || el.checked) return;
+        
+        // Reset React internal tracker nếu có
+        if (el._valueTracker) {
+          el._valueTracker.setValue(false);
+        }
+        
+        // Gọi setter gốc của HTMLInputElement
+        const proto = window.HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'checked')?.set;
+        if (setter) {
+          setter.call(el, true);
+        } else {
+          el.checked = true;
+        }
+        
+        // Bắn event change và input để React cập nhật form state
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      })();`;
+      (document.head || document.documentElement).appendChild(script);
+      script.remove();
+    } catch (e) {
+      console.warn('Main world script injection error:', e);
+    }
+
+    await new Promise(r => setTimeout(r, 400));
+    if (input.checked || input.getAttribute('aria-checked') === 'true') {
+      highlightOptionCard(input);
+      return true;
+    }
+
+    // PHƯƠNG PHÁP 4: Fallback trong Isolated World
+    const proto = window.HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'checked')?.set;
+    if (setter) {
+      setter.call(input, true);
+    } else {
+      input.checked = true;
+    }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+
+    highlightOptionCard(input);
+    return input.checked || input.getAttribute('aria-checked') === 'true';
+  }
+
   // Tự động tìm checkbox Coursera Honor Code, tick chọn, sau đó tìm và bấm nút Submit
   async function completeHonorCodeAndSubmitQuiz() {
-    showInPageToast('✍️ Đang kiểm tra Coursera Honor Code...');
+    showInPageToast('✍️ Đang xác nhận Coursera Honor Code...');
+
+    // Cuộn xuống cuối trang
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     await new Promise(r => setTimeout(r, 600));
 
-    // Cuộn xuống cuối trang để load toàn bộ phần submit và Honor Code
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-    await new Promise(r => setTimeout(r, 800));
-
-    // 1. Tìm checkbox Honor Code
-    let honorCheckbox = null;
-    const allCheckboxes = Array.from(document.querySelectorAll(
-      'input[type="checkbox"], [role="checkbox"], label.cds-checkboxAndRadio-label'
-    ));
-
-    for (const el of allCheckboxes) {
-      const container = el.closest('label, div[role="group"], div[data-testid*="agreement"], section, fieldset, form') || el.parentElement;
-      const text = (container?.innerText || el.innerText || '').toLowerCase();
-      if (
-        text.includes('understand and agree') ||
-        text.includes('honor code') ||
-        text.includes('confirm this work is your own') ||
-        text.includes('you must select the checkbox') ||
-        text.includes('hiểu và đồng ý') ||
-        text.includes('cam kết danh dự')
-      ) {
-        honorCheckbox = el.tagName === 'INPUT' ? el : (el.querySelector('input[type="checkbox"]') || el);
-        break;
-      }
+    // 1. Kích hoạt ô Honor Code
+    const isTicked = await tickHonorCodeAgreement();
+    if (isTicked) {
+      showInPageToast('✅ Đã tích chọn Coursera Honor Code!');
+    } else {
+      showInPageToast('⏳ Đang mở khóa Honor Code...', false, 2000);
     }
 
-    if (honorCheckbox) {
-      const isAlreadyChecked = honorCheckbox.checked || 
-        honorCheckbox.getAttribute('aria-checked') === 'true' || 
-        honorCheckbox.closest('label')?.classList.contains('cds-checkboxAndRadio-checked');
-
-      if (!isAlreadyChecked) {
-        tickOptionElement(honorCheckbox);
-        if (honorCheckbox._valueTracker) {
-          honorCheckbox._valueTracker.setValue(false);
-        }
-        honorCheckbox.checked = true;
-        honorCheckbox.dispatchEvent(new Event('input', { bubbles: true }));
-        honorCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
-
-        const parentLabel = honorCheckbox.closest('label');
-        if (parentLabel) parentLabel.click();
-
-        showInPageToast('✅ Đã tích chọn Coursera Honor Code!');
-        await new Promise(r => setTimeout(r, 800));
-      } else {
-        showInPageToast('✅ Coursera Honor Code đã được tích chọn.');
-      }
-    }
-
-    // 2. Tìm nút Submit (chờ nút được kích hoạt sau khi tick Honor Code)
+    // 2. Chờ nút Submit chuyển từ disabled sang enabled
     showInPageToast('🚀 Đang kiểm tra nút Submit...');
     let submitBtn = null;
-    for (let attempts = 0; attempts < 14; attempts++) {
-      submitBtn = findQuizSubmitButton(true);
+    for (let attempts = 0; attempts < 16; attempts++) {
+      submitBtn = findQuizSubmitButton(true); // true = chỉ lấy nút khi đã active/enabled
       if (submitBtn) break;
 
-      // Nếu chưa enable và checkbox có vẻ chưa ăn, thử kích hoạt lại
-      if (honorCheckbox && !honorCheckbox.checked) {
-        honorCheckbox.checked = true;
-        honorCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
-        honorCheckbox.closest('label')?.click();
+      // Nếu sau 1.2s nút vẫn chưa enabled, thử kích hoạt lại Honor Code
+      if (attempts === 5 || attempts === 10) {
+        await tickHonorCodeAgreement();
       }
       await new Promise(r => setTimeout(r, 250));
     }
 
     if (!submitBtn) {
-      submitBtn = findQuizSubmitButton(false);
-    }
-
-    if (submitBtn) {
-      submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      await new Promise(r => setTimeout(r, 500));
-
-      submitBtn.style.outline = '3px solid #22c55e';
-      submitBtn.style.boxShadow = '0 0 16px rgba(34, 197, 94, 0.6)';
-
-      triggerClick(submitBtn);
-      showInPageToast('📤 Đã bấm nút Submit! Đang kiểm tra xác nhận...');
-
-      // 3. Chờ popup/modal xác nhận nếu có
-      await new Promise(r => setTimeout(r, 1500));
-      const confirmBtn = findSubmitConfirmButton();
-      if (confirmBtn) {
-        triggerClick(confirmBtn);
-        showInPageToast('🎉 Đã xác nhận nộp bài thành công!');
-      } else {
-        showInPageToast('🎉 Đã nộp bài thành công!');
+      showInPageToast('⚠️ Nút Submit chưa mở khóa. Bạn hãy tick vào ô xác nhận Honor Code trên màn hình để nộp nhé!', true, 6000);
+      const input = document.getElementById('agreement-checkbox-base');
+      if (input) {
+        highlightOptionCard(input);
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
-      return true;
-    } else {
-      showInPageToast('⚠️ Không tìm thấy nút Submit khả dụng trên trang.', true, 5000);
       return false;
     }
+
+    // 3. Nút Submit đã sẵn sàng -> Bấm nộp bài
+    submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await new Promise(r => setTimeout(r, 400));
+
+    submitBtn.style.outline = '3px solid #22c55e';
+    submitBtn.style.boxShadow = '0 0 16px rgba(34, 197, 94, 0.6)';
+
+    triggerClick(submitBtn);
+    showInPageToast('📤 Đã bấm nút Submit! Đang kiểm tra xác nhận...');
+
+    // 4. Chờ popup/modal xác nhận nếu có
+    await new Promise(r => setTimeout(r, 1500));
+    const confirmBtn = findSubmitConfirmButton();
+    if (confirmBtn) {
+      triggerClick(confirmBtn);
+      showInPageToast('🎉 Đã xác nhận nộp bài thành công!');
+    } else {
+      showInPageToast('🎉 Đã nộp bài thành công!');
+    }
+    return true;
   }
 
   // Quy trình xử lý Quiz trong Auto-Skip: Giải AI -> Submit -> Chờ kết quả -> Chuyển tiếp
