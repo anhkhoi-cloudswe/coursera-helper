@@ -717,24 +717,27 @@
   // ==========================================
 
   // Tìm nút Submit của Coursera Quiz
-  function findQuizSubmitButton() {
+  function findQuizSubmitButton(mustBeEnabled = true) {
     // Ưu tiên data-testid
     const byTestId = document.querySelector(
       'button[data-testid*="submit"], button[data-testid*="Submit"], button[data-e2e*="submit"]'
     );
-    if (byTestId && !byTestId.disabled) return byTestId;
+    if (byTestId) {
+      if (!mustBeEnabled) return byTestId;
+      if (!byTestId.disabled && byTestId.getAttribute('aria-disabled') !== 'true') return byTestId;
+    }
 
     // Tìm theo text
     const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
     for (const btn of allBtns) {
-      if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+      if (mustBeEnabled && (btn.disabled || btn.getAttribute('aria-disabled') === 'true')) continue;
       const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
       if (
         txt === 'submit' ||
         txt === 'submit quiz' ||
         txt === 'submit assignment' ||
         txt === 'nộp bài' ||
-        txt.includes('submit') && txt.length < 30
+        (txt.startsWith('submit') && txt.length < 30)
       ) {
         return btn;
       }
@@ -771,6 +774,107 @@
     return null;
   }
 
+  // Tự động tìm checkbox Coursera Honor Code, tick chọn, sau đó tìm và bấm nút Submit
+  async function completeHonorCodeAndSubmitQuiz() {
+    showInPageToast('✍️ Đang kiểm tra Coursera Honor Code...');
+    await new Promise(r => setTimeout(r, 600));
+
+    // Cuộn xuống cuối trang để load toàn bộ phần submit và Honor Code
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    await new Promise(r => setTimeout(r, 800));
+
+    // 1. Tìm checkbox Honor Code
+    let honorCheckbox = null;
+    const allCheckboxes = Array.from(document.querySelectorAll(
+      'input[type="checkbox"], [role="checkbox"], label.cds-checkboxAndRadio-label'
+    ));
+
+    for (const el of allCheckboxes) {
+      const container = el.closest('label, div[role="group"], div[data-testid*="agreement"], section, fieldset, form') || el.parentElement;
+      const text = (container?.innerText || el.innerText || '').toLowerCase();
+      if (
+        text.includes('understand and agree') ||
+        text.includes('honor code') ||
+        text.includes('confirm this work is your own') ||
+        text.includes('you must select the checkbox') ||
+        text.includes('hiểu và đồng ý') ||
+        text.includes('cam kết danh dự')
+      ) {
+        honorCheckbox = el.tagName === 'INPUT' ? el : (el.querySelector('input[type="checkbox"]') || el);
+        break;
+      }
+    }
+
+    if (honorCheckbox) {
+      const isAlreadyChecked = honorCheckbox.checked || 
+        honorCheckbox.getAttribute('aria-checked') === 'true' || 
+        honorCheckbox.closest('label')?.classList.contains('cds-checkboxAndRadio-checked');
+
+      if (!isAlreadyChecked) {
+        tickOptionElement(honorCheckbox);
+        if (honorCheckbox._valueTracker) {
+          honorCheckbox._valueTracker.setValue(false);
+        }
+        honorCheckbox.checked = true;
+        honorCheckbox.dispatchEvent(new Event('input', { bubbles: true }));
+        honorCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+
+        const parentLabel = honorCheckbox.closest('label');
+        if (parentLabel) parentLabel.click();
+
+        showInPageToast('✅ Đã tích chọn Coursera Honor Code!');
+        await new Promise(r => setTimeout(r, 800));
+      } else {
+        showInPageToast('✅ Coursera Honor Code đã được tích chọn.');
+      }
+    }
+
+    // 2. Tìm nút Submit (chờ nút được kích hoạt sau khi tick Honor Code)
+    showInPageToast('🚀 Đang kiểm tra nút Submit...');
+    let submitBtn = null;
+    for (let attempts = 0; attempts < 14; attempts++) {
+      submitBtn = findQuizSubmitButton(true);
+      if (submitBtn) break;
+
+      // Nếu chưa enable và checkbox có vẻ chưa ăn, thử kích hoạt lại
+      if (honorCheckbox && !honorCheckbox.checked) {
+        honorCheckbox.checked = true;
+        honorCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+        honorCheckbox.closest('label')?.click();
+      }
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    if (!submitBtn) {
+      submitBtn = findQuizSubmitButton(false);
+    }
+
+    if (submitBtn) {
+      submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await new Promise(r => setTimeout(r, 500));
+
+      submitBtn.style.outline = '3px solid #22c55e';
+      submitBtn.style.boxShadow = '0 0 16px rgba(34, 197, 94, 0.6)';
+
+      triggerClick(submitBtn);
+      showInPageToast('📤 Đã bấm nút Submit! Đang kiểm tra xác nhận...');
+
+      // 3. Chờ popup/modal xác nhận nếu có
+      await new Promise(r => setTimeout(r, 1500));
+      const confirmBtn = findSubmitConfirmButton();
+      if (confirmBtn) {
+        triggerClick(confirmBtn);
+        showInPageToast('🎉 Đã xác nhận nộp bài thành công!');
+      } else {
+        showInPageToast('🎉 Đã nộp bài thành công!');
+      }
+      return true;
+    } else {
+      showInPageToast('⚠️ Không tìm thấy nút Submit khả dụng trên trang.', true, 5000);
+      return false;
+    }
+  }
+
   // Quy trình xử lý Quiz trong Auto-Skip: Giải AI -> Submit -> Chờ kết quả -> Chuyển tiếp
   async function processQuizStep() {
     showInPageToast('🤖 [Auto-Skip] Phát hiện Quiz/Assignment! Đang kiểm tra trang...', false, 5000);
@@ -785,8 +889,6 @@
       triggerClick(startAssignmentBtn);
 
       // Chờ SPA navigate sang trang quiz thực sự (có câu hỏi)
-      // SPA watcher sẽ xử lý tiếp khi URL thay đổi
-      // Giữ nguyên isStepInProgress/isQuizSolveInProgress để heartbeat không gây ra re-entry
       return;
     }
 
@@ -824,7 +926,7 @@
     }
 
     const model = savedModel || 'gemini-3.6-flash';
-    const BATCH_SIZE = 10; // Gửi nhiều câu 1 lần để giải nhanh, ít API call hơn
+    const BATCH_SIZE = 10;
     const totalBatches = Math.ceil(questions.length / BATCH_SIZE);
 
     for (let b = 0; b < totalBatches; b++) {
@@ -852,30 +954,17 @@
       }
     }
 
-    showInPageToast('📝 [Auto-Skip] Đã tick đáp án xong! Đang chuẩn bị nộp bài...', false, 3000);
-    await new Promise(r => setTimeout(r, 1200));
+    showInPageToast('📝 [Auto-Skip] Đã tick đáp án xong! Đang xác nhận Honor Code và nộp bài...', false, 3000);
+    await new Promise(r => setTimeout(r, 1000));
 
-    // Bước 3: Tìm và bấm nút Submit
-    let submitBtn = findQuizSubmitButton();
-    if (submitBtn) {
-      showInPageToast('📤 [Auto-Skip] Đang nộp bài...');
-      triggerClick(submitBtn);
-
-      // Chờ popup xác nhận xuất hiện
-      await new Promise(r => setTimeout(r, 1500));
-      const confirmBtn = findSubmitConfirmButton();
-      if (confirmBtn) {
-        triggerClick(confirmBtn);
-        showInPageToast('✅ [Auto-Skip] Đã xác nhận nộp bài!');
-      }
-
-      // Chờ kết quả xử lý rồi chuyển tiếp
+    // Bước 3: Tự động tick Honor Code và nộp bài
+    const submitted = await completeHonorCodeAndSubmitQuiz();
+    if (submitted) {
       await new Promise(r => setTimeout(r, 3000));
       showInPageToast('➡️ [Auto-Skip] Đã nộp xong! Đang chuyển sang bài tiếp theo...');
       navigateToNextLesson();
     } else {
-      // Không tìm thấy nút Submit (ví dụ quiz ungraded / peer graded)
-      showInPageToast('ℹ️ [Auto-Skip] Không tìm thấy nút Submit. Chuyển tiếp...', false, 3000);
+      showInPageToast('ℹ️ [Auto-Skip] Không thể tự nộp bài. Chuyển tiếp...', false, 3000);
       await new Promise(r => setTimeout(r, 1000));
       navigateToNextLesson();
     }
@@ -1019,92 +1108,100 @@
   function createFloatingHUD() {
     if (document.getElementById('coursera-helper-hud')) return;
 
+    // Chèn stylesheet chuẩn cho HUD nếu chưa có
+    if (!document.getElementById('coursera-helper-hud-styles')) {
+      const styleTag = document.createElement('style');
+      styleTag.id = 'coursera-helper-hud-styles';
+      styleTag.textContent = `
+        #coursera-helper-hud {
+          position: fixed;
+          top: 18px;
+          right: 22px;
+          z-index: 2147483646;
+          background: rgba(15, 23, 42, 0.94);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+          border-radius: 12px;
+          padding: 6px 8px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          user-select: none;
+        }
+        .ch-hud-btn {
+          border: none;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 13.5px;
+          font-weight: 600;
+          line-height: 1;
+          padding: 8px 14px;
+          border-radius: 8px;
+          transition: all 0.15s ease-in-out;
+          letter-spacing: -0.01em;
+          white-space: nowrap;
+          text-decoration: none;
+        }
+        .ch-hud-btn:active {
+          transform: scale(0.97);
+        }
+        #ch-hud-solvequiz {
+          background: #2563eb;
+          color: #ffffff;
+          box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+        }
+        #ch-hud-solvequiz:hover {
+          background: #1d4ed8;
+          box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5);
+        }
+        #ch-hud-autoskip {
+          background: #059669;
+          color: #ffffff;
+          box-shadow: 0 2px 8px rgba(5, 150, 105, 0.35);
+        }
+        #ch-hud-autoskip:hover {
+          background: #047857;
+          box-shadow: 0 4px 14px rgba(5, 150, 105, 0.5);
+        }
+        #ch-hud-autoskip.is-active {
+          background: #dc2626;
+          box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+        }
+        #ch-hud-autoskip.is-active:hover {
+          background: #b91c1c;
+        }
+        #ch-hud-skipone {
+          background: rgba(255, 255, 255, 0.08);
+          color: #f1f5f9;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        #ch-hud-skipone:hover {
+          background: rgba(255, 255, 255, 0.16);
+          color: #ffffff;
+        }
+      `;
+      document.head.appendChild(styleTag);
+    }
+
     floatingHUD = document.createElement('div');
     floatingHUD.id = 'coursera-helper-hud';
-    floatingHUD.style.cssText = `
-      position: fixed;
-      top: 18px;
-      right: 18px;
-      z-index: 2147483646;
-      background: rgba(15, 23, 42, 0.92);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(99, 102, 241, 0.4);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-      border-radius: 9999px;
-      padding: 4px 6px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      user-select: none;
-    `;
 
     floatingHUD.innerHTML = `
-      <button id="ch-hud-solvequiz" style="
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        color: #ffffff;
-        font-weight: 700;
-        font-size: 11px;
-        padding: 5px 12px;
-        border-radius: 9999px;
-        border: none;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        box-shadow: 0 2px 10px rgba(99, 102, 241, 0.45);
-        transition: all 0.15s ease;
-      " title="Tự động quét toàn bộ câu hỏi (kèm hình ảnh), gọi Gemini giải và tự tick cả bài!">
+      <button id="ch-hud-solvequiz" class="ch-hud-btn" title="Tự động quét toàn bộ câu hỏi (kèm hình ảnh), gọi Gemini giải, tick đáp án và tự động nộp bài!">
         ⚡ Tự Giải Cả Bài
       </button>
 
-      <button id="ch-hud-autoskip" style="
-        background: #10b981;
-        color: #064e3b;
-        font-weight: 700;
-        font-size: 11px;
-        padding: 5px 11px;
-        border-radius: 9999px;
-        border: none;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        transition: all 0.15s ease;
-      ">
+      <button id="ch-hud-autoskip" class="ch-hud-btn" title="Tự động duyệt bài giảng: tua video, đọc bài, tự giải quiz và nộp bài liên tục">
         🚀 Auto-Skip Module
       </button>
 
-      <button id="ch-hud-skipone" style="
-        background: rgba(255, 255, 255, 0.1);
-        color: #f8fafc;
-        font-weight: 600;
-        font-size: 11px;
-        padding: 5px 10px;
-        border-radius: 9999px;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        transition: all 0.15s ease;
-      " title="Tua video này tới cuối và sang bài tiếp">
+      <button id="ch-hud-skipone" class="ch-hud-btn" title="Tua video này tới cuối và sang bài tiếp">
         ⏩ Tua 1 bài
-      </button>
-
-      <button id="ch-hud-speed" style="
-        background: rgba(255, 255, 255, 0.1);
-        color: #f8fafc;
-        font-weight: 600;
-        font-size: 11px;
-        padding: 5px 8px;
-        border-radius: 9999px;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        cursor: pointer;
-        transition: all 0.15s ease;
-      " title="Tăng tốc video lên 16x">
-        ⚡ 16x
       </button>
     `;
 
@@ -1114,7 +1211,6 @@
     const btnSolveQuiz = floatingHUD.querySelector('#ch-hud-solvequiz');
     const btnAuto = floatingHUD.querySelector('#ch-hud-autoskip');
     const btnSkipOne = floatingHUD.querySelector('#ch-hud-skipone');
-    const btnSpeed = floatingHUD.querySelector('#ch-hud-speed');
 
     if (btnSolveQuiz) {
       btnSolveQuiz.addEventListener('click', () => {
@@ -1133,10 +1229,6 @@
       completeCourseraVideo();
     });
 
-    btnSpeed.addEventListener('click', () => {
-      setCourseraVideoSpeed(16);
-    });
-
     // Cập nhật giao diện theo trạng thái ban đầu
     chrome.storage.local.get(['auto_skip_active'], (res) => {
       updateFloatingHUD(!!res.auto_skip_active);
@@ -1149,12 +1241,10 @@
     if (!btnAuto) return;
 
     if (isActive) {
-      btnAuto.style.background = '#f43f5e';
-      btnAuto.style.color = '#ffffff';
+      btnAuto.classList.add('is-active');
       btnAuto.innerText = '🛑 Dừng Auto-Skip';
     } else {
-      btnAuto.style.background = '#10b981';
-      btnAuto.style.color = '#064e3b';
+      btnAuto.classList.remove('is-active');
       btnAuto.innerText = '🚀 Auto-Skip Module';
     }
   }
@@ -1260,36 +1350,57 @@
       .replace(/[\u201C\u201D]/g, '"')
       .replace(/[^\p{L}\p{N}\s]/gu, ' ')
       .replace(/\s+/g, ' ')
+      .replace(/^(?:[a-z0-9][\.\)\:\-]\s*)+/i, '')
       .trim();
   }
 
-  function isOptionMatch(el, targetAnswer) {
+  function getQuestionContainers() {
+    let containers = Array.from(document.querySelectorAll(
+      'div[data-testid="part-container"], fieldset.rc-FormPartsQuestion, fieldset, .rc-FormPartsQuestion, .rc-QuizQuestion, div[role="group"]'
+    )).filter((c, idx, arr) => !arr.some(other => other !== c && other.contains(c)));
+
+    if (containers.length === 0) {
+      const allInputs = Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
+      const parentSet = new Set();
+      allInputs.forEach(inp => {
+        const group = inp.closest('fieldset, form, div[role="group"], .rc-QuizQuestion') || inp.parentElement?.parentElement;
+        if (group) parentSet.add(group);
+      });
+      containers = Array.from(parentSet);
+    }
+    return containers;
+  }
+
+  function calculateOptionMatchScore(el, targetAnswer) {
     const rawText = (el.innerText || el.textContent || '').trim();
-    if (!rawText || rawText.length > 500) return false;
+    if (!rawText || rawText.length > 600) return 0;
 
     const opt = normalizeQuizText(rawText);
     const ans = normalizeQuizText(targetAnswer);
-    if (!opt || !ans) return false;
+    if (!opt || !ans) return 0;
 
-    // 1. Trùng khớp hoàn toàn
-    if (opt === ans) return true;
+    // 1. Khớp hoàn toàn
+    if (opt === ans) return 1.0;
 
-    // 2. Chứa nhau với độ dài đáng kể từ 12 ký tự
-    if (ans.length >= 12 && opt.includes(ans)) return true;
-    if (opt.length >= 12 && ans.includes(opt)) return true;
+    // 2. Một chuỗi chứa chuỗi kia
+    if (ans.length >= 8 && opt.includes(ans)) return 0.95;
+    if (opt.length >= 8 && ans.includes(opt)) return 0.90;
 
-    // 3. Khớp tỷ lệ từ khóa chính (trùng >= 70% từ vựng)
-    const optWords = new Set(opt.split(' ').filter(w => w.length >= 3));
-    const ansWords = new Set(ans.split(' ').filter(w => w.length >= 3));
+    // 3. Khớp tỷ lệ từ vựng (Jaccard similarity)
+    const optWords = new Set(opt.split(' ').filter(w => w.length >= 2));
+    const ansWords = new Set(ans.split(' ').filter(w => w.length >= 2));
     if (ansWords.size >= 2) {
       let overlap = 0;
       for (const w of ansWords) {
         if (optWords.has(w)) overlap++;
       }
-      if (overlap / ansWords.size >= 0.7) return true;
+      return overlap / ansWords.size;
     }
+    return 0;
+  }
 
-    return false;
+  function isOptionMatch(el, targetAnswer) {
+    return calculateOptionMatchScore(el, targetAnswer) >= 0.7;
   }
 
   function isOptionChecked(el, input) {
@@ -1316,20 +1427,21 @@
   }
 
   function tickOptionElement(el) {
+    if (!el) return false;
     try {
-      const input = el.tagName === 'INPUT' 
-        ? el 
-        : el.querySelector('input[type="radio"], input[type="checkbox"]');
+      const label = el.closest('label, [role="radio"], [role="checkbox"], li.rc-Option') || el;
+      const input = label.querySelector('input[type="radio"], input[type="checkbox"]') ||
+                    (el.tagName === 'INPUT' ? el : el.querySelector('input'));
 
       // Cuộn vào tầm nhìn
-      const scrollTarget = input || el;
+      const scrollTarget = input || label;
       try {
         scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       } catch (e) {}
 
       // Nếu ĐÃ được check rồi -> giữ nguyên, tuyệt đối không click lại (tránh toggle tắt checkbox)
-      if (isOptionChecked(el, input)) {
-        highlightOptionCard(el);
+      if (isOptionChecked(label, input)) {
+        highlightOptionCard(label);
         return true;
       }
 
@@ -1340,33 +1452,35 @@
       if (input) {
         try {
           input.click();
-          if (isOptionChecked(el, input)) ticked = true;
+          if (isOptionChecked(label, input)) ticked = true;
         } catch (e) {}
       }
 
-      // Bước 2: Nếu chưa checked (hoặc không có input), click vào <label> hoặc container
-      if (!ticked && !isOptionChecked(el, input)) {
-        const clickable = el.closest('label') || el;
+      // Bước 2: Nếu chưa checked, click vào <label>
+      if (!ticked && !isOptionChecked(label, input)) {
         try {
-          clickable.click();
-          if (isOptionChecked(el, input)) ticked = true;
+          label.click();
+          if (isOptionChecked(label, input)) ticked = true;
         } catch (e) {}
       }
 
       // Bước 3: Gửi sự kiện MouseEvent chuẩn cho React SyntheticEvent nếu vẫn chưa checked
-      if (!ticked && !isOptionChecked(el, input)) {
-        const target = input || el.closest('label') || el;
+      if (!ticked && !isOptionChecked(label, input)) {
+        const target = input || label;
         try {
-          ['mouseover', 'mousedown', 'mouseup', 'click'].forEach(evt => {
+          ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
             target.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
           });
-          if (isOptionChecked(el, input)) ticked = true;
+          if (isOptionChecked(label, input)) ticked = true;
         } catch (e) {}
       }
 
       // Bước 4: React controlled component prototype setter dự phòng tối thượng
-      if (!isOptionChecked(el, input) && input) {
+      if (!isOptionChecked(label, input) && input) {
         try {
+          if (input._valueTracker) {
+            input._valueTracker.setValue(!input.checked);
+          }
           const proto = window.HTMLInputElement.prototype;
           const setter = Object.getOwnPropertyDescriptor(proto, 'checked')?.set;
           if (setter) {
@@ -1374,15 +1488,16 @@
           } else {
             input.checked = true;
           }
-          input.dispatchEvent(new Event('change', { bubbles: true }));
           input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          if (isOptionChecked(label, input)) ticked = true;
         } catch (e) {}
       }
 
       // Hiệu ứng viền phát sáng xanh lục
-      highlightOptionCard(el);
+      highlightOptionCard(label);
 
-      return true;
+      return isOptionChecked(label, input) || ticked;
     } catch (err) {
       console.warn('CourseraHelper: Lỗi tick option:', err);
       return false;
@@ -1395,6 +1510,7 @@
     }
 
     let tickedCount = 0;
+    const containers = getQuestionContainers();
 
     for (let i = 0; i < answersList.length; i++) {
       const item = answersList[i];
@@ -1402,51 +1518,61 @@
       const targetAnswers = item.answers || [];
       if (targetAnswers.length === 0) continue;
 
-      // Tìm container câu hỏi trong DOM hiện tại (fresh query để không bị ảnh hưởng bởi React re-render)
-      const questionContainers = Array.from(document.querySelectorAll(
-        'div[data-testid="part-container"], fieldset, .rc-FormPartsQuestion, .rc-QuizQuestion, div[role="group"]'
-      )).filter((c, idx, arr) => !arr.some(other => other !== c && other.contains(c)));
-
       let container = null;
-      if (questionContainers.length > 0) {
-        container = questionContainers.find(c => {
+      if (containers.length > 0) {
+        container = containers.find(c => {
           const txt = c.innerText || c.textContent || '';
           const regex = new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i');
           return regex.test(txt);
-        }) || questionContainers[qNum - 1] || questionContainers[i];
+        }) || containers[qNum - 1] || containers[i];
       }
 
+      const searchRoot = container || document;
+      const optElements = Array.from(searchRoot.querySelectorAll(
+        'label.cds-checkboxAndRadio-label, label, [role="radio"], [role="checkbox"], li.rc-Option'
+      )).filter((el, idx, arr) => !arr.some(other => other !== el && other.contains(el)));
+
       for (const ansText of targetAnswers) {
-        let matchedOption = null;
+        let bestMatch = null;
+        let highestScore = 0;
 
-        // 1. Tìm trong container câu hỏi
-        if (container) {
-          const optsInContainer = Array.from(container.querySelectorAll(
-            'label, li.rc-Option, div[data-testid="option-label"], [role="radio"], [role="checkbox"], input[type="radio"], input[type="checkbox"]'
-          ));
-          matchedOption = optsInContainer.find(el => isOptionMatch(el, ansText));
+        for (const el of optElements) {
+          const score = calculateOptionMatchScore(el, ansText);
+          if (score > highestScore && score >= 0.7) {
+            highestScore = score;
+            bestMatch = el;
+          }
         }
 
-        // 2. Tìm toàn trang nếu chưa thấy
-        if (!matchedOption) {
-          const allOptionElements = Array.from(document.querySelectorAll(
-            'label, li.rc-Option, div[data-testid="option-label"], [role="radio"], [role="checkbox"], input[type="radio"], input[type="checkbox"]'
-          ));
-          matchedOption = allOptionElements.find(el => isOptionMatch(el, ansText));
+        // Fallback: Tìm toàn trang nếu trong container chưa thấy
+        if (!bestMatch) {
+          const allOptions = Array.from(document.querySelectorAll(
+            'label.cds-checkboxAndRadio-label, label, [role="radio"], [role="checkbox"], li.rc-Option'
+          )).filter((el, idx, arr) => !arr.some(other => other !== el && other.contains(el)));
+
+          for (const el of allOptions) {
+            const score = calculateOptionMatchScore(el, ansText);
+            if (score > highestScore && score >= 0.7) {
+              highestScore = score;
+              bestMatch = el;
+            }
+          }
         }
 
-        if (matchedOption) {
-          const ok = tickOptionElement(matchedOption);
+        if (bestMatch) {
+          const ok = tickOptionElement(bestMatch);
           if (ok) tickedCount++;
 
-          // Giãn cách ngắn giữa các lần tick để React kịp cập nhật state của checkbox trong multi-select
+          // Giãn cách ngắn giữa các lần tick để React kịp cập nhật state
           await new Promise(resolve => setTimeout(resolve, 80));
+        } else {
+          console.warn(`CourseraHelper: Không khớp được đáp án "${ansText}" cho câu ${qNum}`);
         }
       }
     }
 
     if (tickedCount > 0) {
-      showInPageToast(`🎉 Coursera Helper: Đã tự động tick chọn ${tickedCount} đáp án thành công!`);
+      showInPageToast(`🎉 Đã tự động tick chọn ${tickedCount} đáp án trên trang!`);
     } else {
       showInPageToast('⚠️ Đã thử tick nhưng không tìm thấy câu hỏi khớp trên trang!', true);
     }
@@ -1724,7 +1850,7 @@
     }
 
     const model = savedModel || 'gemini-3.6-flash';
-    const BATCH_SIZE = 10; // Gửi nhiều câu 1 lần để giải nhanh, ít API call hơn
+    const BATCH_SIZE = 10;
     const totalQuestions = questions.length;
     const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
     const allAnswers = [];
@@ -1766,7 +1892,6 @@
       'saved_ai_raw': accumulatedMarkdown
     });
 
-    showInPageToast(`🎉 HOÀN THÀNH! Đã giải và tự động tick xong tất cả ${totalQuestions} câu hỏi!`, false, 5000);
     if (btnSolve) {
       btnSolve.innerHTML = '✅ Đã Giải Xong!';
       setTimeout(() => {
@@ -1775,6 +1900,13 @@
           btnSolve.style.opacity = '1';
         }
       }, 3000);
+    }
+
+    if (allAnswers.length > 0) {
+      showInPageToast(`🎉 Đã điền xong tất cả ${allAnswers.length} câu hỏi! Đang tự động nộp bài...`, false, 4000);
+      await completeHonorCodeAndSubmitQuiz();
+    } else {
+      showInPageToast('⚠️ Không thể phân tích đáp án từ AI. Vui lòng kiểm tra lại API Key hoặc đề bài!', true, 6000);
     }
   }
 
@@ -1785,39 +1917,40 @@
     const pageHeading = document.querySelector('h1')?.innerText?.trim() || '';
     const courseContext = [pageHeading, pageTitle].filter(Boolean).join(' - ') || 'Coursera Academic Course';
 
-    let text = `Bạn là giáo sư học thuật và chuyên gia hàng đầu về các chương trình đào tạo của Coursera.\n`;
-    text += `Chủ đề khóa học & bài thi: "${courseContext}".\n\n`;
-    text += `MỤC TIÊU: Đạt điểm tuyệt đối 100% cho nhóm câu hỏi trắc nghiệm từ câu ${startNum} đến câu ${endNum}.\n\n`;
+    let text = `BẠN LÀ GIÁO SƯ HỌC THUẬT VÀ CHUYÊN GIA ĐẦU NGÀNH CỦA COURSERA.\n`;
+    text += `Khóa học & Bài thi: "${courseContext}".\n\n`;
+    text += `MỤC TIÊU BẮT BUỘC: ĐẠT ĐIỂM TUYỆT ĐỐI 100% (KHÔNG ĐƯỢC PHÉP SAI BẤT KỲ CÂU NÀO VÌ <80% SẼ BỊ KHÓA KHÔNG THỂ LÀM LẠI).\n\n`;
 
-    text += `NGUYÊN TẮC GIẢI & PHÂN TÍCH BẪY HỌC THUẬT COURSERA (BẮT BUỘC TUÂN THỦ NGHIÊM NGẶT):\n`;
-    text += `1. BẪY TRIẾT LÝ VS THỰC THI (PHILOSOPHY VS PRACTICE):\n`;
-    text += `   - Triết lý tổ chức (Philosophy) chỉ bao gồm tầm nhìn, định hướng cốt lõi và lường trước các hệ quả tương lai (anticipating future implications). Triết lý KHÔNG đi vào chi tiết thực thi nguyên tắc (putting into practice) vì thực thi là thuộc về chính sách và chiến thuật (policy/tactics).\n`;
-    text += `   - Không chọn các phương án bề ngoài có vẻ tốt nhưng sai phạm vi định nghĩa học thuật của câu hỏi.\n`;
-    text += `2. BẪY TUYÊN BỐ SUÔNG (SUPERFICIAL/PR TRAPS):\n`;
-    text += `   - Luôn ưu tiên hành động thực chất (xây dựng văn hóa tổ chức, sự cam kết nội bộ, sự tham gia của các bên liên quan) thay vì tuyên bố PR trấn an bề ngoài (reassuring customers).\n`;
-    text += `3. BẪY TỪ HẠN ĐỊNH CỰC ĐOAN (EXTREME DISTRACTORS):\n`;
-    text += `   - Cảnh giác cao độ với các lựa chọn chứa từ ngữ cực đoan như: "above all else", "cannot be modified", "exclusively", "must be self-sustaining", "internal only". Đa phần đây là bẫy sai.\n`;
-    text += `4. SUY LUẬN TỪNG BƯỚC (STEP-BY-STEP REASONING):\n`;
-    text += `   Với mỗi câu hỏi:\n`;
-    text += `   - Xác định trọng tâm kiến thức giáo trình Coursera đang muốn hỏi.\n`;
-    text += `   - Loại trừ từng phương án sai (chỉ rõ điểm bẫy distractor).\n`;
-    text += `   - Chọn phương án chính xác nhất 100% theo đúng giáo trình.\n`;
-    text += `   - Nếu câu hỏi yêu cầu chọn nhiều (Select two / Select all that apply): Bắt buộc chọn ĐỦ tất cả các đáp án đúng.\n`;
-    text += `5. CUỐI CÙNG, BẮT BUỘC XUẤT KHỐI JSON:ANSWERS ĐỂ HỆ THỐNG TỰ ĐỘNG ĐIỀN:\n`;
-    text += "```json:answers\n";
-    text += "[\n  {\"q\": " + startNum + ", \"answers\": [\"Tên chính xác 100% của đáp án đúng 1\", \"Tên đáp án đúng 2 nếu có\"]}\n]\n";
+    text += `NGUYÊN TẮC GIẢI QUYẾT BÀI THI COURSERA (BẮT BUỘC TUÂN THỦ):\n`;
+    text += `1. CÂU HỎI NHIỀU ĐÁP ÁN (MULTI-SELECT / CHECKBOX / "Select all that apply" / "Select two"):\n`;
+    text += `   - PHẢI CHỌN ĐẦY ĐỦ TẤT CẢ các phương án đúng. Thiếu 1 phương án đúng hoặc chọn nhầm 1 phương án sai sẽ bị Coursera chấm 0 điểm ngay lập tức!\n`;
+    text += `2. BẪY HỌC THUẬT CỦA GIÁO TRÌNH COURSERA:\n`;
+    text += `   - Cảnh giác cao với các phương án chứa từ ngữ cực đoan tuyệt đối ("always", "never", "exclusively", "cannot be modified", "solely"). Đa phần đây là bẫy sai.\n`;
+    text += `   - Trong đạo đức, truyền thông và công nghệ: Ưu tiên các giải pháp có tính trách nhiệm giải trình (accountability), sự tham gia của các bên liên quan (stakeholder engagement), tính minh bạch (transparency) và đánh giá tác động liên tục. Tránh các bẫy PR bề nổi hoặc trấn an khách hàng đơn thuần.\n`;
+    text += `   - Phân biệt rõ: Tầm nhìn / Triết lý (Philosophy/Vision) vs Chính sách thực thi (Tactics/Execution).\n`;
+    text += `3. KHI CÂU HỎI ĐÃ CÓ PHẢN HỒI TỪ LẦN THI TRƯỚC:\n`;
+    text += `   - Tuyệt đối KHÔNG chọn lại đáp án đã bị báo SAI. Đọc kĩ lý do sai để chọn đáp án chính xác 100%.\n\n`;
+
+    text += `QUY TẮC ĐỊNH DẠNG ĐẦU RA (BẮT BUỘC ĐẶT KHỐI JSON NGAY ĐẦU TIÊN ĐỂ HỆ THỐNG TỰ ĐỘNG ĐIỀN ĐÁP ÁN):\n`;
+    text += "```json\n";
+    text += "[\n";
+    text += `  {\n    "q": ${startNum},\n    "answers": ["Nguyên văn chính xác 100% của lựa chọn đúng 1", "Nguyên văn lựa chọn 2 nếu câu hỏi chọn nhiều"],\n    "reason": "Lý do ngắn gọn vì sao đáp án này chuẩn xác theo giáo trình"\n  }\n`;
+    text += "]\n";
     text += "```\n\n";
 
-    text += `--- DANH SÁCH CÂU HỎI TRONG NHÓM NÀY ---\n\n`;
+    text += `--- DANH SÁCH CÂU HỎI CẦN GIẢI ---\n\n`;
 
     for (const q of batchQuestions) {
       text += `### Question ${q.q}\n${q.text}\n`;
       if (q.prevFeedback) {
-        text += `> [LƯU Ý TỪ LẦN THI TRƯỚC]: Câu này từng chọn "${q.prevWrongAnswer}" và bị báo SAI: "${q.prevFeedback}". TUYỆT ĐỐI KHÔNG CHỌN LẠI "${q.prevWrongAnswer}"! Hãy chọn phương án đúng khác phù hợp với giải thích.\n`;
+        text += `> ⚠️ [LƯU Ý TỪ LẦN THI TRƯỚC]: Câu này từng chọn "${q.prevWrongAnswer}" và bị Coursera chấm SAI: "${q.prevFeedback}". TUYỆT ĐỐI KHÔNG CHỌN LẠI "${q.prevWrongAnswer}"! Hãy phân tích và chọn phương án đúng khác.\n`;
       } else if (q.prevCorrectAnswer) {
-        text += `> [LƯU Ý TỪ LẦN THI TRƯỚC]: Câu này đã chọn ĐÚNG: "${q.prevCorrectAnswer}". Hãy giữ nguyên đáp án đúng này.\n`;
+        text += `> ✅ [LƯU Ý TỪ LẦN THI TRƯỚC]: Câu này đã chọn ĐÚNG: "${q.prevCorrectAnswer}". Bắt buộc giữ nguyên đáp án đúng này.\n`;
       }
-      text += `Loại câu hỏi: ${q.type === 'checkbox' ? 'CHỌN NHIỀU ĐÁP ÁN (Select all correct)' : 'CHỌN 1 ĐÁP ÁN DUY NHẤT'}\n`;
+
+      const isMulti = q.type === 'checkbox' ||
+        /select (all|two|three|\d)|choose (all|two|three|\d)|which (two|three|\d)|multiple/i.test(q.text);
+      text += `Yêu cầu: ${isMulti ? '⚠️ CHỌN NHIỀU ĐÁP ÁN (Select all that apply - PHẢI CHỌN ĐỦ)' : 'CHỌN 1 ĐÁP ÁN DUY NHẤT'}\n`;
       text += `Các phương án lựa chọn:\n`;
       q.options.forEach(opt => { text += `- ${opt.text}\n`; });
       text += `\n`;
@@ -1830,7 +1963,7 @@
         for (const img of q.images) {
           if (img && img.data) {
             parts.push({ text: `[Hình ảnh đính kèm cho Question ${q.q}]:` });
-            parts.push({ inline_data: { mime_type: img.mime_type || 'image/jpeg', data: img.data } });
+            parts.push({ inlineData: { mimeType: img.mime_type || img.mimeType || 'image/jpeg', data: img.data } });
           }
         }
       }
@@ -1838,7 +1971,7 @@
         for (const opt of q.options) {
           if (opt.image && opt.image.data) {
             parts.push({ text: `[Hình ảnh của lựa chọn "${opt.text}"]:` });
-            parts.push({ inline_data: { mime_type: opt.image.mime_type || 'image/jpeg', data: opt.image.data } });
+            parts.push({ inlineData: { mimeType: opt.image.mime_type || opt.image.mimeType || 'image/jpeg', data: opt.image.data } });
           }
         }
       }
@@ -1848,27 +1981,69 @@
   }
 
   async function callGeminiDirectParts(apiKey, preferredModel, parts) {
-    const models = [preferredModel, 'gemini-3.6-flash', 'gemini-3.6-pro', 'gemini-3.5-flash'];
-    for (const m of models) {
+    const sanitizedParts = parts.map(p => {
+      if (p.inline_data) {
+        return {
+          inlineData: {
+            mimeType: p.inline_data.mime_type || 'image/jpeg',
+            data: p.inline_data.data
+          }
+        };
+      }
+      return p;
+    });
+
+    const modelsToTry = [
+      preferredModel,
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-2.5-pro',
+      'gemini-3.6-flash',
+      'gemini-3.6-pro',
+      'gemini-3.5-flash'
+    ].filter(Boolean);
+
+    for (const model of modelsToTry) {
       for (const ver of ['v1beta', 'v1']) {
         try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/${ver}/models/${m}:generateContent?key=${apiKey}`, {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+          const res = await fetch(`https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey
+            },
             body: JSON.stringify({
-              contents: [{ parts }],
+              contents: [{ role: 'user', parts: sanitizedParts }],
               generationConfig: {
-                temperature: 0.1,
+                temperature: 0.0,
                 topP: 0.95
               }
-            })
+            }),
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
+
           const data = await res.json();
+          if (data.error) {
+            console.warn(`API Error with ${model} (${ver}):`, data.error.message);
+            continue;
+          }
+
+          let text = '';
           if (data.candidates && data.candidates[0]?.content?.parts) {
             const p = data.candidates[0].content.parts.find(x => x.text);
-            if (p) return p.text;
+            if (p) text = p.text;
           }
-        } catch (e) {}
+          if (!text && typeof data.output === 'string') text = data.output;
+
+          if (text) return text;
+        } catch (e) {
+          console.warn(`Fetch failed for ${model}:`, e.message);
+        }
       }
     }
     return '';
@@ -1876,8 +2051,11 @@
 
   function parseAnswersFromText(aiText) {
     if (!aiText) return [];
+
+    // 1. Thử parse khối JSON
     try {
-      const jsonMatch = aiText.match(/```(?:json:answers|json)?\s*(\[\s*\{[\s\S]*?\}\s*\])\s*```/i);
+      const jsonMatch = aiText.match(/```(?:json:answers|json)?\s*(\[\s*\{[\s\S]*?\}\s*\])\s*```/i) ||
+                        aiText.match(/(\[\s*\{\s*"q"[\s\S]*?\}\s*\])/i);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[1]);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -1887,8 +2065,11 @@
           })).filter(item => item.answers.length > 0);
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('CourseraHelper: Lỗi parse JSON đáp án, chuyển sang regex fallback:', e);
+    }
 
+    // 2. Fallback: Parse theo cấu trúc câu hỏi
     const results = [];
     const questionBlocks = aiText.split(/(?:###\s*(?:Câu|Question)\s*(\d+)|\b(?:Câu|Question)\s+(\d+)\b)/i);
     if (questionBlocks.length > 2) {
@@ -1914,6 +2095,7 @@
       }
     }
 
+    // 3. Fallback: Summary lines
     if (results.length === 0) {
       const summaryLines = Array.from(aiText.matchAll(/(?:[\*\-]\s*)?(?:Câu|Question)\s*(\d+)\s*[:\.]\s*(.*)/gi));
       for (const match of summaryLines) {

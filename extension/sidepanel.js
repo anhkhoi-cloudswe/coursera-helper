@@ -1040,8 +1040,8 @@ function buildMultimodalBatchParts(batchQuestions, startNum, endNum) {
         if (img && img.data) {
           parts.push({ text: `[Hình ảnh đính kèm cho Question ${q.q}]:` });
           parts.push({
-            inline_data: {
-              mime_type: img.mime_type || 'image/jpeg',
+            inlineData: {
+              mimeType: img.mime_type || img.mimeType || 'image/jpeg',
               data: img.data
             }
           });
@@ -1053,8 +1053,8 @@ function buildMultimodalBatchParts(batchQuestions, startNum, endNum) {
         if (opt.image && opt.image.data) {
           parts.push({ text: `[Hình ảnh của phương án: "${opt.text}"]:` });
           parts.push({
-            inline_data: {
-              mime_type: opt.image.mime_type || 'image/jpeg',
+            inlineData: {
+              mimeType: opt.image.mime_type || opt.image.mimeType || 'image/jpeg',
               data: opt.image.data
             }
           });
@@ -1067,12 +1067,28 @@ function buildMultimodalBatchParts(batchQuestions, startNum, endNum) {
 }
 
 async function callGeminiMultimodalParts(apiKey, preferredModel, parts) {
+  const sanitizedParts = parts.map(p => {
+    if (p.inline_data) {
+      return {
+        inlineData: {
+          mimeType: p.inline_data.mime_type || 'image/jpeg',
+          data: p.inline_data.data
+        }
+      };
+    }
+    return p;
+  });
+
   const modelsToTry = [
     preferredModel,
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-2.5-pro',
     'gemini-3.6-flash',
     'gemini-3.6-pro',
     'gemini-3.5-flash'
-  ].filter((m, i, arr) => m && arr.indexOf(m) === i);
+  ].filter(Boolean);
 
   let lastError = null;
 
@@ -1090,9 +1106,9 @@ async function callGeminiMultimodalParts(apiKey, preferredModel, parts) {
             'x-goog-api-key': apiKey
           },
           body: JSON.stringify({
-            contents: [{ parts }],
+            contents: [{ role: 'user', parts: sanitizedParts }],
             generationConfig: {
-              temperature: 0.1,
+              temperature: 0.0,
               topP: 0.95
             }
           }),
