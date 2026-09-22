@@ -4,9 +4,216 @@
 (function () {
   'use strict';
 
-  // Tránh inject trùng lặp
-  if (window._courseraHelperInjected) return;
+  // Dọn dẹp instance cũ nếu tiện ích vừa được tải lại (reload)
+  if (window._courseraHelperActive) {
+    try {
+      const oldHUD = document.getElementById('coursera-helper-hud');
+      if (oldHUD) oldHUD.remove();
+      const oldStyles = document.getElementById('coursera-helper-hud-styles');
+      if (oldStyles) oldStyles.remove();
+      const oldToast = document.getElementById('ch-floating-toast');
+      if (oldToast) oldToast.remove();
+      const oldModal = document.getElementById('ch-reload-modal');
+      if (oldModal) oldModal.remove();
+      const oldKeyModal = document.getElementById('ch-apikey-modal');
+      if (oldKeyModal) oldKeyModal.remove();
+    } catch (e) {}
+  }
+  window._courseraHelperActive = true;
   window._courseraHelperInjected = true;
+
+  // Kiểm tra tính hợp lệ của Context Extension
+  function isExtensionContextValid() {
+    try {
+      return typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Hiển thị hộp thoại hướng dẫn Tải lại trang khi Extension bị nạp lại (Context Invalidated)
+  function showReloadPrompt(reason = '') {
+    const existingModal = document.getElementById('ch-reload-modal');
+    if (existingModal) existingModal.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'ch-reload-modal';
+    modal.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 2147483647;
+      background: rgba(15, 23, 42, 0.98);
+      color: #f8fafc;
+      padding: 26px 32px;
+      border-radius: 16px;
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85), 0 0 30px rgba(99, 102, 241, 0.25);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 480px;
+      width: 90%;
+      text-align: center;
+      backdrop-filter: blur(20px);
+    `;
+
+    modal.innerHTML = `
+      <div style="font-size: 42px; margin-bottom: 12px;">🔄</div>
+      <h3 style="margin: 0 0 10px; font-size: 18px; font-weight: 700; color: #ffffff;">
+        Tiện ích vừa được Tải lại trong Chrome
+      </h3>
+      <p style="margin: 0 0 20px; font-size: 13.5px; line-height: 1.6; color: #cbd5e1;">
+        ${reason ? '<span style="color:#fcd34d;">' + reason + '</span><br>' : ''}
+        Khi bạn bấm nút 🔄 Tải lại trong <code>chrome://extensions/</code>, Chrome đã ngắt kết nối với tab này.<br>
+        <strong>Vui lòng bấm nút bên dưới để tải lại trang Coursera và tiếp tục Tự Giải!</strong>
+      </p>
+      <div style="display: flex; gap: 12px; justify-content: center;">
+        <button id="ch-btn-do-reload" style="
+          background: linear-gradient(135deg, #4f46e5, #3b82f6);
+          color: #ffffff;
+          border: none;
+          padding: 12px 24px;
+          border-radius: 10px;
+          font-weight: 600;
+          font-size: 14px;
+          cursor: pointer;
+          box-shadow: 0 4px 14px rgba(79, 70, 229, 0.4);
+        ">
+          🔄 Tải lại trang Coursera ngay
+        </button>
+        <button id="ch-btn-close-reload-modal" style="
+          background: rgba(255, 255, 255, 0.1);
+          color: #94a3b8;
+          border: none;
+          padding: 12px 18px;
+          border-radius: 10px;
+          font-weight: 500;
+          font-size: 13px;
+          cursor: pointer;
+        ">
+          Đóng
+        </button>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    document.getElementById('ch-btn-do-reload')?.addEventListener('click', () => {
+      window.location.reload();
+    });
+    document.getElementById('ch-btn-close-reload-modal')?.addEventListener('click', () => {
+      modal.remove();
+    });
+  }
+
+  // Hộp thoại nhập API Key trực tiếp trên trang nếu chưa lưu trong cài đặt
+  function showApiKeyPromptModal(onSuccessCallback) {
+    const existing = document.getElementById('ch-apikey-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'ch-apikey-modal';
+    modal.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 2147483647;
+      background: rgba(15, 23, 42, 0.98);
+      color: #f8fafc;
+      padding: 26px 30px;
+      border-radius: 16px;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85), 0 0 30px rgba(59, 130, 246, 0.25);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 480px;
+      width: 90%;
+      backdrop-filter: blur(20px);
+    `;
+
+    modal.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+        <span style="font-size: 24px;">🔑</span>
+        <h3 style="margin: 0; font-size: 17px; font-weight: 700; color: #ffffff;">
+          Nhập Gemini API Key để Tự Giải
+        </h3>
+      </div>
+      <p style="margin: 0 0 16px; font-size: 13px; line-height: 1.5; color: #cbd5e1;">
+        Để AI tự động đọc câu hỏi và điền đáp án, bạn cần cung cấp Gemini API Key (hoàn toàn miễn phí từ Google):
+      </p>
+      <input id="ch-input-api-key" type="password" placeholder="Dán Gemini API Key (bắt đầu bằng AIzaSy...)" style="
+        width: 100%;
+        box-sizing: border-box;
+        padding: 11px 14px;
+        background: rgba(30, 41, 59, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
+        color: #ffffff;
+        font-size: 13.5px;
+        outline: none;
+        margin-bottom: 10px;
+      " />
+      <div style="margin-bottom: 18px; font-size: 12px; color: #94a3b8;">
+        💡 Chưa có API Key? <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: #60a5fa; text-decoration: underline;">Lấy miễn phí tại Google AI Studio ↗</a>
+      </div>
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button id="ch-btn-cancel-key" style="
+          background: rgba(255, 255, 255, 0.1);
+          color: #94a3b8;
+          border: none;
+          padding: 10px 18px;
+          border-radius: 8px;
+          font-weight: 500;
+          font-size: 13px;
+          cursor: pointer;
+        ">
+          Hủy
+        </button>
+        <button id="ch-btn-save-key" style="
+          background: linear-gradient(135deg, #2563eb, #3b82f6);
+          color: #ffffff;
+          border: none;
+          padding: 10px 20px;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 13.5px;
+          cursor: pointer;
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+        ">
+          💾 Lưu & Tự Giải Ngay
+        </button>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+    const inp = document.getElementById('ch-input-api-key');
+    if (inp) inp.focus();
+
+    document.getElementById('ch-btn-cancel-key')?.addEventListener('click', () => {
+      modal.remove();
+    });
+
+    document.getElementById('ch-btn-save-key')?.addEventListener('click', async () => {
+      const val = inp?.value.trim() || '';
+      if (!val) {
+        alert('Vui lòng nhập API Key trước!');
+        return;
+      }
+      try {
+        if (isExtensionContextValid()) {
+          await chrome.storage.local.set({ 'gemini_api_key': val, 'gemini_model': 'gemini-3.6-flash' });
+        }
+        showInPageToast('✅ Đã lưu Gemini API Key thành công!');
+        modal.remove();
+        if (typeof onSuccessCallback === 'function') {
+          onSuccessCallback(val);
+        }
+      } catch (e) {
+        alert('Lỗi lưu API Key: ' + e.message);
+      }
+    });
+  }
+
 
   const POINT_REGEX = /^[ \t]*\d+(?:\.\d+)?[ \t]*points?\.?[ \t]*$/gmi;
 
@@ -1994,34 +2201,47 @@
   }
 
   // Khởi động kiểm tra trạng thái khi tải trang
-  chrome.storage.local.get(['auto_skip_active', 'auto_peer_active'], (res) => {
-    if (res.auto_skip_active) {
-      startAutoSkipLoop();
-    } else {
+  if (isExtensionContextValid()) {
+    try {
+      chrome.storage.local.get(['auto_skip_active', 'auto_peer_active'], (res) => {
+        if (chrome.runtime.lastError) return;
+        if (res && res.auto_skip_active) {
+          startAutoSkipLoop();
+        } else {
+          createFloatingHUD();
+        }
+
+        // Tự động khôi phục quy trình chấm Peer Review nếu trang reload
+        if (res && res.auto_peer_active && !isPeerReviewInProgress) {
+          if (window.location.href.includes('/peer/') && window.location.href.includes('/review/')) {
+            setTimeout(() => {
+              runAutoPeerReviewWorkflow(4);
+            }, 1800);
+          }
+        }
+      });
+    } catch (e) {
       createFloatingHUD();
     }
-
-    // Tự động khôi phục quy trình chấm Peer Review nếu trang reload
-    if (res.auto_peer_active && !isPeerReviewInProgress) {
-      if (window.location.href.includes('/peer/') && window.location.href.includes('/review/')) {
-        setTimeout(() => {
-          runAutoPeerReviewWorkflow(4);
-        }, 1800);
-      }
-    }
-  });
+  } else {
+    createFloatingHUD();
+  }
 
   // Lắng nghe thay đổi trạng thái từ Side Panel hoặc HUD
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.auto_skip_active !== undefined) {
-      if (changes.auto_skip_active.newValue) {
-        startAutoSkipLoop();
-      } else {
-        stopAutoSkipLoop();
-        showInPageToast('🛑 Đã dừng Auto-Skip!');
-      }
-    }
-  });
+  if (isExtensionContextValid() && typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.auto_skip_active !== undefined) {
+          if (changes.auto_skip_active.newValue) {
+            startAutoSkipLoop();
+          } else {
+            stopAutoSkipLoop();
+            showInPageToast('🛑 Đã dừng Auto-Skip!');
+          }
+        }
+      });
+    } catch (e) {}
+  }
 
   // ==========================================
   // 6. THANH ĐIỀU KHIỂN NỔI (HUD) TRỰC TIẾP TRÊN COURSERA
@@ -2030,7 +2250,8 @@
   let floatingHUD = null;
 
   function createFloatingHUD() {
-    if (document.getElementById('coursera-helper-hud')) return;
+    const existingHUD = document.getElementById('coursera-helper-hud');
+    if (existingHUD) existingHUD.remove();
 
     // Chèn stylesheet chuẩn cho HUD nếu chưa có
     if (!document.getElementById('coursera-helper-hud-styles')) {
@@ -2160,35 +2381,60 @@
 
     if (btnSolveQuiz) {
       btnSolveQuiz.addEventListener('click', () => {
+        if (!isExtensionContextValid()) {
+          showReloadPrompt('Tiện ích Coursera Helper vừa được Tải lại trong Chrome.');
+          return;
+        }
         triggerZeroClickQuizWorkflow();
       });
     }
 
     if (btnPeer) {
       btnPeer.addEventListener('click', () => {
+        if (!isExtensionContextValid()) {
+          showReloadPrompt('Tiện ích Coursera Helper vừa được Tải lại trong Chrome.');
+          return;
+        }
         runAutoPeerReviewWorkflow(4);
       });
     }
 
-    btnAuto.addEventListener('click', () => {
-      chrome.storage.local.get(['auto_skip_active'], (res) => {
-        const nextState = !res.auto_skip_active;
-        chrome.storage.local.set({ 'auto_skip_active': nextState });
+    if (btnAuto) {
+      btnAuto.addEventListener('click', () => {
+        if (!isExtensionContextValid()) {
+          showReloadPrompt('Tiện ích Coursera Helper vừa được Tải lại trong Chrome.');
+          return;
+        }
+        try {
+          chrome.storage.local.get(['auto_skip_active'], (res) => {
+            const nextState = !res?.auto_skip_active;
+            chrome.storage.local.set({ 'auto_skip_active': nextState });
+          });
+        } catch (e) {
+          showReloadPrompt();
+        }
       });
-    });
+    }
 
-    btnSkipOne.addEventListener('click', () => {
-      completeCourseraVideo();
-    });
+    if (btnSkipOne) {
+      btnSkipOne.addEventListener('click', () => {
+        completeCourseraVideo();
+      });
+    }
 
     // Cập nhật trạng thái ban đầu của nút Peer Review và Auto-Skip
-    chrome.storage.local.get(['auto_skip_active', 'auto_peer_active', 'auto_peer_count'], (res) => {
-      updateFloatingHUD(!!res.auto_skip_active);
-      if (res.auto_peer_active && btnPeer) {
-        btnPeer.classList.add('is-active');
-        btnPeer.innerHTML = `⏳ Bài ${(res.auto_peer_count || 0) + 1}/4`;
-      }
-    });
+    if (isExtensionContextValid()) {
+      try {
+        chrome.storage.local.get(['auto_skip_active', 'auto_peer_active', 'auto_peer_count'], (res) => {
+          if (chrome.runtime.lastError) return;
+          updateFloatingHUD(!!res?.auto_skip_active);
+          if (res?.auto_peer_active && btnPeer) {
+            btnPeer.classList.add('is-active');
+            btnPeer.innerHTML = `⏳ Bài ${(res.auto_peer_count || 0) + 1}/4`;
+          }
+        });
+      } catch (e) {}
+    }
   }
 
   function updateFloatingHUD(isActive) {
@@ -2311,19 +2557,32 @@
   }
 
   function getQuestionContainers() {
-    let containers = Array.from(document.querySelectorAll(
-      'div[data-testid="part-container"], fieldset.rc-FormPartsQuestion, fieldset, .rc-FormPartsQuestion, .rc-QuizQuestion, div[role="group"]'
-    )).filter((c, idx, arr) => !arr.some(other => other !== c && other.contains(c)));
+    // 1. Data-testid chuẩn của Coursera cho từng câu hỏi
+    let containers = Array.from(document.querySelectorAll('div[data-testid="part-container"]'));
 
+    // 2. Class chuẩn câu hỏi trắc nghiệm Coursera
+    if (containers.length === 0) {
+      containers = Array.from(document.querySelectorAll('.rc-FormPartsQuestion, fieldset.rc-FormPartsQuestion, .rc-QuizQuestion'));
+    }
+
+    // 3. fieldset riêng lẻ
+    if (containers.length === 0) {
+      containers = Array.from(document.querySelectorAll('fieldset'));
+    }
+
+    // 4. Nhóm theo input radio/checkbox nếu không khớp các class trên
     if (containers.length === 0) {
       const allInputs = Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
       const parentSet = new Set();
       allInputs.forEach(inp => {
-        const group = inp.closest('fieldset, form, div[role="group"], .rc-QuizQuestion') || inp.parentElement?.parentElement;
+        const group = inp.closest('fieldset, .rc-FormPartsQuestion, [data-testid="part-container"], div[role="group"]') || inp.parentElement?.parentElement;
         if (group) parentSet.add(group);
       });
       containers = Array.from(parentSet);
     }
+
+    // Lọc bỏ container cha nếu nó bao bọc container con (chỉ giữ container lá của từng câu hỏi riêng biệt)
+    containers = containers.filter((c, idx, arr) => !arr.some(other => other !== c && c.contains(other)));
     return containers;
   }
 
@@ -2611,21 +2870,7 @@
 
   // Tự động quét toàn bộ bài trắc nghiệm trên DOM Coursera (kèm trích xuất hình ảnh)
   async function extractAllQuizQuestionsFromDOM() {
-    let containers = Array.from(document.querySelectorAll(
-      'div[data-testid="part-container"], fieldset.rc-FormPartsQuestion, fieldset, .rc-FormPartsQuestion, .rc-QuizQuestion, div[role="group"]'
-    )).filter((c, idx, arr) => !arr.some(other => other !== c && other.contains(c)));
-
-    // Fallback nếu không khớp class chuẩn
-    if (containers.length === 0) {
-      const allInputs = Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
-      const parentSet = new Set();
-      allInputs.forEach(inp => {
-        const group = inp.closest('fieldset, form, div[role="group"], .rc-QuizQuestion') || inp.parentElement?.parentElement;
-        if (group) parentSet.add(group);
-      });
-      containers = Array.from(parentSet);
-    }
-
+    const containers = getQuestionContainers();
     const questions = [];
 
     for (let idx = 0; idx < containers.length; idx++) {
@@ -2795,9 +3040,15 @@
     const btnSolve = document.getElementById('ch-hud-solvequiz');
     const origBtnText = btnSolve ? btnSolve.innerHTML : '⚡ Tự Giải Cả Bài';
 
+    // 1. Kiểm tra Extension Context trước tiên
+    if (!isExtensionContextValid()) {
+      showReloadPrompt('Tiện ích Coursera Helper vừa được Tải lại trong Chrome.');
+      return;
+    }
+
     if (btnSolve) {
-      btnSolve.innerHTML = '⏳ Đang quét...';
-      btnSolve.style.opacity = '0.75';
+      btnSolve.innerHTML = '🔍 Đang quét đề...';
+      btnSolve.style.opacity = '0.85';
     }
 
     try {
@@ -2828,7 +3079,11 @@
 
     } catch (err) {
       console.error('Trigger Zero-Click Error:', err);
-      showInPageToast(`❌ Lỗi khi tự giải: ${err.message}`, true, 5000);
+      if (err.message && err.message.includes('Extension context invalidated')) {
+        showReloadPrompt('Tiện ích Coursera Helper vừa được Tải lại trong Chrome.');
+      } else {
+        showInPageToast(`❌ Lỗi khi tự giải: ${err.message}`, true, 6000);
+      }
       if (btnSolve) {
         btnSolve.innerHTML = origBtnText;
         btnSolve.style.opacity = '1';
@@ -2838,10 +3093,30 @@
 
   // Bộ giải nội tuyến độc lập (hoạt động 100% không cần mở Side Panel)
   async function runInlineBatchSolver(questions, btnSolve, origBtnText) {
-    const { gemini_api_key: apiKey, gemini_model: savedModel } = await chrome.storage.local.get(['gemini_api_key', 'gemini_model']);
+    if (!isExtensionContextValid()) {
+      showReloadPrompt('Tiện ích Coursera Helper vừa được Tải lại trong Chrome.');
+      return;
+    }
+
+    let apiKey = '';
+    let savedModel = '';
+    try {
+      const res = await chrome.storage.local.get(['gemini_api_key', 'gemini_model']);
+      apiKey = res?.gemini_api_key;
+      savedModel = res?.gemini_model;
+    } catch (err) {
+      if (err.message && err.message.includes('Extension context invalidated')) {
+        showReloadPrompt('Tiện ích vừa được Tải lại trong Chrome.');
+        return;
+      }
+      throw err;
+    }
+
     if (!apiKey) {
-      showInPageToast('⚠️ Chưa có Gemini API Key! Hãy bấm vào icon Extension để cài đặt API Key.', true, 6000);
-      chrome.runtime.sendMessage({ action: 'open_side_panel' });
+      showInPageToast('⚠️ Chưa có Gemini API Key! Hãy nhập key vào bảng vừa hiện ra.', true, 5000);
+      showApiKeyPromptModal((newKey) => {
+        runInlineBatchSolver(questions, btnSolve, origBtnText);
+      });
       if (btnSolve) {
         btnSolve.innerHTML = origBtnText;
         btnSolve.style.opacity = '1';
@@ -2886,11 +3161,15 @@
       }
     }
 
-    // Lưu kết quả vào storage để khi người dùng mở Side Panel vẫn xem được chi tiết
-    chrome.storage.local.set({
-      'saved_ai_answers': allAnswers,
-      'saved_ai_raw': accumulatedMarkdown
-    });
+    // Lưu kết quả vào storage nếu context còn hợp lệ
+    if (isExtensionContextValid()) {
+      try {
+        chrome.storage.local.set({
+          'saved_ai_answers': allAnswers,
+          'saved_ai_raw': accumulatedMarkdown
+        });
+      } catch (e) {}
+    }
 
     if (btnSolve) {
       if (allAnswers.length > 0) {
@@ -2910,7 +3189,8 @@
       showInPageToast(`🎉 Đã điền xong tất cả ${allAnswers.length} câu hỏi! Đang tự động nộp bài...`, false, 4000);
       await completeHonorCodeAndSubmitQuiz();
     } else {
-      showInPageToast('⚠️ Không thể phân tích đáp án từ AI. Vui lòng kiểm tra lại API Key hoặc đề bài!', true, 6000);
+      const errDetail = window._chLastGeminiError ? `: ${window._chLastGeminiError}` : '';
+      showInPageToast(`⚠️ Không thể phân tích đáp án từ AI${errDetail}. Vui lòng kiểm tra lại API Key hoặc đề bài!`, true, 8000);
     }
   }
 
@@ -3014,6 +3294,7 @@
       'gemini-3.5-pro'
     ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
+    let lastErrorMessage = '';
     for (const model of modelsToTry) {
       for (const ver of ['v1beta', 'v1']) {
         try {
@@ -3039,7 +3320,8 @@
 
           const data = await res.json();
           if (data.error) {
-            console.warn(`API Error with ${model} (${ver}):`, data.error.message || data.error);
+            lastErrorMessage = data.error.message || JSON.stringify(data.error);
+            console.warn(`API Error with ${model} (${ver}):`, lastErrorMessage);
             continue;
           }
 
@@ -3050,12 +3332,17 @@
           }
           if (!text && typeof data.output === 'string') text = data.output;
 
-          if (text) return text;
+          if (text) {
+            window._chLastGeminiError = '';
+            return text;
+          }
         } catch (e) {
+          lastErrorMessage = e.message;
           console.warn(`Fetch failed for ${model}:`, e.message);
         }
       }
     }
+    window._chLastGeminiError = lastErrorMessage;
     return '';
   }
 

@@ -17,3 +17,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   return false;
 });
+
+// Tự động nạp lại content.js vào các tab Coursera đang mở khi người dùng bấm Tải lại (Reload) Extension
+chrome.runtime.onInstalled.addListener(async () => {
+  try {
+    const tabs = await chrome.tabs.query({ url: ['*://*.coursera.org/*', '*://coursera.org/*'] });
+    for (const tab of tabs) {
+      if (tab.id && !tab.url.startsWith('chrome://')) {
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content.js']
+        }).catch((e) => console.warn('Auto re-injection skipped for tab:', tab.id, e.message));
+      }
+    }
+  } catch (err) {
+    console.warn('Auto-inject on reload warning:', err);
+  }
+});
+
