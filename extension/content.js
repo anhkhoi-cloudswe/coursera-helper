@@ -551,7 +551,9 @@
         currentUrl.includes('/quiz/') ||
         currentUrl.includes('/exam/') ||
         currentUrl.includes('/assignment/') ||
-        currentUrl.includes('/ungradedLti/')
+        currentUrl.includes('/assignment-submission/') ||  // URL thực tế của Graded Assignment Coursera
+        currentUrl.includes('/ungradedLti/') ||
+        currentUrl.includes('/ungradedWidget/')
       );
 
       if (isQuizUrl && currentUrl !== lastEvaluatedUrl) {
@@ -822,7 +824,7 @@
     }
 
     const model = savedModel || 'gemini-3.6-flash';
-    const BATCH_SIZE = 5;
+    const BATCH_SIZE = 10; // Gửi nhiều câu 1 lần để giải nhanh, ít API call hơn
     const totalBatches = Math.ceil(questions.length / BATCH_SIZE);
 
     for (let b = 0; b < totalBatches; b++) {
@@ -915,7 +917,12 @@
         // Nếu quiz solver đang chạy và chỉ chuyển sang trang quiz thực sự (vẫn nằm trong /assignment/)
         // thì giữ nguyên isQuizSolveInProgress và tiếp tục processQuizStep
         const isStillInAssignment = isQuizSolveInProgress &&
-          (currentUrl.includes('/assignment/') || currentUrl.includes('/quiz/') || currentUrl.includes('/exam/'));
+          (
+            currentUrl.includes('/assignment/') ||
+            currentUrl.includes('/assignment-submission/') ||
+            currentUrl.includes('/quiz/') ||
+            currentUrl.includes('/exam/')
+          );
 
         if (isStillInAssignment) {
           // URL đã thay đổi sang trang quiz thực sự, cập nhật lastEvaluatedUrl
@@ -1717,7 +1724,7 @@
     }
 
     const model = savedModel || 'gemini-3.6-flash';
-    const BATCH_SIZE = 5;
+    const BATCH_SIZE = 10; // Gửi nhiều câu 1 lần để giải nhanh, ít API call hơn
     const totalQuestions = questions.length;
     const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
     const allAnswers = [];

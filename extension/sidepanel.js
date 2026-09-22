@@ -885,7 +885,7 @@ async function solveFullQuizBatchPipeline(questions, tabId) {
   }
 
   const model = savedModel || 'gemini-3.6-flash';
-  const BATCH_SIZE = 5;
+  const BATCH_SIZE = 10; // Gửi nhiều câu 1 lần để giải nhanh, ít API call hơn
   const totalQuestions = questions.length;
   const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
   const totalImages = questions.reduce((acc, q) => acc + (q.images ? q.images.length : 0), 0);
