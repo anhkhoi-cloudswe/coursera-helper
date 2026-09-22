@@ -170,3 +170,45 @@ function showInPageToast(message) {
     toast.style.transform = 'translateY(14px)';
   }, 2600);
 }
+
+// ==========================================
+// 3. TÍNH NĂNG SKIP VIDEO & TĂNG TỐC VIDEO
+// ==========================================
+
+function completeCourseraVideo() {
+  const video = document.querySelector('video');
+  if (video && video.duration) {
+    video.playbackRate = 16;
+    video.currentTime = Math.max(0, video.duration - 0.5);
+    video.play();
+    showInPageToast('⏩ Đã tua Video tới giây cuối để đánh dấu hoàn thành!');
+    return true;
+  }
+  showInPageToast('⚠️ Không tìm thấy thẻ Video trên trang này!');
+  return false;
+}
+
+function setCourseraVideoSpeed(rate) {
+  const video = document.querySelector('video');
+  if (video) {
+    video.playbackRate = rate;
+    showInPageToast(`⚡ Đã đổi tốc độ phát Video thành ${rate}x!`);
+    return true;
+  }
+  showInPageToast('⚠️ Không tìm thấy Video trên trang này!');
+  return false;
+}
+
+// Lắng nghe lệnh điều khiển từ Side Panel
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'skip_video') {
+      const success = completeCourseraVideo();
+      sendResponse({ success });
+    } else if (request.action === 'set_video_speed') {
+      const success = setCourseraVideoSpeed(request.speed || 16);
+      sendResponse({ success });
+    }
+    return true;
+  });
+}

@@ -255,6 +255,38 @@ btnSaveKey.addEventListener('click', () => {
   });
 });
 
+// 9. Điều khiển Video Coursera (Skip & Speedup 16x)
+const btnSkipVideo = document.getElementById('btnSkipVideo');
+const btnSpeed16 = document.getElementById('btnSpeed16');
+
+btnSkipVideo.addEventListener('click', async () => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) return;
+    chrome.tabs.sendMessage(tab.id, { action: 'skip_video' }, (res) => {
+      if (chrome.runtime.lastError) {
+        showToast('⚠️ Mở trang bài học chứa Video để sử dụng');
+      }
+    });
+  } catch (e) {
+    showToast('Lỗi gửi lệnh tới tab');
+  }
+});
+
+btnSpeed16.addEventListener('click', async () => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !tab.id) return;
+    chrome.tabs.sendMessage(tab.id, { action: 'set_video_speed', speed: 16 }, (res) => {
+      if (chrome.runtime.lastError) {
+        showToast('⚠️ Mở trang bài học chứa Video để sử dụng');
+      }
+    });
+  } catch (e) {
+    showToast('Lỗi gửi lệnh tới tab');
+  }
+});
+
 // Mở trang Web
 btnOpenWeb.addEventListener('click', () => {
   chrome.tabs.create({ url: 'https://coursera-helper.vercel.app' });
