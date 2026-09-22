@@ -65,7 +65,7 @@ chrome.storage.local.get([
 ], (res) => {
   if (res.gemini_api_key && apiKeyInput) apiKeyInput.value = res.gemini_api_key;
   if (modelSelect) {
-    const m = res.gemini_model || 'gemini-2.5-flash';
+    const m = (res.gemini_model && !res.gemini_model.includes('3.6') && !res.gemini_model.includes('2.5') && !res.gemini_model.includes('3.5')) ? res.gemini_model : 'gemini-2.0-flash';
     modelSelect.value = m;
   }
 
@@ -292,24 +292,23 @@ async function getAvailableGeminiModels(apiKey) {
 }
 
 function selectOptimalModel(supportedModels, userPreferred) {
+  const cleanPreferred = (userPreferred && !userPreferred.includes('3.6') && !userPreferred.includes('2.5') && !userPreferred.includes('3.5')) ? userPreferred : null;
+
   if (!supportedModels || supportedModels.length === 0) {
-    return { name: userPreferred || 'gemini-2.5-flash', version: 'v1beta' };
+    return { name: cleanPreferred || 'gemini-2.0-flash', version: 'v1beta' };
   }
 
-  // 1. Nếu user từng chọn một model và model đó có trong danh sách
-  if (userPreferred) {
-    const found = supportedModels.find(m => m.name === userPreferred);
+  // 1. Nếu user từng chọn một model hợp lệ và model đó có trong danh sách
+  if (cleanPreferred) {
+    const found = supportedModels.find(m => m.name === cleanPreferred);
     if (found) return found;
   }
 
   // 2. Thứ tự ưu tiên các model Google Flash nhanh & chuẩn
   const priorities = [
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
-    'gemini-3.6-flash',
-    'gemini-3.6-pro',
-    'gemini-2.5-pro'
+    'gemini-1.5-pro'
   ];
 
   for (const p of priorities) {
@@ -325,7 +324,7 @@ function selectOptimalModel(supportedModels, userPreferred) {
   const anyGemini = supportedModels.find(m => m.name.toLowerCase().includes('gemini'));
   if (anyGemini) return anyGemini;
 
-  return supportedModels[0] || { name: 'gemini-2.5-flash', version: 'v1beta' };
+  return supportedModels[0] || { name: 'gemini-2.0-flash', version: 'v1beta' };
 }
 
 function populateModelSelect(supportedModels, activeModelName) {
@@ -608,16 +607,16 @@ QUY TẮC GIẢI & TRÌNH BÀY:
 `;
   const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
 
-  let chosenModel = modelSelect?.value || 'gemini-2.5-flash';
+  let chosenModel = modelSelect?.value || 'gemini-2.0-flash';
+  if (chosenModel.includes('3.6') || chosenModel.includes('2.5') || chosenModel.includes('3.5')) {
+    chosenModel = 'gemini-2.0-flash';
+  }
 
   const modelsToTry = Array.from(new Set([
     chosenModel,
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
-    'gemini-3.6-flash',
-    'gemini-3.6-pro',
-    'gemini-2.5-pro'
+    'gemini-1.5-pro'
   ])).filter(Boolean);
 
   const startTime = performance.now();
@@ -630,7 +629,7 @@ QUY TẮC GIẢI & TRÌNH BÀY:
     // 1. Thử qua Google Interactions API
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 45000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
       const resInteractions = await fetch(`https://generativelanguage.googleapis.com/v1beta/interactions?key=${apiKey}`, {
         method: 'POST',
@@ -858,7 +857,10 @@ safeListen('btnSaveKey', 'click', async () => {
     });
   } else {
     // Nếu không list được models, vẫn lưu key với model mặc định
-    const fallbackModel = modelSelect?.value || 'gemini-3.6-flash';
+    let fallbackModel = modelSelect?.value || 'gemini-2.0-flash';
+    if (fallbackModel.includes('3.6') || fallbackModel.includes('2.5') || fallbackModel.includes('3.5')) {
+      fallbackModel = 'gemini-2.0-flash';
+    }
     chrome.storage.local.set({ 'gemini_api_key': key, 'gemini_model': fallbackModel }, () => {
       showToast(`✓ Đã lưu cài đặt (${fallbackModel})!`);
       if (settingsBox) settingsBox.style.display = 'none';
@@ -931,7 +933,7 @@ async function solveFullQuizBatchPipeline(questions, tabId) {
     return;
   }
 
-  const model = savedModel || 'gemini-3.6-flash';
+  const model = (savedModel && !savedModel.includes('3.6') && !savedModel.includes('2.5') && !savedModel.includes('3.5')) ? savedModel : 'gemini-2.0-flash';
   const BATCH_SIZE = 10; // Gửi nhiều câu 1 lần để giải nhanh, ít API call hơn
   const totalQuestions = questions.length;
   const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
@@ -1128,16 +1130,17 @@ async function callGeminiMultimodalParts(apiKey, preferredModel, parts) {
     return p;
   });
 
+  let normalizedPreferred = preferredModel;
+  if (!normalizedPreferred || normalizedPreferred.includes('3.6') || normalizedPreferred.includes('2.5') || normalizedPreferred.includes('3.5')) {
+    normalizedPreferred = 'gemini-2.0-flash';
+  }
+
   const modelsToTry = [
-    preferredModel,
-    'gemini-2.5-flash',
+    normalizedPreferred,
     'gemini-2.0-flash',
     'gemini-1.5-flash',
-    'gemini-2.5-pro',
-    'gemini-3.6-flash',
-    'gemini-3.6-pro',
-    'gemini-3.5-flash'
-  ].filter(Boolean);
+    'gemini-1.5-pro'
+  ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
   let lastError = null;
 
@@ -1145,7 +1148,7 @@ async function callGeminiMultimodalParts(apiKey, preferredModel, parts) {
     for (const ver of ['v1beta', 'v1']) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 45000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
         const url = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`;
         const res = await fetch(url, {

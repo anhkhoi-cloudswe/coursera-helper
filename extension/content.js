@@ -408,6 +408,43 @@
     return null;
   }
 
+  // Kiểm tra xem bài học hiện tại trên Sidebar đã được Coursera tick xanh (Completed) chưa
+  function isCurrentLessonCompletedOnSidebar() {
+    try {
+      const allLessonLinks = Array.from(document.querySelectorAll(
+        'nav a[href*="/learn/"], aside a[href*="/learn/"], [role="navigation"] a[href*="/learn/"], .rc-ItemLink, .rc-ItemRow'
+      ));
+
+      const currentPath = window.location.pathname;
+      const currentLink = allLessonLinks.find(link => {
+        const href = (link.getAttribute('href') || '').split('?')[0].split('#')[0];
+        return (
+          link.getAttribute('aria-current') === 'true' ||
+          link.getAttribute('aria-current') === 'page' ||
+          link.classList.contains('active') ||
+          (href && (href === currentPath || currentPath.endsWith(href) || (href.length > 8 && currentPath.includes(href))))
+        );
+      });
+
+      if (!currentLink) return false;
+
+      const container = currentLink.closest('li, div[role="listitem"], .rc-ItemRow') || currentLink.parentElement;
+      const targetArea = container || currentLink;
+
+      // Kiểm tra icon hoặc text completed trong container
+      const hasCompletedIndicator = (
+        targetArea.querySelector('svg[data-testid*="completed"], svg[aria-label*="Completed" i], svg[aria-label*="Đã hoàn thành" i], [class*="completed" i], [class*="success" i], [aria-label*="Completed" i]') !== null ||
+        (targetArea.innerText || '').includes('Completed') ||
+        (targetArea.innerText || '').includes('Đã hoàn thành') ||
+        targetArea.getAttribute('aria-label')?.includes('Completed')
+      );
+
+      return hasCompletedIndicator;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // Kiểm tra xem có đang ở trang kết quả điểm của Quiz/Graded Assignment không (ví dụ "Your grade: 90%")
   function isQuizResultScreen() {
     const bodyText = (document.body.innerText || '').toLowerCase();
@@ -572,28 +609,34 @@
         try {
           v.muted = true;
           v.playbackRate = 16;
-          if (v.duration && !isNaN(v.duration) && isFinite(v.duration)) {
-            v.currentTime = Math.max(0, v.duration - 0.2);
+          const dur = (v.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 2) ? v.duration : 0;
+          if (dur > 0) {
+            v.currentTime = Math.max(0, dur - 1.0);
           } else {
             v.currentTime = 999999;
           }
           v.play().catch(() => {});
           v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-          v.dispatchEvent(new Event('ended', { bubbles: true }));
         } catch (e) {
           console.error(e);
         }
       }
 
-      showInPageToast('⏩ Đã tua Video tới cuối! Đang chuyển bài tiếp...');
+      showInPageToast('⏩ Đã tua Video tới cuối! Đang kiểm tra tick xanh...');
       setTimeout(() => {
         const markBtn = findMarkAsCompletedButton();
         if (markBtn) triggerClick(markBtn);
 
+        for (const v of videos) {
+          try {
+            v.dispatchEvent(new Event('ended', { bubbles: true }));
+          } catch (e) {}
+        }
+
         setTimeout(() => {
           navigateToNextLesson();
-        }, 500);
-      }, 1200);
+        }, 800);
+      }, 1500);
       return true;
     }
 
@@ -793,8 +836,8 @@
     });
   }
 
-  // Xử lý bài Video với cơ chế chờ video mount vào DOM (React SPA)
-  function processVideoLectureStep(retryCount = 0) {
+  // Xử lý bài Video với cơ chế chờ video mount vào DOM và kiểm tra tick xanh hoàn tất
+  async function processVideoLectureStep(retryCount = 0) {
     const videos = findVideos();
     if (videos.length === 0) {
       if (retryCount < 8) {
@@ -804,43 +847,66 @@
         }, 450);
         return;
       }
-      // Nếu sau 8 lần (khoảng 3.6s) vẫn không thấy video, có thể là bài text nằm trong URL /lecture/
       showInPageToast('ℹ️ Không thấy Video, chuyển sang kiểm tra bài đọc...');
       processReadingStep();
       return;
     }
 
-    // Đã có Video
+    // 1. Tua video đến gần cuối và phát ở tốc độ 16x để player ghi nhận tiến độ
     for (const v of videos) {
       try {
         v.muted = true;
         v.playbackRate = 16;
-        if (v.duration && !isNaN(v.duration) && isFinite(v.duration)) {
-          v.currentTime = Math.max(0, v.duration - 0.2);
+        const dur = (v.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 2) ? v.duration : 0;
+        if (dur > 0) {
+          v.currentTime = Math.max(0, dur - 1.0);
         } else {
           v.currentTime = 999999;
         }
         v.play().catch(() => {});
         v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-        v.dispatchEvent(new Event('ended', { bubbles: true }));
       } catch (e) {
-        console.error(e);
+        console.error('CourseraHelper video play error:', e);
       }
     }
 
-    showInPageToast('⏩ [Auto-Skip] Đã tua hết Video! Đang lưu tiến độ...');
+    showInPageToast('⏩ [Auto-Skip] Đã tua Video tới cuối! Đang chờ Coursera ghi nhận tick xanh...');
 
-    setTimeout(() => {
+    // 2. Chờ video hoàn tất và kiểm tra tick xanh trong tối đa 3.5 giây
+    let verifiedCompleted = false;
+    for (let check = 0; check < 7; check++) {
+      await new Promise(r => setTimeout(r, 450));
+
       // Bấm Mark as completed nếu có nút phụ
       const markBtn = findMarkAsCompletedButton();
       if (markBtn) triggerClick(markBtn);
 
-      setTimeout(() => {
-        navigateToNextLesson();
-        setTimeout(() => {
-          isStepInProgress = false;
-        }, 1500);
-      }, 500);
+      // Gửi event ended cho video
+      for (const v of videos) {
+        try {
+          if (v.ended || (v.duration && v.currentTime >= v.duration - 0.2)) {
+            v.dispatchEvent(new Event('ended', { bubbles: true }));
+          }
+        } catch (e) {}
+      }
+
+      // Kiểm tra xem bài học trên sidebar đã hiện tick xanh chưa
+      if (isCurrentLessonCompletedOnSidebar()) {
+        verifiedCompleted = true;
+        showInPageToast('✅ [Auto-Skip] Đã xác nhận tick xanh hoàn thành! Đang chuyển bài tiếp...');
+        break;
+      }
+    }
+
+    if (!verifiedCompleted) {
+      const markBtn = findMarkAsCompletedButton();
+      if (markBtn) triggerClick(markBtn);
+      await new Promise(r => setTimeout(r, 350));
+    }
+
+    navigateToNextLesson();
+    setTimeout(() => {
+      isStepInProgress = false;
     }, 1500);
   }
 
@@ -1248,8 +1314,8 @@
       return;
     }
 
-    const model = savedModel || 'gemini-3.6-flash';
-    const BATCH_SIZE = 10;
+    const model = (savedModel && !savedModel.includes('3.6') && !savedModel.includes('2.5')) ? savedModel : 'gemini-2.0-flash';
+    const BATCH_SIZE = 12;
     const totalBatches = Math.ceil(questions.length / BATCH_SIZE);
 
     for (let b = 0; b < totalBatches; b++) {
@@ -2461,9 +2527,12 @@
       }
     } catch (e) {}
 
-    // Cách 2: Fetch Blob trực tiếp
+    // Cách 2: Fetch Blob trực tiếp với timeout 1500ms (tránh treo trình duyệt)
     try {
-      const res = await fetch(src);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
+      const res = await fetch(src, { signal: controller.signal });
+      clearTimeout(timeoutId);
       const blob = await res.blob();
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -2728,8 +2797,8 @@
       return;
     }
 
-    const model = savedModel || 'gemini-3.6-flash';
-    const BATCH_SIZE = 10;
+    const model = (savedModel && !savedModel.includes('3.6') && !savedModel.includes('2.5') && !savedModel.includes('3.5')) ? savedModel : 'gemini-2.0-flash';
+    const BATCH_SIZE = 12;
     const totalQuestions = questions.length;
     const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
     const allAnswers = [];
@@ -2874,22 +2943,25 @@
       return p;
     });
 
+    // Chuẩn hóa model: Luôn ưu tiên các model THỰC SỰ tồn tại của Google Gemini
+    // gemini-2.0-flash là model mới nhất, siêu tốc (<2 giây) và độ chính xác cao nhất
+    let normalizedPreferred = preferredModel;
+    if (!normalizedPreferred || normalizedPreferred.includes('3.6') || normalizedPreferred.includes('2.5') || normalizedPreferred.includes('3.5')) {
+      normalizedPreferred = 'gemini-2.0-flash';
+    }
+
     const modelsToTry = [
-      preferredModel,
-      'gemini-2.5-flash',
+      normalizedPreferred,
       'gemini-2.0-flash',
       'gemini-1.5-flash',
-      'gemini-2.5-pro',
-      'gemini-3.6-flash',
-      'gemini-3.6-pro',
-      'gemini-3.5-flash'
-    ].filter(Boolean);
+      'gemini-1.5-pro'
+    ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
     for (const model of modelsToTry) {
       for (const ver of ['v1beta', 'v1']) {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 45000);
+          const timeoutId = setTimeout(() => controller.abort(), 12000); // 12 giây timeout tối đa
 
           const res = await fetch(`https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`, {
             method: 'POST',
