@@ -2,7 +2,7 @@
 
 ![Version](https://img.shields.io/badge/version-2.1.3-indigo.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Gemini API](https://img.shields.io/badge/AI-Gemini%202.0%20Flash-emerald.svg)
+![Gemini API](https://img.shields.io/badge/AI-Gemini%203.6%20Flash-emerald.svg)
 ![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge-blue.svg)
 
 > **Coursera Helper** là công cụ hỗ trợ học tập toàn diện trên nền tảng Coursera: Tự động loại bỏ prompt injection ẩn, giải bài tập trắc nghiệm bằng Gemini AI siêu tốc (2s), tua video thông minh thích ứng theo tick xanh (nhanh pass ngay, chậm kiên nhẫn đợi), và tự động chấm điểm Peer Review.
@@ -12,7 +12,7 @@
 ## 🌟 Tính năng nổi bật (Features)
 
 ### 1. ⚡ Tự Giải Cả Bài Trắc Nghiệm (Zero-Click Quiz Solver)
-- **Giải bài siêu tốc (1.5 - 2.5s)**: Sử dụng mô hình thế hệ mới **`gemini-2.0-flash`** xử lý đồng thời 10-12 câu hỏi kèm hình ảnh.
+- **Giải bài siêu tốc (1.5 - 2.5s)**: Sử dụng mô hình thế hệ mới **`gemini-3.6-flash`** (và hỗ trợ `gemini-3.8-flash`) xử lý đồng thời 10-12 câu hỏi kèm hình ảnh.
 - **Tự động tick đáp án**: Nhận diện nguyên văn lựa chọn (Radio / Checkbox) và tự động tích chọn chính xác 100%.
 - **Hoàn tất tự động**: Tự động tick **Coursera Honor Code** (`#agreement-checkbox-base`), tự bấm nút **Submit** và tự xác nhận popup *"Ready to submit?"*.
 

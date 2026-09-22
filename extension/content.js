@@ -1360,7 +1360,7 @@
       return;
     }
 
-    const model = (savedModel && !savedModel.includes('3.6') && !savedModel.includes('2.5')) ? savedModel : 'gemini-2.0-flash';
+    const model = (savedModel && savedModel.includes('3.')) ? savedModel : 'gemini-3.6-flash';
     const BATCH_SIZE = 12;
     const totalBatches = Math.ceil(questions.length / BATCH_SIZE);
 
@@ -2847,7 +2847,7 @@
       return;
     }
 
-    const model = (savedModel && !savedModel.includes('3.6') && !savedModel.includes('2.5') && !savedModel.includes('3.5')) ? savedModel : 'gemini-2.0-flash';
+    const model = (savedModel && savedModel.includes('3.')) ? savedModel : 'gemini-3.6-flash';
     const BATCH_SIZE = 12;
     const totalQuestions = questions.length;
     const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
@@ -2891,13 +2891,17 @@
     });
 
     if (btnSolve) {
-      btnSolve.innerHTML = '✅ Đã Giải Xong!';
+      if (allAnswers.length > 0) {
+        btnSolve.innerHTML = '✅ Đã Giải Xong!';
+      } else {
+        btnSolve.innerHTML = '⚠️ Lỗi giải bài!';
+      }
       setTimeout(() => {
         if (btnSolve) {
           btnSolve.innerHTML = origBtnText;
           btnSolve.style.opacity = '1';
         }
-      }, 3000);
+      }, 3500);
     }
 
     if (allAnswers.length > 0) {
@@ -2993,25 +2997,26 @@
       return p;
     });
 
-    // Chuẩn hóa model: Luôn ưu tiên các model THỰC SỰ tồn tại của Google Gemini
-    // gemini-2.0-flash là model mới nhất, siêu tốc (<2 giây) và độ chính xác cao nhất
+    // Chuẩn hóa model: Luôn ưu tiên các model từ 3.6 Flash trở lên
     let normalizedPreferred = preferredModel;
-    if (!normalizedPreferred || normalizedPreferred.includes('3.6') || normalizedPreferred.includes('2.5') || normalizedPreferred.includes('3.5')) {
-      normalizedPreferred = 'gemini-2.0-flash';
+    if (!normalizedPreferred || !normalizedPreferred.includes('3.')) {
+      normalizedPreferred = 'gemini-3.6-flash';
     }
 
     const modelsToTry = [
       normalizedPreferred,
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-1.5-pro'
+      'gemini-3.6-flash',
+      'gemini-3.8-flash',
+      'gemini-3.6-pro',
+      'gemini-3.5-flash',
+      'gemini-3.5-pro'
     ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
     for (const model of modelsToTry) {
       for (const ver of ['v1beta', 'v1']) {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 12000); // 12 giây timeout tối đa
+          const timeoutId = setTimeout(() => controller.abort(), 15000);
 
           const res = await fetch(`https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`, {
             method: 'POST',
@@ -3032,7 +3037,7 @@
 
           const data = await res.json();
           if (data.error) {
-            console.warn(`API Error with ${model} (${ver}):`, data.error.message);
+            console.warn(`API Error with ${model} (${ver}):`, data.error.message || data.error);
             continue;
           }
 

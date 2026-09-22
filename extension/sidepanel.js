@@ -65,7 +65,7 @@ chrome.storage.local.get([
 ], (res) => {
   if (res.gemini_api_key && apiKeyInput) apiKeyInput.value = res.gemini_api_key;
   if (modelSelect) {
-    const m = (res.gemini_model && !res.gemini_model.includes('3.6') && !res.gemini_model.includes('2.5') && !res.gemini_model.includes('3.5')) ? res.gemini_model : 'gemini-2.0-flash';
+    const m = (res.gemini_model && res.gemini_model.includes('3.')) ? res.gemini_model : 'gemini-3.6-flash';
     modelSelect.value = m;
   }
 
@@ -292,10 +292,10 @@ async function getAvailableGeminiModels(apiKey) {
 }
 
 function selectOptimalModel(supportedModels, userPreferred) {
-  const cleanPreferred = (userPreferred && !userPreferred.includes('3.6') && !userPreferred.includes('2.5') && !userPreferred.includes('3.5')) ? userPreferred : null;
+  const cleanPreferred = (userPreferred && userPreferred.includes('3.')) ? userPreferred : null;
 
   if (!supportedModels || supportedModels.length === 0) {
-    return { name: cleanPreferred || 'gemini-2.0-flash', version: 'v1beta' };
+    return { name: cleanPreferred || 'gemini-3.6-flash', version: 'v1beta' };
   }
 
   // 1. Nếu user từng chọn một model hợp lệ và model đó có trong danh sách
@@ -304,11 +304,13 @@ function selectOptimalModel(supportedModels, userPreferred) {
     if (found) return found;
   }
 
-  // 2. Thứ tự ưu tiên các model Google Flash nhanh & chuẩn
+  // 2. Thứ tự ưu tiên các model từ Gemini 3.6 Flash trở lên
   const priorities = [
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro'
+    'gemini-3.6-flash',
+    'gemini-3.8-flash',
+    'gemini-3.6-pro',
+    'gemini-3.5-flash',
+    'gemini-3.5-pro'
   ];
 
   for (const p of priorities) {
@@ -324,7 +326,7 @@ function selectOptimalModel(supportedModels, userPreferred) {
   const anyGemini = supportedModels.find(m => m.name.toLowerCase().includes('gemini'));
   if (anyGemini) return anyGemini;
 
-  return supportedModels[0] || { name: 'gemini-2.0-flash', version: 'v1beta' };
+  return supportedModels[0] || { name: 'gemini-3.6-flash', version: 'v1beta' };
 }
 
 function populateModelSelect(supportedModels, activeModelName) {
@@ -607,16 +609,15 @@ QUY TẮC GIẢI & TRÌNH BÀY:
 `;
   const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
 
-  let chosenModel = modelSelect?.value || 'gemini-2.0-flash';
-  if (chosenModel.includes('3.6') || chosenModel.includes('2.5') || chosenModel.includes('3.5')) {
-    chosenModel = 'gemini-2.0-flash';
-  }
+  let chosenModel = (modelSelect?.value && modelSelect.value.includes('3.')) ? modelSelect.value : 'gemini-3.6-flash';
 
   const modelsToTry = Array.from(new Set([
     chosenModel,
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro'
+    'gemini-3.6-flash',
+    'gemini-3.8-flash',
+    'gemini-3.6-pro',
+    'gemini-3.5-flash',
+    'gemini-3.5-pro'
   ])).filter(Boolean);
 
   const startTime = performance.now();
@@ -857,10 +858,7 @@ safeListen('btnSaveKey', 'click', async () => {
     });
   } else {
     // Nếu không list được models, vẫn lưu key với model mặc định
-    let fallbackModel = modelSelect?.value || 'gemini-2.0-flash';
-    if (fallbackModel.includes('3.6') || fallbackModel.includes('2.5') || fallbackModel.includes('3.5')) {
-      fallbackModel = 'gemini-2.0-flash';
-    }
+    let fallbackModel = (modelSelect?.value && modelSelect.value.includes('3.')) ? modelSelect.value : 'gemini-3.6-flash';
     chrome.storage.local.set({ 'gemini_api_key': key, 'gemini_model': fallbackModel }, () => {
       showToast(`✓ Đã lưu cài đặt (${fallbackModel})!`);
       if (settingsBox) settingsBox.style.display = 'none';
@@ -933,7 +931,7 @@ async function solveFullQuizBatchPipeline(questions, tabId) {
     return;
   }
 
-  const model = (savedModel && !savedModel.includes('3.6') && !savedModel.includes('2.5') && !savedModel.includes('3.5')) ? savedModel : 'gemini-2.0-flash';
+  const model = (savedModel && savedModel.includes('3.')) ? savedModel : 'gemini-3.6-flash';
   const BATCH_SIZE = 10; // Gửi nhiều câu 1 lần để giải nhanh, ít API call hơn
   const totalQuestions = questions.length;
   const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
@@ -1131,15 +1129,17 @@ async function callGeminiMultimodalParts(apiKey, preferredModel, parts) {
   });
 
   let normalizedPreferred = preferredModel;
-  if (!normalizedPreferred || normalizedPreferred.includes('3.6') || normalizedPreferred.includes('2.5') || normalizedPreferred.includes('3.5')) {
-    normalizedPreferred = 'gemini-2.0-flash';
+  if (!normalizedPreferred || !normalizedPreferred.includes('3.')) {
+    normalizedPreferred = 'gemini-3.6-flash';
   }
 
   const modelsToTry = [
     normalizedPreferred,
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro'
+    'gemini-3.6-flash',
+    'gemini-3.8-flash',
+    'gemini-3.6-pro',
+    'gemini-3.5-flash',
+    'gemini-3.5-pro'
   ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
   let lastError = null;
