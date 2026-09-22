@@ -30,6 +30,7 @@ const aiContent = document.getElementById('aiContent');
 const settingsBox = document.getElementById('settingsBox');
 const apiKeyInput = document.getElementById('apiKeyInput');
 const modelSelect = document.getElementById('modelSelect');
+const chkAutoFillQuiz = document.getElementById('chkAutoFillQuiz');
 const btnAutoSkipModule = document.getElementById('btnAutoSkipModule');
 const toast = document.getElementById('toast');
 
@@ -65,7 +66,8 @@ chrome.storage.local.get([
   'saved_raw_input',
   'saved_clean_output',
   'saved_ai_html',
-  'auto_skip_active'
+  'auto_skip_active',
+  'auto_fill_quiz_enabled'
 ], (res) => {
   if (res.gemini_api_key && apiKeyInput) apiKeyInput.value = res.gemini_api_key;
   if (modelSelect) {
@@ -73,6 +75,10 @@ chrome.storage.local.get([
     const isOld = !res.gemini_model || ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.5-flash'].includes(res.gemini_model);
     const m = isOld ? 'gemini-3.6-flash' : res.gemini_model;
     modelSelect.value = m;
+  }
+
+  if (chkAutoFillQuiz) {
+    chkAutoFillQuiz.checked = res.auto_fill_quiz_enabled !== false; // Mặc định là bật
   }
 
   if (res.saved_raw_input && rawInput) {
@@ -87,6 +93,12 @@ chrome.storage.local.get([
   }
 
   updateAutoSkipButtonUI(!!res.auto_skip_active);
+});
+
+safeListen('chkAutoFillQuiz', 'change', () => {
+  if (chkAutoFillQuiz) {
+    chrome.storage.local.set({ 'auto_fill_quiz_enabled': chkAutoFillQuiz.checked });
+  }
 });
 
 // Lắng nghe thay đổi trạng thái auto skip từ storage
@@ -311,16 +323,186 @@ function populateModelSelect(supportedModels, activeModelName) {
   });
 }
 
-// Bắt sự kiện click vào nút Copy Tất Cả trong khung kết quả AI
+// =======================================================
+// TRÍCH XUẤT ĐÁP ÁN ĐỂ TỰ ĐỘNG TICK TRÊN COURSERA
+// =======================================================
+function extractAnswers(aiText) {
+  if (!aiText) return [];
+
+  // 1. Khối json:answers chuẩn máy đọc
+  try {
+    const jsonMatch = aiText.match(/```(?:json:answers|json)?\s*(\[\s*\{[\s\S]*?\}\s*\])\s*```/i);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[1]);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map(item => ({
+          q: Number(item.q || item.question || 0),
+          answers: (Array.isArray(item.answers) ? item.answers : [item.answer || item.text]).filter(Boolean)
+        })).filter(item => item.answers.length > 0);
+      }
+    }
+  } catch (e) {
+    console.warn('JSON parse fallback:', e);
+  }
+
+  // 2. Quét regex chi tiết từng câu trong Markdown
+  const results = [];
+  const questionBlocks = aiText.split(/(?:###\s*(?:Câu|Question)\s*(\d+)|\b(?:Câu|Question)\s+(\d+)\b)/i);
+  if (questionBlocks.length > 2) {
+    for (let i = 1; i < questionBlocks.length; i += 3) {
+      const qNum = parseInt(questionBlocks[i] || questionBlocks[i + 1] || '0', 10);
+      const content = questionBlocks[i + 2] || '';
+      
+      const ansMatch = content.match(/(?:ĐÁP ÁN ĐÚNG|CORRECT ANSWER)[\s\S]*?(?:GIẢI THÍCH|EXPLANATION|---|$)/i);
+      if (ansMatch) {
+        const ansSection = ansMatch[0];
+        const bullets = Array.from(ansSection.matchAll(/[\*\-]\s*(?:\*\*)?(.*?)(?:\*\*)?(?:\r?\n|$)/g))
+          .map(m => m[1].replace(/^(?:ĐÁP ÁN ĐÚNG|CORRECT ANSWER):?\s*/i, '').replace(/\*\*/g, '').trim())
+          .filter(t => t.length > 2 && !t.toLowerCase().includes('đáp án đúng'));
+        
+        if (bullets.length > 0) {
+          results.push({ q: qNum, answers: bullets });
+        } else {
+          const lines = ansSection.split('\n')
+            .map(l => l.replace(/^(?:ĐÁP ÁN ĐÚNG|CORRECT ANSWER):?\s*/i, '').replace(/\*\*/g, '').trim())
+            .filter(l => l.length > 2 && !l.toLowerCase().includes('đáp án đúng') && !l.toLowerCase().includes('giải thích'));
+          if (lines.length > 0) {
+            results.push({ q: qNum, answers: lines });
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Quét bảng tóm tắt nhanh
+  if (results.length === 0) {
+    const summaryLines = Array.from(aiText.matchAll(/(?:[\*\-]\s*)?(?:Câu|Question)\s*(\d+)\s*[:\.]\s*(.*)/gi));
+    for (const match of summaryLines) {
+      const qNum = parseInt(match[1], 10);
+      const ansPart = match[2].trim();
+      const splitAnswers = ansPart.split(/\s*\|\s*/).map(a => a.replace(/\*\*/g, '').trim()).filter(Boolean);
+      if (splitAnswers.length > 0) {
+        results.push({ q: qNum, answers: splitAnswers });
+      }
+    }
+  }
+
+  return results;
+}
+
+// Gửi lệnh tự động tick đáp án tới tab Coursera
+async function sendAutoFillToCoursera(answers) {
+  if (!answers || !Array.isArray(answers) || answers.length === 0) return;
+
+  const tab = await getCourseraTab();
+  if (!tab || !tab.id) {
+    showToast('⚠️ Vui lòng mở trang Coursera để tự động điền!');
+    return;
+  }
+
+  chrome.tabs.sendMessage(tab.id, { action: 'auto_fill_quiz', answers: answers }, (res) => {
+    if (chrome.runtime.lastError || !res) {
+      executeDirectAutoFill(tab.id, answers);
+    } else if (res && res.tickedCount > 0) {
+      showToast(`🎯 Đã tự động tick ${res.tickedCount} đáp án trên Coursera!`);
+    } else {
+      showToast('⚠️ Đã thử điền nhưng không tìm thấy trắc nghiệm tương ứng!');
+    }
+  });
+}
+
+// Hàm dự phòng can thiệp DOM trang nếu content script chưa gắn kịp
+function executeDirectAutoFill(tabId, answers) {
+  chrome.scripting.executeScript({
+    target: { tabId: tabId, allFrames: true },
+    func: (answersList) => {
+      function normalizeText(str) {
+        if (!str) return '';
+        return str.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+      }
+
+      function isMatch(el, targetAnswer) {
+        const rawText = (el.innerText || el.textContent || '').trim();
+        if (!rawText || rawText.length > 500) return false;
+        const opt = normalizeText(rawText);
+        const ans = normalizeText(targetAnswer);
+        if (!opt || !ans) return false;
+        if (opt === ans) return true;
+        if (ans.length >= 12 && opt.includes(ans)) return true;
+        if (opt.length >= 12 && ans.includes(opt)) return true;
+        const optWords = new Set(opt.split(' ').filter(w => w.length >= 3));
+        const ansWords = new Set(ans.split(' ').filter(w => w.length >= 3));
+        if (ansWords.size >= 2) {
+          let overlap = 0;
+          for (const w of ansWords) {
+            if (optWords.has(w)) overlap++;
+          }
+          if (overlap / ansWords.size >= 0.7) return true;
+        }
+        return false;
+      }
+
+      const allOptions = Array.from(document.querySelectorAll(
+        'label, li.rc-Option, div[data-testid="option-label"], [role="radio"], [role="checkbox"], input[type="radio"], input[type="checkbox"]'
+      ));
+
+      let count = 0;
+      for (const item of answersList) {
+        for (const ansText of (item.answers || [])) {
+          const matched = allOptions.find(el => isMatch(el, ansText));
+          if (matched) {
+            const input = matched.tagName === 'INPUT' ? matched : matched.querySelector('input');
+            const target = input || matched;
+            try { target.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
+            ['mouseover', 'mousedown', 'mouseup', 'click'].forEach(evt => {
+              matched.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+            });
+            if (input && input !== matched) {
+              input.checked = true;
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              try { input.click(); } catch (e) {}
+            }
+            const card = matched.closest('label, li, [role="radio"], [role="checkbox"]') || matched;
+            card.style.outline = '2px solid #10b981';
+            card.style.background = 'rgba(16, 185, 129, 0.14)';
+            card.style.borderRadius = '6px';
+            card.style.boxShadow = '0 0 12px rgba(16, 185, 129, 0.45)';
+            count++;
+          }
+        }
+      }
+    },
+    args: [answers]
+  });
+}
+
+// Bắt sự kiện click vào các nút trong khung kết quả AI
 if (aiContent) {
   aiContent.addEventListener('click', async (e) => {
-    const target = e.target.closest('#btnQuickCopyAi');
-    if (target) {
+    // 1. Nút Copy tất cả
+    const targetCopy = e.target.closest('#btnQuickCopyAi');
+    if (targetCopy) {
       chrome.storage.local.get(['saved_ai_raw'], async (res) => {
         const textToCopy = res.saved_ai_raw || aiContent.innerText;
         await navigator.clipboard.writeText(textToCopy);
         showToast('✓ Đã copy toàn bộ đáp án!');
       });
+      return;
+    }
+
+    // 2. Nút Tự động tick lại Coursera
+    const targetFill = e.target.closest('#btnQuickFillCoursera');
+    if (targetFill) {
+      chrome.storage.local.get(['saved_ai_answers'], async (res) => {
+        if (res.saved_ai_answers && res.saved_ai_answers.length > 0) {
+          showToast('🎯 Đang tự động tick chọn trên Coursera...');
+          sendAutoFillToCoursera(res.saved_ai_answers);
+        } else {
+          showToast('⚠️ Chưa có danh sách đáp án để điền!');
+        }
+      });
+      return;
     }
   });
 }
@@ -367,6 +549,13 @@ safeListen('btnSolve', 'click', async () => {
    * **[Nguyên văn nội dung đáp án đúng]**
    GIẢI THÍCH: [1-2 câu giải thích ngắn gọn, súc tích bản chất chuyên môn]
    ---
+4. PHẦN 3: DỮ LIỆU ĐIỀN ĐÁP ÁN (BẮT BUỘC ĐẶT Ở CUỐI CÙNG):
+\`\`\`json:answers
+[
+  {"q": 1, "answers": ["Nguyên văn đáp án 1", "Nguyên văn đáp án 2 nếu có"]},
+  {"q": 2, "answers": ["Nguyên văn đáp án"]}
+]
+\`\`\`
 `;
   const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
 
@@ -430,7 +619,10 @@ safeListen('btnSolve', 'click', async () => {
     const htmlHeader = `
       <div class="ai-result-header">
         <span class="ai-time-badge">⚡ Đã giải trong ${elapsed}s (${successfulModel})</span>
-        <button class="btn-copy-quick" id="btnQuickCopyAi">📋 Copy tất cả</button>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn-copy-quick" id="btnQuickFillCoursera" title="Tự động tick các đáp án này vào bài trắc nghiệm Coursera">🎯 Tự tick Coursera</button>
+          <button class="btn-copy-quick" id="btnQuickCopyAi" title="Copy toàn bộ đáp án">📋 Copy tất cả</button>
+        </div>
       </div>
     `;
     const htmlBody = renderMarkdown(solvedText);
@@ -441,12 +633,25 @@ safeListen('btnSolve', 'click', async () => {
     }
 
     if (modelSelect) modelSelect.value = successfulModel;
+
+    const parsedAnswers = extractAnswers(solvedText);
     chrome.storage.local.set({
       'saved_ai_html': fullHtml,
       'saved_ai_raw': solvedText,
+      'saved_ai_answers': parsedAnswers,
       'gemini_model': successfulModel
     });
+
     showToast(`✓ Gemini (${successfulModel}) giải xong trong ${elapsed}s!`);
+
+    // Tự động điền đáp án vào Coursera ngay sau khi giải nếu bật tùy chọn
+    chrome.storage.local.get(['auto_fill_quiz_enabled'], (res) => {
+      const isAutoFillEnabled = res.auto_fill_quiz_enabled !== false;
+      if (isAutoFillEnabled && parsedAnswers.length > 0) {
+        sendAutoFillToCoursera(parsedAnswers);
+      }
+    });
+
   } else if (lastError) {
     if (aiContent) {
       aiContent.innerHTML = `
@@ -460,7 +665,10 @@ safeListen('btnSolve', 'click', async () => {
 });
 
 function renderMarkdown(md) {
-  let html = md
+  // Loại bỏ khối json:answers nếu có để giao diện luôn sạch đẹp
+  let cleanMd = md.replace(/```(?:json:answers|json)?\s*\[\s*\{[\s\S]*?\}\s*\]\s*```/gi, '').trim();
+
+  let html = cleanMd
     .replace(/^### (.*$)/gim, '<h3 class="ai-q-title">$1</h3>')
     .replace(/^## (.*$)/gim, '<h2 class="ai-sec-title">$1</h2>')
     .replace(/^# (.*$)/gim, '<h1 class="ai-main-title">$1</h1>')

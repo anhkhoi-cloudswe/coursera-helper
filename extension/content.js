@@ -673,9 +673,162 @@
         chrome.storage.local.set({ 'auto_skip_active': nextState });
         sendResponse({ active: nextState });
       });
+    } else if (request.action === 'auto_fill_quiz') {
+      const result = autoFillCourseraQuiz(request.answers || []);
+      sendResponse(result);
     }
     return true;
   });
+
+  // ==========================================
+  // 8. TỰ ĐỘNG TICK CHỌN ĐÁP ÁN QUIZ COURSERA
+  // ==========================================
+  function normalizeQuizText(str) {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function isOptionMatch(el, targetAnswer) {
+    const rawText = (el.innerText || el.textContent || '').trim();
+    if (!rawText || rawText.length > 500) return false;
+
+    const opt = normalizeQuizText(rawText);
+    const ans = normalizeQuizText(targetAnswer);
+    if (!opt || !ans) return false;
+
+    // 1. Trùng khớp hoàn toàn
+    if (opt === ans) return true;
+
+    // 2. Chứa nhau với độ dài đáng kể từ 12 ký tự
+    if (ans.length >= 12 && opt.includes(ans)) return true;
+    if (opt.length >= 12 && ans.includes(opt)) return true;
+
+    // 3. Khớp tỷ lệ từ khóa chính (trùng >= 70% từ vựng)
+    const optWords = new Set(opt.split(' ').filter(w => w.length >= 3));
+    const ansWords = new Set(ans.split(' ').filter(w => w.length >= 3));
+    if (ansWords.size >= 2) {
+      let overlap = 0;
+      for (const w of ansWords) {
+        if (optWords.has(w)) overlap++;
+      }
+      if (overlap / ansWords.size >= 0.7) return true;
+    }
+
+    return false;
+  }
+
+  function tickOptionElement(el) {
+    try {
+      const input = el.tagName === 'INPUT' 
+        ? el 
+        : el.querySelector('input[type="radio"], input[type="checkbox"]');
+      const target = input || el;
+
+      // Cuộn vào tầm nhìn
+      try {
+        target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (e) {}
+
+      // Kiểm tra trạng thái checked
+      const isAlreadyChecked = input ? input.checked : (el.getAttribute('aria-checked') === 'true');
+      if (!isAlreadyChecked) {
+        // Chuỗi sự kiện chuột cho React
+        ['mouseover', 'mousedown', 'mouseup', 'click'].forEach(evt => {
+          el.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+        });
+
+        if (input && input !== el) {
+          input.checked = true;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          try { input.click(); } catch (e) {}
+        } else {
+          el.click();
+        }
+      }
+
+      // Hiệu ứng viền xanh lục phát sáng để người dùng dễ quan sát
+      const card = el.closest('label, li, .rc-Option, [role="radio"], [role="checkbox"]') || el;
+      card.style.transition = 'all 0.3s ease';
+      card.style.outline = '2px solid #10b981';
+      card.style.background = 'rgba(16, 185, 129, 0.14)';
+      card.style.borderRadius = '6px';
+      card.style.boxShadow = '0 0 12px rgba(16, 185, 129, 0.45)';
+
+      return true;
+    } catch (err) {
+      console.warn('Lỗi tick option:', err);
+      return false;
+    }
+  }
+
+  function autoFillCourseraQuiz(answersList) {
+    if (!answersList || !Array.isArray(answersList) || answersList.length === 0) {
+      return { success: false, tickedCount: 0, totalQuestions: 0 };
+    }
+
+    let tickedCount = 0;
+    const allOptionElements = Array.from(document.querySelectorAll(
+      'label, li.rc-Option, div[data-testid="option-label"], [role="radio"], [role="checkbox"], input[type="radio"], input[type="checkbox"]'
+    ));
+
+    // Tìm các container câu hỏi nếu có
+    let questionContainers = Array.from(document.querySelectorAll(
+      'div[data-testid="part-container"], fieldset, .rc-FormPartsQuestion, .rc-QuizQuestion, div[role="group"]'
+    )).filter((c, idx, arr) => !arr.some(other => other !== c && other.contains(c)));
+
+    for (let i = 0; i < answersList.length; i++) {
+      const item = answersList[i];
+      const qNum = item.q || (i + 1);
+      const targetAnswers = item.answers || [];
+      if (targetAnswers.length === 0) continue;
+
+      let container = null;
+      if (questionContainers.length >= answersList.length) {
+        container = questionContainers.find(c => {
+          const txt = c.innerText || c.textContent || '';
+          const regex = new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i');
+          return regex.test(txt);
+        }) || questionContainers[qNum - 1] || questionContainers[i];
+      }
+
+      for (const ansText of targetAnswers) {
+        let matchedOption = null;
+
+        // 1. Tìm trong container câu hỏi
+        if (container) {
+          const optsInContainer = Array.from(container.querySelectorAll(
+            'label, li.rc-Option, div[data-testid="option-label"], [role="radio"], [role="checkbox"], input[type="radio"], input[type="checkbox"]'
+          ));
+          matchedOption = optsInContainer.find(el => isOptionMatch(el, ansText));
+        }
+
+        // 2. Tìm toàn trang nếu chưa thấy
+        if (!matchedOption) {
+          matchedOption = allOptionElements.find(el => isOptionMatch(el, ansText));
+        }
+
+        if (matchedOption) {
+          const ok = tickOptionElement(matchedOption);
+          if (ok) tickedCount++;
+        }
+      }
+    }
+
+    if (tickedCount > 0) {
+      showInPageToast(`🎉 Coursera Helper: Đã tự động tick chọn ${tickedCount} đáp án thành công!`);
+    } else {
+      showInPageToast('⚠️ Đã thử tick nhưng không tìm thấy câu hỏi khớp trên trang!', true);
+    }
+
+    return { success: tickedCount > 0, tickedCount, totalAnswers: answersList.length };
+  }
 
   // Tự tạo HUD khi trang sẵn sàng
   createFloatingHUD();
