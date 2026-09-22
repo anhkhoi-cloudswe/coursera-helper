@@ -869,7 +869,8 @@
 
     // Load Local Storage
     let savedApiKey = localStorage.getItem('coursera_gemini_api_key') || '';
-    let savedModel = localStorage.getItem('coursera_gemini_model') || 'gemini-2.0-flash';
+    let savedModel = localStorage.getItem('coursera_gemini_model') || 'gemini-2.5-flash';
+    if (savedModel === 'gemini-2.0-flash') savedModel = 'gemini-2.5-flash';
 
     modalApiKey.value = savedApiKey;
     modalModelSelect.value = savedModel;

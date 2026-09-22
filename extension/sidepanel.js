@@ -68,7 +68,11 @@ chrome.storage.local.get([
   'auto_skip_active'
 ], (res) => {
   if (res.gemini_api_key && apiKeyInput) apiKeyInput.value = res.gemini_api_key;
-  if (res.gemini_model && modelSelect) modelSelect.value = res.gemini_model;
+  if (modelSelect) {
+    // Tự động nâng cấp nếu model cũ là gemini-2.0-flash đã bị Google khai tử
+    const m = res.gemini_model && res.gemini_model !== 'gemini-2.0-flash' ? res.gemini_model : 'gemini-2.5-flash';
+    modelSelect.value = m;
+  }
 
   if (res.saved_raw_input && rawInput) {
     rawInput.value = res.saved_raw_input;
@@ -231,7 +235,7 @@ safeListen('btnCopyPrompt', 'click', async () => {
 });
 
 // =======================================================
-// 7. GỌI GEMINI API GIẢI ĐÁP ÁN (GIẢI)
+// 7. GỌI GEMINI API GIẢI ĐÁP ÁN (VỚI AUTO-FALLBACK THÔNG MINH)
 // =======================================================
 safeListen('btnSolve', 'click', async () => {
   const textToSolve = (cleanOutput?.value || cleanCourseraQuiz(rawInput?.value || '')).trim();
@@ -260,36 +264,73 @@ safeListen('btnSolve', 'click', async () => {
     `;
   }
 
-  try {
-    const model = modelSelect?.value || 'gemini-2.0-flash';
-    const systemPrompt = "Bạn là chuyên gia xuất sắc. Hãy giải các câu hỏi trắc nghiệm sau. Với mỗi câu hỏi: chỉ rõ ĐÁP ÁN ĐÚNG (in đậm) và GIẢI THÍCH NGẮN GỌN (1-2 câu). Trình bày mạch lạc, dễ đọc.";
-    const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
+  // Danh sách model ưu tiên (tự động thử model tiếp theo nếu model trước bị deprecated)
+  const preferredModel = (modelSelect?.value && modelSelect.value !== 'gemini-2.0-flash')
+    ? modelSelect.value
+    : 'gemini-2.5-flash';
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: fullPrompt }] }]
-      })
-    });
+  const candidateModels = Array.from(new Set([
+    preferredModel,
+    'gemini-2.5-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro'
+  ]));
 
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message || 'Lỗi API');
+  let lastError = null;
+  let solved = false;
 
-    const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!candidate) throw new Error('Không có phản hồi từ AI');
+  for (const model of candidateModels) {
+    try {
+      const systemPrompt = "Bạn là chuyên gia xuất sắc. Hãy giải các câu hỏi trắc nghiệm sau. Với mỗi câu hỏi: chỉ rõ ĐÁP ÁN ĐÚNG (in đậm) và GIẢI THÍCH NGẮN GỌN (1-2 câu). Trình bày mạch lạc, dễ đọc.";
+      const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
 
-    const htmlResult = renderMarkdown(candidate);
-    if (aiContent) aiContent.innerHTML = htmlResult;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: fullPrompt }] }]
+        })
+      });
 
-    chrome.storage.local.set({ 'saved_ai_html': htmlResult });
-    showToast('✓ Gemini đã giải xong!');
-  } catch (err) {
+      const data = await res.json();
+      if (data.error) {
+        const errMsg = data.error.message || 'Lỗi API';
+        // Nếu model không còn khả dụng hoặc không tìm thấy -> tự động chuyển sang model tiếp theo
+        if (errMsg.includes('no longer available') || errMsg.includes('not found') || data.error.code === 404) {
+          console.warn(`[CourseraHelper] Model ${model} không khả dụng (${errMsg}), tự động thử model tiếp theo...`);
+          lastError = new Error(errMsg);
+          continue;
+        }
+        throw new Error(errMsg);
+      }
+
+      const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!candidate) throw new Error('Không có phản hồi từ AI');
+
+      const htmlResult = renderMarkdown(candidate);
+      if (aiContent) aiContent.innerHTML = htmlResult;
+
+      // Cập nhật model thành công
+      if (modelSelect) modelSelect.value = model;
+      chrome.storage.local.set({ 'saved_ai_html': htmlResult, 'gemini_model': model });
+      showToast(`✓ Gemini (${model}) đã giải xong!`);
+      solved = true;
+      break;
+    } catch (err) {
+      lastError = err;
+      if (err.message && (err.message.includes('no longer available') || err.message.includes('not found'))) {
+        continue;
+      }
+      break;
+    }
+  }
+
+  if (!solved && lastError) {
     if (aiContent) {
       aiContent.innerHTML = `
         <div style="padding: 12px; background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); border-radius: 8px; color: #fecdd3;">
-          <strong style="color: #f43f5e;">Lỗi:</strong> ${err.message}<br><br>
+          <strong style="color: #f43f5e;">Lỗi:</strong> ${lastError.message}<br><br>
           <span style="font-size: 11px; color: #94a3b8;">Mẹo: Kiểm tra lại API Key hoặc dùng nút "Prompt" để dán vào gemini.google.com</span>
         </div>
       `;
