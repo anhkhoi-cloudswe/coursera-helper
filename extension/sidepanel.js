@@ -235,8 +235,85 @@ safeListen('btnCopyPrompt', 'click', async () => {
 });
 
 // =======================================================
-// 7. GỌI GEMINI API GIẢI ĐÁP ÁN (VỚI AUTO-FALLBACK THÔNG MINH)
+// 7. GỌI GEMINI API GIẢI ĐÁP ÁN (DÙNG MODEL THỰC TẾ CỦA KEY)
 // =======================================================
+
+// Lấy danh sách các model khả dụng trực tiếp từ Google API cho API Key này
+async function getAvailableGeminiModels(apiKey) {
+  for (const apiVer of ['v1beta', 'v1']) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/${apiVer}/models?key=${apiKey}`);
+      const data = await res.json();
+      if (data.models && Array.isArray(data.models)) {
+        const supported = data.models
+          .filter(m => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent'))
+          .map(m => ({
+            name: m.name.replace(/^models\//, ''),
+            displayName: m.displayName || m.name.replace(/^models\//, ''),
+            version: apiVer
+          }));
+        if (supported.length > 0) return supported;
+      }
+    } catch (e) {
+      console.warn(`Lỗi list models ${apiVer}:`, e);
+    }
+  }
+  return [];
+}
+
+function selectOptimalModel(supportedModels, userPreferred) {
+  if (!supportedModels || supportedModels.length === 0) {
+    return { name: 'gemini-1.5-flash', version: 'v1beta' };
+  }
+
+  // 1. Nếu user từng chọn một model và model đó có trong danh sách
+  if (userPreferred && userPreferred !== 'gemini-2.0-flash') {
+    const found = supportedModels.find(m => m.name === userPreferred);
+    if (found) return found;
+  }
+
+  // 2. Tìm model flash phổ biến
+  const priorities = [
+    'gemini-2.5-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-flash-002',
+    'gemini-1.5-flash-001',
+    'gemini-1.5-flash-8b',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-pro',
+    'gemini-1.5-pro-latest'
+  ];
+
+  for (const p of priorities) {
+    const match = supportedModels.find(m => m.name === p);
+    if (match) return match;
+  }
+
+  // 3. Tìm bất kỳ model nào có chữ "flash"
+  const anyFlash = supportedModels.find(m => m.name.toLowerCase().includes('flash'));
+  if (anyFlash) return anyFlash;
+
+  // 4. Tìm bất kỳ model nào có chữ "gemini"
+  const anyGemini = supportedModels.find(m => m.name.toLowerCase().includes('gemini'));
+  if (anyGemini) return anyGemini;
+
+  return supportedModels[0];
+}
+
+function populateModelSelect(supportedModels, activeModelName) {
+  if (!modelSelect || !supportedModels || supportedModels.length === 0) return;
+  modelSelect.innerHTML = '';
+  supportedModels.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.name;
+    opt.dataset.version = m.version;
+    opt.innerText = m.displayName !== m.name ? `${m.displayName} (${m.name})` : m.name;
+    if (m.name === activeModelName) opt.selected = true;
+    modelSelect.appendChild(opt);
+  });
+}
+
 safeListen('btnSolve', 'click', async () => {
   const textToSolve = (cleanOutput?.value || cleanCourseraQuiz(rawInput?.value || '')).trim();
 
@@ -264,73 +341,86 @@ safeListen('btnSolve', 'click', async () => {
     `;
   }
 
-  // Danh sách model ưu tiên (tự động thử model tiếp theo nếu model trước bị deprecated)
-  const preferredModel = (modelSelect?.value && modelSelect.value !== 'gemini-2.0-flash')
-    ? modelSelect.value
-    : 'gemini-2.5-flash';
+  try {
+    // 1. Quét danh sách model được cấp phép cho API Key này
+    let models = await getAvailableGeminiModels(apiKey);
 
-  const candidateModels = Array.from(new Set([
-    preferredModel,
-    'gemini-2.5-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro'
-  ]));
+    if (!models || models.length === 0) {
+      // Danh sách dự phòng nếu không thể gọi endpoint list
+      models = [
+        { name: 'gemini-1.5-flash', version: 'v1beta' },
+        { name: 'gemini-1.5-flash', version: 'v1' },
+        { name: 'gemini-1.5-flash-latest', version: 'v1beta' },
+        { name: 'gemini-1.5-pro', version: 'v1beta' },
+        { name: 'gemini-1.5-pro', version: 'v1' },
+        { name: 'gemini-2.5-flash', version: 'v1beta' }
+      ];
+    } else {
+      populateModelSelect(models, modelSelect?.value);
+    }
 
-  let lastError = null;
-  let solved = false;
+    const preferred = selectOptimalModel(models, modelSelect?.value);
+    const modelsToTry = [preferred, ...models.filter(m => m.name !== preferred.name)];
 
-  for (const model of candidateModels) {
-    try {
-      const systemPrompt = "Bạn là chuyên gia xuất sắc. Hãy giải các câu hỏi trắc nghiệm sau. Với mỗi câu hỏi: chỉ rõ ĐÁP ÁN ĐÚNG (in đậm) và GIẢI THÍCH NGẮN GỌN (1-2 câu). Trình bày mạch lạc, dễ đọc.";
-      const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
+    let solved = false;
+    let lastError = null;
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: fullPrompt }] }]
-        })
-      });
+    for (const m of modelsToTry) {
+      try {
+        const systemPrompt = "Bạn là chuyên gia an ninh mạng xuất sắc. Hãy giải các câu hỏi trắc nghiệm sau. Với mỗi câu hỏi: chỉ rõ ĐÁP ÁN ĐÚNG (in đậm) và GIẢI THÍCH NGẮN GỌN (1-2 câu). Trình bày mạch lạc, dễ đọc.";
+        const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
 
-      const data = await res.json();
-      if (data.error) {
-        const errMsg = data.error.message || 'Lỗi API';
-        // Nếu model không còn khả dụng hoặc không tìm thấy -> tự động chuyển sang model tiếp theo
-        if (errMsg.includes('no longer available') || errMsg.includes('not found') || data.error.code === 404) {
-          console.warn(`[CourseraHelper] Model ${model} không khả dụng (${errMsg}), tự động thử model tiếp theo...`);
-          lastError = new Error(errMsg);
+        const url = `https://generativelanguage.googleapis.com/${m.version}/models/${m.name}:generateContent?key=${apiKey}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: fullPrompt }] }]
+          })
+        });
+
+        const data = await res.json();
+        if (data.error) {
+          const errMsg = data.error.message || 'Lỗi API';
+          if (errMsg.includes('not found') || errMsg.includes('no longer available') || data.error.code === 404) {
+            console.warn(`[CourseraHelper] Model ${m.name} không khả dụng, thử model tiếp theo...`);
+            lastError = new Error(errMsg);
+            continue;
+          }
+          throw new Error(errMsg);
+        }
+
+        const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!candidate) throw new Error('Không có phản hồi từ AI');
+
+        const htmlResult = renderMarkdown(candidate);
+        if (aiContent) aiContent.innerHTML = htmlResult;
+
+        if (modelSelect) modelSelect.value = m.name;
+        chrome.storage.local.set({ 'saved_ai_html': htmlResult, 'gemini_model': m.name });
+        showToast(`✓ Gemini (${m.name}) đã giải xong!`);
+        solved = true;
+        break;
+      } catch (err) {
+        lastError = err;
+        if (err.message && (err.message.includes('not found') || err.message.includes('no longer available'))) {
           continue;
         }
-        throw new Error(errMsg);
+        throw err;
       }
-
-      const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!candidate) throw new Error('Không có phản hồi từ AI');
-
-      const htmlResult = renderMarkdown(candidate);
-      if (aiContent) aiContent.innerHTML = htmlResult;
-
-      // Cập nhật model thành công
-      if (modelSelect) modelSelect.value = model;
-      chrome.storage.local.set({ 'saved_ai_html': htmlResult, 'gemini_model': model });
-      showToast(`✓ Gemini (${model}) đã giải xong!`);
-      solved = true;
-      break;
-    } catch (err) {
-      lastError = err;
-      if (err.message && (err.message.includes('no longer available') || err.message.includes('not found'))) {
-        continue;
-      }
-      break;
     }
-  }
 
-  if (!solved && lastError) {
+    if (!solved && lastError) {
+      throw lastError;
+    }
+  } catch (err) {
     if (aiContent) {
       aiContent.innerHTML = `
         <div style="padding: 12px; background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); border-radius: 8px; color: #fecdd3;">
-          <strong style="color: #f43f5e;">Lỗi:</strong> ${lastError.message}<br><br>
+          <strong style="color: #f43f5e;">Lỗi:</strong> ${err.message}<br><br>
           <span style="font-size: 11px; color: #94a3b8;">Mẹo: Kiểm tra lại API Key hoặc dùng nút "Prompt" để dán vào gemini.google.com</span>
         </div>
       `;
@@ -354,9 +444,14 @@ function renderMarkdown(md) {
 }
 
 // Cài đặt API Key
-safeListen('btnToggleSettings', 'click', () => {
+safeListen('btnToggleSettings', 'click', async () => {
   if (settingsBox) {
-    settingsBox.style.display = settingsBox.style.display === 'none' ? 'flex' : 'none';
+    const isOpening = settingsBox.style.display === 'none';
+    settingsBox.style.display = isOpening ? 'flex' : 'none';
+    if (isOpening && apiKeyInput?.value.trim()) {
+      const models = await getAvailableGeminiModels(apiKeyInput.value.trim());
+      if (models.length > 0) populateModelSelect(models, modelSelect?.value);
+    }
   }
 });
 
@@ -364,13 +459,32 @@ safeListen('btnCloseSettings', 'click', () => {
   if (settingsBox) settingsBox.style.display = 'none';
 });
 
-safeListen('btnSaveKey', 'click', () => {
+safeListen('btnSaveKey', 'click', async () => {
   const key = apiKeyInput?.value.trim() || '';
-  const model = modelSelect?.value || 'gemini-2.0-flash';
-  chrome.storage.local.set({ 'gemini_api_key': key, 'gemini_model': model }, () => {
-    showToast('✓ Đã lưu cài đặt API Key!');
-    if (settingsBox) settingsBox.style.display = 'none';
-  });
+  if (!key) {
+    showToast('Vui lòng nhập API Key');
+    return;
+  }
+
+  showToast('🔍 Đang kiểm tra API Key...');
+  const available = await getAvailableGeminiModels(key);
+
+  if (available.length > 0) {
+    populateModelSelect(available, modelSelect?.value);
+    const best = selectOptimalModel(available, modelSelect?.value);
+    if (modelSelect) modelSelect.value = best.name;
+    chrome.storage.local.set({ 'gemini_api_key': key, 'gemini_model': best.name }, () => {
+      showToast(`✓ Đã kết nối! Model: ${best.name}`);
+      if (settingsBox) settingsBox.style.display = 'none';
+    });
+  } else {
+    // Nếu không list được models, vẫn lưu key với model mặc định
+    const fallbackModel = modelSelect?.value || 'gemini-1.5-flash';
+    chrome.storage.local.set({ 'gemini_api_key': key, 'gemini_model': fallbackModel }, () => {
+      showToast('✓ Đã lưu cài đặt API Key!');
+      if (settingsBox) settingsBox.style.display = 'none';
+    });
+  }
 });
 
 // =======================================================

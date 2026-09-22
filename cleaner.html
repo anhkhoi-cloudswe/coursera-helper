@@ -1069,27 +1069,60 @@ Network intrusion detection alerts
         const systemPrompt = "Bạn là chuyên gia an ninh mạng (Cybersecurity) xuất sắc. Hãy giải các câu hỏi trắc nghiệm sau. Với mỗi câu hỏi: chỉ rõ ĐÁP ÁN ĐÚNG (in đậm) và GIẢI THÍCH NGẮN GỌN (1-2 câu). Trình bày mạch lạc, dễ nhìn.";
         const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${cleanedOutput.value}`;
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${savedModel}:generateContent?key=${savedApiKey}`;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: fullPrompt }] }]
-          })
-        });
+        const modelsToTry = [
+          { name: savedModel && savedModel !== 'gemini-2.0-flash' ? savedModel : 'gemini-2.5-flash', ver: 'v1beta' },
+          { name: 'gemini-1.5-flash', ver: 'v1beta' },
+          { name: 'gemini-1.5-flash', ver: 'v1' },
+          { name: 'gemini-1.5-pro', ver: 'v1beta' },
+          { name: 'gemini-1.5-pro', ver: 'v1' }
+        ];
 
-        const data = await res.json();
-        if (data.error) {
-          throw new Error(data.error.message || 'Lỗi từ Gemini API');
+        let solved = false;
+        let lastError = null;
+
+        for (const m of modelsToTry) {
+          try {
+            const url = `https://generativelanguage.googleapis.com/${m.ver}/models/${m.name}:generateContent?key=${savedApiKey}`;
+            const res = await fetch(url, {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'x-goog-api-key': savedApiKey
+              },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: fullPrompt }] }]
+              })
+            });
+
+            const data = await res.json();
+            if (data.error) {
+              const errMsg = data.error.message || 'Lỗi từ Gemini API';
+              if (errMsg.includes('not found') || errMsg.includes('no longer available') || data.error.code === 404) {
+                lastError = new Error(errMsg);
+                continue;
+              }
+              throw new Error(errMsg);
+            }
+
+            const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!candidate) throw new Error('Không nhận được câu trả lời từ Gemini');
+
+            aiRenderArea.innerHTML = typeof marked !== 'undefined' ? marked.parse(candidate) : `<pre>${candidate}</pre>`;
+            showToast(`Gemini (${m.name}) đã giải xong!`);
+            solved = true;
+            break;
+          } catch (err) {
+            lastError = err;
+            if (err.message && (err.message.includes('not found') || err.message.includes('no longer available'))) {
+              continue;
+            }
+            throw err;
+          }
         }
 
-        const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!candidate) {
-          throw new Error('Không nhận được câu trả lời từ Gemini');
+        if (!solved && lastError) {
+          throw lastError;
         }
-
-        aiRenderArea.innerHTML = typeof marked !== 'undefined' ? marked.parse(candidate) : `<pre>${candidate}</pre>`;
-        showToast('Gemini đã giải xong!');
       } catch (err) {
         aiRenderArea.innerHTML = `
           <div style="padding: 16px; background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); border-radius: 12px; color: #fecdd3;">
