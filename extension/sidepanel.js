@@ -992,22 +992,39 @@ function renderProgressiveResults(accumulatedMarkdown, model, currentCount, tota
 function buildMultimodalBatchParts(batchQuestions, startNum, endNum) {
   const parts = [];
 
-  let text = `Bạn là chuyên gia an toàn thông tin và AI. Hãy giải chính xác nhóm câu hỏi trắc nghiệm từ câu ${startNum} đến câu ${endNum} của bài kiểm tra Coursera sau đây.\n\n`;
-  text += `HƯỚNG DẪN QUAN TRỌNG:\n`;
-  text += `1. Nếu có hình ảnh đính kèm (sơ đồ, biểu đồ, bảng dữ liệu, kiến trúc), hãy quan sát kỹ hình ảnh để chọn đáp án đúng nhất.\n`;
-  text += `2. Đối với câu 1 đáp án: Chọn 1 đáp án đúng.\n`;
-  text += `3. Đối với câu nhiều đáp án (Select two / Select all that apply): Chọn ĐỦ TẤT CẢ các đáp án đúng.\n`;
-  text += `4. Cuối bài, BẮT BUỘC cung cấp khối json:answers theo mẫu:\n`;
+  let text = `Bạn là giáo sư học thuật và chuyên gia hàng đầu về các chương trình đào tạo của Coursera.\n`;
+  text += `MỤC TIÊU: Đạt điểm tuyệt đối 100% cho nhóm câu hỏi trắc nghiệm từ câu ${startNum} đến câu ${endNum}.\n\n`;
+
+  text += `NGUYÊN TẮC GIẢI & PHÂN TÍCH BẪY HỌC THUẬT COURSERA (BẮT BUỘC TUÂN THỦ NGHIÊM NGẶT):\n`;
+  text += `1. BẪY TRIẾT LÝ VS THỰC THI (PHILOSOPHY VS PRACTICE):\n`;
+  text += `   - Triết lý tổ chức (Philosophy) chỉ bao gồm tầm nhìn, định hướng cốt lõi và lường trước các hệ quả tương lai (anticipating future implications). Triết lý KHÔNG đi vào chi tiết thực thi nguyên tắc (putting into practice) vì thực thi là thuộc về chính sách và chiến thuật (policy/tactics).\n`;
+  text += `   - Tuyệt đối không chọn các phương án bề ngoài có vẻ đúng nhưng sai phạm vi định nghĩa học thuật của câu hỏi.\n`;
+  text += `2. BẪY TUYÊN BỐ SUÔNG (SUPERFICIAL/PR TRAPS):\n`;
+  text += `   - Luôn ưu tiên hành động thực chất (xây dựng văn hóa tổ chức, sự cam kết nội bộ, sự tham gia của các bên liên quan) thay vì tuyên bố PR trấn an bề ngoài (reassuring customers).\n`;
+  text += `3. BẪY TỪ HẠN ĐỊNH CỰC ĐOAN (EXTREME DISTRACTORS):\n`;
+  text += `   - Cảnh giác cao độ với các lựa chọn chứa từ ngữ cực đoan như: "above all else", "cannot be modified", "exclusively", "must be self-sustaining", "internal only". Đa phần đây là bẫy sai.\n`;
+  text += `4. SUY LUẬN TỪNG BƯỚC (STEP-BY-STEP REASONING):\n`;
+  text += `   Với mỗi câu hỏi:\n`;
+  text += `   - Xác định trọng tâm kiến thức giáo trình Coursera đang muốn hỏi.\n`;
+  text += `   - Loại trừ từng phương án sai (chỉ rõ điểm bẫy distractor).\n`;
+  text += `   - Chọn phương án chính xác nhất 100% theo đúng giáo trình.\n`;
+  text += `   - Nếu câu hỏi yêu cầu chọn nhiều (Select two / Select all that apply): Bắt buộc chọn ĐỦ tất cả các đáp án đúng.\n`;
+  text += `5. CUỐI CÙNG, BẮT BUỘC XUẤT KHỐI JSON:ANSWERS ĐỂ HỆ THỐNG TỰ ĐỘNG ĐIỀN:\n`;
   text += "```json:answers\n";
-  text += "[\n  {\"q\": " + startNum + ", \"answers\": [\"Đáp án đúng 1\", \"Đáp án đúng 2\"]}\n]\n";
+  text += "[\n  {\"q\": " + startNum + ", \"answers\": [\"Tên chính xác 100% của đáp án đúng 1\", \"Tên đáp án đúng 2 nếu có\"]}\n]\n";
   text += "```\n\n";
 
   text += `--- DANH SÁCH CÂU HỎI TRONG NHÓM NÀY ---\n\n`;
 
   for (const q of batchQuestions) {
-    text += `### Question ${q.q}\n`;
-    text += `${q.text}\n\n`;
-    text += `Options (${q.type === 'checkbox' ? 'Chọn nhiều đáp án' : 'Chọn 1 đáp án'}):\n`;
+    text += `### Question ${q.q}\n${q.text}\n`;
+    if (q.prevFeedback) {
+      text += `> [LƯU Ý TỪ LẦN THI TRƯỚC]: Câu này từng chọn "${q.prevWrongAnswer}" và bị báo SAI: "${q.prevFeedback}". TUYỆT ĐỐI KHÔNG CHỌN LẠI "${q.prevWrongAnswer}"! Hãy chọn phương án đúng khác phù hợp với giải thích.\n`;
+    } else if (q.prevCorrectAnswer) {
+      text += `> [LƯU Ý TỪ LẦN THI TRƯỚC]: Câu này đã chọn ĐÚNG: "${q.prevCorrectAnswer}". Hãy giữ nguyên đáp án đúng này.\n`;
+    }
+    text += `Loại câu hỏi: ${q.type === 'checkbox' ? 'CHỌN NHIỀU ĐÁP ÁN (Select all correct)' : 'CHỌN 1 ĐÁP ÁN DUY NHẤT'}\n`;
+    text += `Các phương án lựa chọn:\n`;
     q.options.forEach(opt => {
       text += `- ${opt.text}\n`;
     });
@@ -1073,7 +1090,11 @@ async function callGeminiMultimodalParts(apiKey, preferredModel, parts) {
             'x-goog-api-key': apiKey
           },
           body: JSON.stringify({
-            contents: [{ parts }]
+            contents: [{ parts }],
+            generationConfig: {
+              temperature: 0.1,
+              topP: 0.95
+            }
           }),
           signal: controller.signal
         });
