@@ -2906,7 +2906,7 @@
       styleTag.textContent = `
         #coursera-helper-hud, #coursera-helper-hud * {
           box-sizing: border-box !important;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+          font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
           line-height: 1 !important;
           color: #ffffff !important;
         }
@@ -2914,37 +2914,34 @@
         #coursera-helper-hud {
           position: fixed !important;
           z-index: 2147483646 !important;
-          background: rgba(15, 23, 42, 0.94) !important;
-          backdrop-filter: blur(20px) saturate(180%) !important;
-          -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-          border: 1.5px solid rgba(255, 255, 255, 0.18) !important;
-          box-shadow: 0 16px 40px -6px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.2) !important;
+          background: #161b26 !important;
+          border: 2.5px solid #000000 !important;
+          box-shadow: 4px 4px 0px #000000 !important;
           border-radius: 9999px !important;
-          padding: 5px 7px !important;
+          padding: 6px 8px !important;
           display: flex !important;
           flex-direction: row !important;
           flex-wrap: nowrap !important;
           align-items: center !important;
-          gap: 6px !important;
+          gap: 8px !important;
           user-select: none !important;
           cursor: grab !important;
-          transition: box-shadow 0.25s ease, background 0.25s ease, border-color 0.25s ease !important;
+          transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease !important;
           width: auto !important;
-          height: 46px !important;
+          height: 56px !important;
           max-width: none !important;
           white-space: nowrap !important;
           touch-action: none !important;
         }
 
         #coursera-helper-hud:hover {
-          border-color: rgba(56, 189, 248, 0.5) !important;
-          box-shadow: 0 20px 48px -6px rgba(0, 0, 0, 0.85), 0 0 16px rgba(56, 189, 248, 0.25), inset 0 1px 0 0 rgba(255, 255, 255, 0.3) !important;
+          box-shadow: 5.5px 5.5px 0px #000000 !important;
         }
 
         #coursera-helper-hud.is-dragging,
         #coursera-helper-hud.is-dragging #ch-hud-header {
           cursor: grabbing !important;
-          box-shadow: 0 24px 56px -6px rgba(0, 0, 0, 0.9), 0 0 0 2px rgba(56, 189, 248, 0.8) !important;
+          box-shadow: 6px 6px 0px #000000 !important;
         }
 
         /* Header Pill / Logo Trigger */
@@ -2953,31 +2950,32 @@
           flex-direction: row !important;
           flex-wrap: nowrap !important;
           align-items: center !important;
-          gap: 8px !important;
-          padding: 0 12px !important;
-          height: 34px !important;
+          gap: 9px !important;
+          padding: 0 14px !important;
+          height: 42px !important;
           border-radius: 9999px !important;
-          background: rgba(255, 255, 255, 0.08) !important;
-          border: 1px solid rgba(255, 255, 255, 0.12) !important;
+          background: #242c3d !important;
+          border: 2px solid #000000 !important;
+          box-shadow: 2.5px 2.5px 0px #000000 !important;
           cursor: grab !important;
-          transition: background 0.2s ease, border-color 0.2s ease !important;
+          transition: all 0.12s ease !important;
           flex-shrink: 0 !important;
           white-space: nowrap !important;
         }
 
         #ch-hud-header:hover {
-          background: rgba(255, 255, 255, 0.16) !important;
-          border-color: rgba(56, 189, 248, 0.4) !important;
+          background: #2d374d !important;
+          transform: translate(-1px, -1px) !important;
+          box-shadow: 3.5px 3.5px 0px #000000 !important;
         }
 
         .ch-hud-logo-svg {
-          width: 21px !important;
-          height: 21px !important;
-          min-width: 21px !important;
-          min-height: 21px !important;
+          width: 23px !important;
+          height: 23px !important;
+          min-width: 23px !important;
+          min-height: 23px !important;
           display: inline-block !important;
           flex-shrink: 0 !important;
-          filter: drop-shadow(0 2px 5px rgba(56, 189, 248, 0.6)) !important;
         }
 
         #coursera-helper-hud .ch-hud-logo-svg path {
@@ -2986,45 +2984,37 @@
 
         #coursera-helper-hud .ch-hud-brand-text,
         #coursera-helper-hud .ch-hud-brand-text span {
-          font-size: 13.5px !important;
-          font-weight: 700 !important;
+          font-size: 14.5px !important;
+          font-weight: 800 !important;
           color: #ffffff !important;
           letter-spacing: -0.01em !important;
           white-space: nowrap !important;
-          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9) !important;
           display: inline-block !important;
           vertical-align: middle !important;
         }
 
         #coursera-helper-hud .ch-hud-brand-accent {
-          color: #38bdf8 !important;
-          font-weight: 700 !important;
-          text-shadow: 0 0 10px rgba(56, 189, 248, 0.6) !important;
+          color: #818cf8 !important;
+          font-weight: 800 !important;
           display: inline !important;
         }
 
         /* Status Dot */
         .ch-hud-status-dot {
-          width: 7px !important;
-          height: 7px !important;
-          min-width: 7px !important;
+          width: 8px !important;
+          height: 8px !important;
+          min-width: 8px !important;
           border-radius: 50% !important;
           background: #64748b !important;
-          transition: all 0.3s ease !important;
+          border: 1.5px solid #000000 !important;
+          transition: all 0.2s ease !important;
           display: inline-block !important;
           flex-shrink: 0 !important;
         }
 
         .ch-hud-status-dot.is-active {
           background: #10b981 !important;
-          box-shadow: 0 0 8px #10b981, 0 0 14px rgba(16, 185, 129, 0.7) !important;
-          animation: ch-dot-pulse 1.8s infinite !important;
-        }
-
-        @keyframes ch-dot-pulse {
-          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-          70% { transform: scale(1.2); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+          box-shadow: 0 0 8px #10b981 !important;
         }
 
         /* Chevron Icon */
@@ -3032,12 +3022,12 @@
           display: inline-flex !important;
           align-items: center !important;
           justify-content: center !important;
-          color: #38bdf8 !important;
+          color: #818cf8 !important;
           flex-shrink: 0 !important;
         }
 
         #ch-hud-expand-indicator {
-          color: #38bdf8 !important;
+          color: #818cf8 !important;
           transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease !important;
           display: inline-block !important;
           flex-shrink: 0 !important;
@@ -3049,23 +3039,35 @@
 
         /* Divider */
         .ch-hud-divider {
-          width: 1px !important;
-          height: 20px !important;
-          background: rgba(255, 255, 255, 0.18) !important;
-          margin: 0 2px !important;
+          width: 2px !important;
+          height: 24px !important;
+          background: #000000 !important;
+          margin: 0 3px !important;
           flex-shrink: 0 !important;
           display: block !important;
         }
 
         /* Collapsed Mode */
         #coursera-helper-hud.is-collapsed {
-          padding: 4px !important;
+          padding: 0 !important;
+          height: 46px !important;
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
         }
 
         #coursera-helper-hud.is-collapsed #ch-hud-header {
-          background: transparent !important;
-          border: none !important;
-          padding: 0 10px !important;
+          background: #161b26 !important;
+          border: 2.5px solid #000000 !important;
+          box-shadow: 4px 4px 0px #000000 !important;
+          padding: 0 16px !important;
+          height: 46px !important;
+        }
+
+        #coursera-helper-hud.is-collapsed #ch-hud-header:hover {
+          background: #1e2433 !important;
+          transform: translate(-1px, -1px) !important;
+          box-shadow: 5px 5px 0px #000000 !important;
         }
 
         #coursera-helper-hud.is-collapsed .ch-hud-divider {
@@ -3082,27 +3084,28 @@
           flex-direction: row !important;
           flex-wrap: nowrap !important;
           align-items: center !important;
-          gap: 6px !important;
+          gap: 8px !important;
           flex-shrink: 0 !important;
           white-space: nowrap !important;
         }
 
-        /* Buttons Styling */
+        /* Buttons Styling - Larger & Neo Brutalist */
         .ch-hud-btn {
-          border: none !important;
+          border: 2px solid #000000 !important;
+          box-shadow: 2.5px 2.5px 0px #000000 !important;
           cursor: pointer !important;
           display: inline-flex !important;
           flex-direction: row !important;
           flex-wrap: nowrap !important;
           align-items: center !important;
-          gap: 6px !important;
-          font-size: 13px !important;
-          font-weight: 600 !important;
+          gap: 7px !important;
+          font-size: 14.5px !important;
+          font-weight: 800 !important;
           line-height: 1 !important;
-          height: 34px !important;
-          padding: 0 13px !important;
+          height: 42px !important;
+          padding: 0 16px !important;
           border-radius: 9999px !important;
-          transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease !important;
+          transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease !important;
           letter-spacing: -0.01em !important;
           white-space: nowrap !important;
           text-decoration: none !important;
@@ -3112,73 +3115,77 @@
         }
 
         .ch-hud-btn span {
-          color: #ffffff !important;
           white-space: nowrap !important;
           display: inline-block !important;
         }
 
+        .ch-hud-btn .ch-btn-icon {
+          font-size: 16px !important;
+        }
+
         .ch-hud-btn:hover {
-          filter: brightness(1.12) !important;
-          transform: translateY(-1px) !important;
+          transform: translate(-1px, -1px) !important;
+          box-shadow: 3.5px 3.5px 0px #000000 !important;
         }
 
         .ch-hud-btn:active {
-          transform: scale(0.96) translateY(0) !important;
+          transform: translate(1.5px, 1.5px) !important;
+          box-shadow: 1px 1px 0px #000000 !important;
         }
 
         .ch-btn-primary {
-          background: linear-gradient(135deg, #2563eb, #3b82f6) !important;
-          box-shadow: 0 2px 10px rgba(37, 99, 235, 0.4) !important;
+          background: #6366f1 !important;
+          color: #ffffff !important;
         }
 
         .ch-btn-primary:hover {
-          box-shadow: 0 4px 16px rgba(37, 99, 235, 0.6) !important;
+          background: #4f46e5 !important;
         }
 
         .ch-btn-purple {
-          background: linear-gradient(135deg, #7c3aed, #8b5cf6) !important;
-          box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4) !important;
+          background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%) !important;
+          color: #ffffff !important;
         }
 
         .ch-btn-purple:hover {
-          box-shadow: 0 4px 16px rgba(124, 58, 237, 0.6) !important;
+          background: linear-gradient(135deg, #9333ea 0%, #db2777 100%) !important;
         }
 
         .ch-btn-purple.is-active {
-          background: linear-gradient(135deg, #e11d48, #f43f5e) !important;
-          box-shadow: 0 2px 10px rgba(225, 29, 72, 0.5) !important;
+          background: #f43f5e !important;
         }
 
         .ch-btn-green {
-          background: linear-gradient(135deg, #059669, #10b981) !important;
-          box-shadow: 0 2px 10px rgba(5, 150, 105, 0.4) !important;
+          background: #10b981 !important;
+          color: #000000 !important;
+          font-weight: 800 !important;
+        }
+
+        .ch-btn-green span {
+          color: #000000 !important;
         }
 
         .ch-btn-green:hover {
-          box-shadow: 0 4px 16px rgba(5, 150, 105, 0.6) !important;
+          background: #34d399 !important;
+          color: #000000 !important;
         }
 
         .ch-btn-green.is-active {
-          background: linear-gradient(135deg, #dc2626, #ef4444) !important;
-          box-shadow: 0 2px 12px rgba(220, 38, 38, 0.5) !important;
-          animation: ch-btn-pulse 2s infinite !important;
+          background: #ef4444 !important;
+          color: #ffffff !important;
         }
 
-        @keyframes ch-btn-pulse {
-          0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
-          70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        .ch-btn-green.is-active span {
+          color: #ffffff !important;
         }
 
         .ch-btn-ghost {
-          background: rgba(255, 255, 255, 0.1) !important;
-          color: #f1f5f9 !important;
-          border: 1px solid rgba(255, 255, 255, 0.16) !important;
+          background: #242c3d !important;
+          color: #ffffff !important;
         }
 
         .ch-btn-ghost:hover {
-          background: rgba(255, 255, 255, 0.18) !important;
-          border-color: rgba(255, 255, 255, 0.3) !important;
+          background: #2d374d !important;
         }
       `;
       document.head.appendChild(styleTag);
@@ -3189,19 +3196,19 @@
 
     floatingHUD.innerHTML = `
       <div id="ch-hud-header" title="Nhấn 1 lần để mở rộng / thu nhỏ • Nhấn giữ để kéo di chuyển">
-        <svg class="ch-hud-logo-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg class="ch-hud-logo-svg" width="23" height="23" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 3L1 9L12 15L21 10.09V17H23V9M5 13.18V17.18C5 19.94 8.13 22 12 22C15.87 22 19 19.94 19 17.18V13.18L12 17L5 13.18Z" fill="url(#ch-grad-cyan)"/>
           <defs>
             <linearGradient id="ch-grad-cyan" x1="1" y1="3" x2="23" y2="22" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#38bdf8"/>
-              <stop offset="1" stop-color="#60a5fa"/>
+              <stop stop-color="#818cf8"/>
+              <stop offset="1" stop-color="#38bdf8"/>
             </linearGradient>
           </defs>
         </svg>
         <span class="ch-hud-brand-text">Coursera <span class="ch-hud-brand-accent">Helper</span></span>
         <span id="ch-hud-status-dot" class="ch-hud-status-dot" title="Trạng thái tiện ích"></span>
         <span class="ch-hud-chevron-wrap">
-          <svg id="ch-hud-expand-indicator" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg id="ch-hud-expand-indicator" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="9 18 15 12 9 6"></polyline>
           </svg>
         </span>
@@ -3215,7 +3222,7 @@
           <span class="ch-btn-label">Giải Quiz</span>
         </button>
 
-        <button id="ch-hud-peerreview" class="ch-hud-btn ch-btn-purple" title="Tự động chấm điểm Peer Review: chọn điểm cao nhất (nếu có), điền câu trả lời 'AMAZING GOOD JOB EM!' và nộp đủ 4 bài!">
+        <button id="ch-hud-peerreview" class="ch-hud-btn ch-btn-purple" title="Tự động chấm điểm Peer Review: chọn điểm cao nhất (nếu có), điền câu trả lời và nộp đủ 4 bài!">
           <span class="ch-btn-icon">⭐</span>
           <span class="ch-btn-label">Chấm Điểm Peer</span>
         </button>
@@ -3236,8 +3243,8 @@
 
     // 1. Quản lý tọa độ & Khôi phục vị trí HUD (Pixel-based, hoàn toàn tự do 360°, không lệch trục)
     const setHUDCoordinates = (x, y) => {
-      const hudW = floatingHUD.offsetWidth || (isCollapsed ? 180 : 540);
-      const hudH = floatingHUD.offsetHeight || 46;
+      const hudW = floatingHUD.offsetWidth || (isCollapsed ? 200 : 620);
+      const hudH = floatingHUD.offsetHeight || 56;
       const maxW = Math.max(10, window.innerWidth - hudW - 10);
       const maxH = Math.max(10, window.innerHeight - hudH - 10);
 
