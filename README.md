@@ -66,6 +66,28 @@
 
 ---
 
+## 📂 Cấu trúc dự án (Project Structure)
+
+```text
+coursera-helper/
+├── extension/                   # 🧩 Mã nguồn chính của Chrome & Edge Extension
+│   ├── icons/                   # Bộ biểu tượng (16, 48, 128, 300px)
+│   ├── background.js            # Service Worker chạy nền Manifest V3
+│   ├── content.js               # Content Script (HUD nổi, Solver, Video Engine)
+│   ├── manifest.json            # File kê khai cấu hình Manifest V3
+│   ├── sidepanel.html           # Giao diện Side Panel thanh bên
+│   ├── sidepanel.css            # Stylesheet giao diện Glassmorphism
+│   └── sidepanel.js             # Logic xử lý cho Side Panel & API Key
+├── tools/                       # 🛠️ Bộ công cụ & script Python hỗ trợ CLI
+│   ├── clean_clipboard.py       # Script lọc bẫy prompt injection từ Clipboard
+│   └── solve_quiz_gemini.py     # Script Python độc lập thử nghiệm Gemini API
+├── index.html                   # 🌐 Web Application ứng dụng web (deploy trên Vercel)
+├── coursera-helper-extension.zip# 📦 Gói Zip sẵn sàng nộp Chrome Web Store
+└── README.md                    # 📖 Tài liệu hướng dẫn & giới thiệu dự án
+```
+
+---
+
 ## 🛠️ Công nghệ sử dụng (Tech Stack)
 
 - **Manifest V3** (Standard Chrome & Edge Extension Architecture)
