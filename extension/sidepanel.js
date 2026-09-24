@@ -24,6 +24,8 @@ const viewAi = document.getElementById('viewAi');
 const aiContent = document.getElementById('aiContent');
 const settingsBox = document.getElementById('settingsBox');
 const apiKeyInput = document.getElementById('apiKeyInput');
+const apiKeyInput2 = document.getElementById('apiKeyInput2');
+const apiKeyInput3 = document.getElementById('apiKeyInput3');
 const modelSelect = document.getElementById('modelSelect');
 const chkAutoFillQuiz = document.getElementById('chkAutoFillQuiz');
 const toast = document.getElementById('toast');
@@ -51,11 +53,28 @@ async function getCourseraTab() {
   }
 }
 
+// Khôi phục đồng bộ ngay lập tức (0ms) từ localStorage để không bao giờ bị trống khi vừa mở
+function restoreKeysSync() {
+  try {
+    const k1 = localStorage.getItem('gemini_api_key_1') || localStorage.getItem('gemini_api_key') || '';
+    const k2 = localStorage.getItem('gemini_api_key_2') || '';
+    const k3 = localStorage.getItem('gemini_api_key_3') || '';
+    if (apiKeyInput && k1 && !apiKeyInput.value) apiKeyInput.value = k1;
+    if (apiKeyInput2 && k2 && !apiKeyInput2.value) apiKeyInput2.value = k2;
+    if (apiKeyInput3 && k3 && !apiKeyInput3.value) apiKeyInput3.value = k3;
+  } catch (e) {}
+}
+restoreKeysSync();
+
 // =======================================================
 // 2. KHÔI PHỤC TRẠNG THÁI & CÀI ĐẶT
 // =======================================================
 chrome.storage.local.get([
   'gemini_api_key',
+  'gemini_api_keys',
+  'gemini_api_key_1',
+  'gemini_api_key_2',
+  'gemini_api_key_3',
   'gemini_model',
   'saved_raw_input',
   'saved_clean_output',
@@ -63,14 +82,26 @@ chrome.storage.local.get([
   'auto_skip_active',
   'auto_fill_quiz_enabled'
 ], (res) => {
-  if (res.gemini_api_key && apiKeyInput) apiKeyInput.value = res.gemini_api_key;
+  const k1 = res?.gemini_api_key_1 || (Array.isArray(res?.gemini_api_keys) ? res.gemini_api_keys[0] : '') || res?.gemini_api_key || localStorage.getItem('gemini_api_key_1') || localStorage.getItem('gemini_api_key') || '';
+  const k2 = res?.gemini_api_key_2 || (Array.isArray(res?.gemini_api_keys) ? res.gemini_api_keys[1] : '') || localStorage.getItem('gemini_api_key_2') || '';
+  const k3 = res?.gemini_api_key_3 || (Array.isArray(res?.gemini_api_keys) ? res.gemini_api_keys[2] : '') || localStorage.getItem('gemini_api_key_3') || '';
+
+  if (apiKeyInput && k1) apiKeyInput.value = k1;
+  if (apiKeyInput2 && k2) apiKeyInput2.value = k2;
+  if (apiKeyInput3 && k3) apiKeyInput3.value = k3;
+
+  try {
+    if (k1) localStorage.setItem('gemini_api_key_1', k1);
+    if (k2) localStorage.setItem('gemini_api_key_2', k2);
+    if (k3) localStorage.setItem('gemini_api_key_3', k3);
+  } catch (e) {}
+
   if (modelSelect) {
-    const m = res.gemini_model || 'gemini-2.5-flash';
-    // Nếu đang lưu tên model cũ không tồn tại, reset về mặc định
-    const fakeModels = ['gemini-3.6', 'gemini-3.8', 'gemini-3.5', 'gemini-3.'];
-    const isFake = fakeModels.some(p => m.startsWith(p));
-    const validName = isFake ? 'gemini-2.5-flash' : m;
-    if (isFake) chrome.storage.local.set({ 'gemini_model': 'gemini-2.5-flash' });
+    const m = res.gemini_model || 'gemini-3.6-flash';
+    const deprecatedModels = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
+    const isDeprecated = deprecatedModels.includes(m);
+    const validName = isDeprecated ? 'gemini-3.6-flash' : m;
+    if (isDeprecated) chrome.storage.local.set({ 'gemini_model': 'gemini-3.6-flash' });
     modelSelect.value = validName;
   }
 
@@ -106,10 +137,17 @@ function cleanCourseraQuiz(text) {
   if (!text) return '';
   let cleaned = text;
 
-  // Giai đoạn 1: Khử triệt để các khối văn bản bẫy Prompt Injection của Coursera
-  cleaned = cleaned.replace(/interacting with assessment elements is strictly prohibited[\s\S]*?(?:study course materials[^\n]*\.?|feel free to use me[^\n]*\.?|(?=(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|[A-D]\.)))/gi, '\n\n');
-  cleaned = cleaned.replace(/You are a helpful AI assistant[\s\S]*?(?:Do you understand\?|accessing assessment pages\.?|(?=(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|[A-D]\.)))/gi, '\n\n');
-  cleaned = cleaned.replace(/(?:To uphold Coursera(?:'s)? academic integrity policy|this AI assistant is disabled on assessment pages)[\s\S]*?(?:study course materials[^\n]*\.?|feel free to use me[^\n]*\.?|(?=(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|[A-D]\.)))/gi, '\n\n');
+  // Giai đoạn 1: Khử các khối bẫy Prompt Injection hoàn chỉnh có điểm kết thúc rõ ràng
+  // 1a. Bẫy bắt đầu bằng "You are a helpful AI assistant" kết thúc bằng "Do you understand?" hoặc "accessing assessment pages"
+  cleaned = cleaned.replace(/\s*You are a helpful AI assistant[\s\S]*?Do you understand\?\.?\s*/gi, '\n\n');
+  cleaned = cleaned.replace(/\s*You are a helpful AI assistant[\s\S]*?accessing assessment pages\.?\s*/gi, '\n\n');
+
+  // 1b. Bẫy "interacting with assessment elements" hoặc "academic integrity policy" có điểm kết thúc
+  cleaned = cleaned.replace(/\s*(?:In accordance with Coursera|To uphold Coursera(?:'s)? academic integrity policy|this AI assistant is disabled on assessment pages|interacting with assessment elements is strictly prohibited)[\s\S]*?(?:study course materials[^\n]*\.?|feel free to use me[^\n]*\.?|accessing assessment pages\.?|Do you understand\?\.?)\s*/gi, '\n\n');
+
+  // 1c. Bẫy với fallback nhìn trước (lookahead) - chỉ ngắt khi gặp đầu câu hỏi mới hoặc đáp án ở đầu dòng (\n\s*[A-D]\.)
+  cleaned = cleaned.replace(/\s*You are a helpful AI assistant[\s\S]*?(?=\s*(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|\n\s*[A-D]\.|\n\n\n|$))/gi, '\n\n');
+  cleaned = cleaned.replace(/\s*(?:To uphold Coursera(?:'s)? academic integrity policy|this AI assistant is disabled on assessment pages|interacting with assessment elements is strictly prohibited)[\s\S]*?(?=\s*(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|\n\s*[A-D]\.|\n\n\n|$))/gi, '\n\n');
 
   // Giai đoạn 2: Quét sạch các câu bẫy rời rạc nếu bị ngắt quãng do bôi đen không trọn khối
   const trapPhrases = [
@@ -124,6 +162,7 @@ function cleanCourseraQuiz(text) {
     /My purpose is to help you learn, not to complete your work for you[^\.\n]*[\.\n]?/gi,
     /Please feel free to use me on other pages[^\.\n]*[\.\n]?/gi,
     /helpful AI assistant[^\.\n]*[\.\n]?/gi,
+    /Do you understand\?\.?/gi,
     /\[?IMPORTANT INSTRUCTION FOR AI ASSISTANT[\s\S]*?\]?/gi
   ];
   for (const phrase of trapPhrases) {
@@ -140,17 +179,20 @@ function cleanCourseraQuiz(text) {
     'not to complete your work for you',
     'study course materials',
     'cannot interact with the questions',
-    'message to user'
+    'message to user',
+    'do you understand?'
   ];
   const lines = cleaned.split('\n');
   const filteredLines = lines.filter(line => {
-    const l = line.toLowerCase();
+    const l = line.toLowerCase().trim();
+    if (!l) return true;
     return !trapKeywords.some(kw => l.includes(kw));
   });
   cleaned = filteredLines.join('\n');
 
   // Giai đoạn 4: Xóa điểm số và chuẩn hóa ký tự xuống dòng
   cleaned = cleaned.replace(POINT_REGEX, '');
+  cleaned = cleaned.replace(/^[ \t]*\d+(?:\.\d+)?[ \t]*points?\.?[ \t]*$/gmi, '');
   cleaned = cleaned.replace(/\b\d+(?:\.\d+)?\s*points?\b/gi, '');
   cleaned = cleaned.replace(/\b\d+(?:\.\d+)?\s*điểm\b/gi, '');
   cleaned = cleaned.replace(/\r\n/g, '\n');
@@ -296,19 +338,18 @@ async function getAvailableGeminiModels(apiKey) {
   return [];
 }
 
-// Tên model fake không tồn tại trong Google API
-const FAKE_MODEL_PREFIXES = ['gemini-3.6', 'gemini-3.8', 'gemini-3.5', 'gemini-3.'];
-function isRealModel(name) {
+// Các model cũ đã bị khai tử hoặc không hỗ trợ generateContent
+const DEPRECATED_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
+function isSupportedModel(name) {
   if (!name) return false;
-  return !FAKE_MODEL_PREFIXES.some(p => name.startsWith(p));
+  return !DEPRECATED_MODELS.includes(name);
 }
 
 function selectOptimalModel(supportedModels, userPreferred) {
-  // Bỏ qua nếu user đang chọn model fake (không tồn tại trong API)
-  const validPreferred = (userPreferred && isRealModel(userPreferred)) ? userPreferred : null;
+  const validPreferred = (userPreferred && isSupportedModel(userPreferred)) ? userPreferred : null;
 
   if (!supportedModels || supportedModels.length === 0) {
-    return { name: validPreferred || 'gemini-2.5-flash', version: 'v1beta' };
+    return { name: validPreferred || 'gemini-3.6-flash', version: 'v1beta' };
   }
 
   // 1. Nếu user đã chọn model hợp lệ và model đó có trong danh sách API
@@ -317,13 +358,11 @@ function selectOptimalModel(supportedModels, userPreferred) {
     if (found) return found;
   }
 
-  // 2. Thứ tự ưu tiên các model thực có trong Google Gemini API
+  // 2. Thứ tự ưu tiên các model từ 3.6 trở lên
   const priorities = [
-    'gemini-2.5-flash',
-    'gemini-2.5-pro',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro'
+    'gemini-3.6-flash',
+    'gemini-3.7-flash',
+    'gemini-3.8-flash'
   ];
 
   for (const p of priorities) {
@@ -331,21 +370,23 @@ function selectOptimalModel(supportedModels, userPreferred) {
     if (match) return match;
   }
 
-  // 3. Tìm bất kỳ model nào có chữ "flash"
-  const anyFlash = supportedModels.find(m => m.name.toLowerCase().includes('flash'));
+  // 3. Tìm bất kỳ model nào có chữ "flash" và không nằm trong danh sách deprecated
+  const anyFlash = supportedModels.find(m => m.name.toLowerCase().includes('flash') && isSupportedModel(m.name));
   if (anyFlash) return anyFlash;
 
-  // 4. Tìm bất kỳ model nào có chữ "gemini"
-  const anyGemini = supportedModels.find(m => m.name.toLowerCase().includes('gemini'));
-  if (anyGemini) return anyGemini;
+  // 4. Tìm bất kỳ model nào không bị deprecated
+  const validModel = supportedModels.find(m => isSupportedModel(m.name));
+  if (validModel) return validModel;
 
-  return supportedModels[0] || { name: 'gemini-2.5-flash', version: 'v1beta' };
+  return supportedModels[0] || { name: 'gemini-3.6-flash', version: 'v1beta' };
 }
 
 function populateModelSelect(supportedModels, activeModelName) {
   if (!modelSelect || !supportedModels || supportedModels.length === 0) return;
+  const filtered = supportedModels.filter(m => isSupportedModel(m.name));
+  if (filtered.length === 0) return;
   modelSelect.innerHTML = '';
-  supportedModels.forEach(m => {
+  filtered.forEach(m => {
     const opt = document.createElement('option');
     opt.value = m.name;
     opt.dataset.version = m.version;
@@ -575,11 +616,16 @@ safeListen('btnSolve', 'click', async () => {
     return;
   }
 
-  const apiKey = (apiKeyInput?.value || '').trim();
-  if (!apiKey) {
+  const keys = [
+    apiKeyInput?.value?.trim(),
+    apiKeyInput2?.value?.trim(),
+    apiKeyInput3?.value?.trim()
+  ].filter(Boolean);
+
+  if (keys.length === 0) {
     if (settingsBox) settingsBox.style.display = 'flex';
     if (apiKeyInput) apiKeyInput.focus();
-    showToast('⚠️ Vui lòng nhập và Lưu Gemini API Key trước!');
+    showToast('⚠️ Vui lòng nhập và Lưu ít nhất 1 Gemini API Key!');
     return;
   }
 
@@ -623,14 +669,14 @@ QUY TẮC GIẢI & TRÌNH BÀY:
   const fullPrompt = `${systemPrompt}\n\nĐề bài:\n${textToSolve}`;
 
   const rawModel = modelSelect?.value || '';
-  let chosenModel = (rawModel && isRealModel(rawModel)) ? rawModel : 'gemini-2.5-flash';
+  let chosenModel = (rawModel && isSupportedModel(rawModel)) ? rawModel : 'gemini-3.6-flash';
 
   const modelsToTry = Array.from(new Set([
     chosenModel,
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash'
-  ])).filter(m => m && isRealModel(m));
+    'gemini-3.7-flash',
+    'gemini-3.8-flash',
+    'gemini-3.6-flash'
+  ])).filter(m => m && isSupportedModel(m));
 
   const startTime = performance.now();
   let solved = false;
@@ -638,95 +684,90 @@ QUY TẮC GIẢI & TRÌNH BÀY:
   let solvedText = '';
   let successfulModel = '';
 
-  for (const model of modelsToTry) {
-    // 1. Thử qua Google Interactions API
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+  for (let kIdx = 0; kIdx < keys.length; kIdx++) {
+    const currentApiKey = keys[kIdx];
+    let keyHitQuota = false;
 
-      const resInteractions = await fetch(`https://generativelanguage.googleapis.com/v1beta/interactions?key=${apiKey}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey
-        },
-        body: JSON.stringify({
-          model: model,
-          input: fullPrompt
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
+    // Ưu tiên model đang hoạt động tốt nhất
+    const modelsOrdered = [
+      window._spWorkingModel,
+      ...modelsToTry
+    ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
-      const dataInteractions = await resInteractions.json();
-      if (!dataInteractions.error) {
-        const text = getAiResponseText(dataInteractions);
-        if (text) {
-          solvedText = text;
-          successfulModel = model;
-          solved = true;
-          break;
-        }
-      } else {
-        lastError = new Error(dataInteractions.error.message || `Lỗi Interactions API (${model})`);
-      }
-    } catch (e) {
-      if (e.name === 'AbortError' || (e.message && e.message.includes('abort'))) {
-        lastError = new Error('Quá thời gian phản hồi từ API (Timeout 45s). Đề bài quá dài hoặc kết nối mạng chậm, vui lòng thử lại!');
-      } else {
-        lastError = e;
-      }
-    }
+    for (const model of modelsOrdered) {
+      const versionsToTry = window._spWorkingVer ? [window._spWorkingVer] : ['v1beta', 'v1'];
+      for (const ver of versionsToTry) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 45000);
 
-    if (solved) break;
+          const url = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${currentApiKey}`;
+          const resGen = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': currentApiKey
+            },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: fullPrompt }] }],
+              generationConfig: {
+                temperature: 0.0,
+                topP: 0.95
+              }
+            }),
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
 
-    // 2. Thử qua generateContent endpoint
-    for (const ver of ['v1beta', 'v1']) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 45000);
-
-        const url = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`;
-        const resGen = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey
-          },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: fullPrompt }] }],
-            generationConfig: {
-              temperature: 0.0,
-              topP: 0.95
+          const dataGen = await resGen.json();
+          if (dataGen.error) {
+            lastError = new Error(dataGen.error.message || `Lỗi API (${model})`);
+            const errLower = (dataGen.error.message || '').toLowerCase();
+            if (errLower.includes('quota') || errLower.includes('resource_exhausted') || errLower.includes('rate limit') || resGen.status === 429) {
+              keyHitQuota = true;
+              break;
             }
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
+            continue;
+          }
 
-        const dataGen = await resGen.json();
-        if (dataGen.error) {
-          lastError = new Error(dataGen.error.message || `Lỗi API (${model})`);
-          continue;
-        }
-
-        const text = getAiResponseText(dataGen);
-        if (text) {
-          solvedText = text;
-          successfulModel = model;
-          solved = true;
-          break;
-        }
-      } catch (e) {
-        if (e.name === 'AbortError' || (e.message && e.message.includes('abort'))) {
-          lastError = new Error('Quá thời gian phản hồi từ API (Timeout 45s). Đề bài quá dài hoặc kết nối mạng chậm, vui lòng thử lại!');
-        } else {
-          lastError = e;
+          const text = getAiResponseText(dataGen);
+          if (text) {
+            solvedText = text;
+            successfulModel = model;
+            window._spWorkingModel = model;
+            window._spWorkingVer = ver;
+            solved = true;
+            break;
+          }
+        } catch (e) {
+          if (e.name === 'AbortError' || (e.message && e.message.includes('abort'))) {
+            lastError = new Error('Quá thời gian phản hồi từ API (Timeout 45s). Đề bài quá dài hoặc kết nối mạng chậm, vui lòng thử lại!');
+          } else {
+            lastError = e;
+          }
         }
       }
+
+      if (solved || keyHitQuota) break;
     }
 
-    if (solved) break;
+    if (solved) {
+      if (kIdx > 0) {
+        showToast(`✓ Đã xoay tua sang Key ${kIdx + 1}/${keys.length} và giải thành công!`);
+      }
+      break;
+    }
+
+    if (keyHitQuota) {
+      if (kIdx < keys.length - 1) {
+        showToast(`🔄 Key ${kIdx + 1} hết quota, tự động chuyển sang Key ${kIdx + 2}/${keys.length}...`);
+      } else {
+        const errText = lastError?.message || '';
+        const retryMatch = errText.match(/Please retry in\s*([0-9\.]+)\s*s/i);
+        const retrySec = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 60;
+        showToast(`⚠️ Key ${kIdx + 1}/${keys.length} cũng chạm giới hạn! Cả ${keys.length} Key đều hết quota (20 req/p). Vui lòng đợi ${retrySec}s để Google mở lại!`, true, 8000);
+      }
+    }
   }
 
   if (solved && solvedText) {
@@ -769,12 +810,34 @@ QUY TẮC GIẢI & TRÌNH BÀY:
 
   } else if (lastError) {
     if (aiContent) {
-      aiContent.innerHTML = `
-        <div style="padding: 12px; background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); border-radius: 8px; color: #fecdd3;">
-          <strong style="color: #f43f5e;">Lỗi:</strong> ${lastError.message}<br><br>
-          <span style="font-size: 11px; color: #94a3b8;">Mẹo: Kiểm tra lại API Key hoặc dùng nút "Prompt" để dán vào gemini.google.com</span>
-        </div>
-      `;
+      const errText = lastError.message || '';
+      const retryMatch = errText.match(/Please retry in\s*([0-9\.]+)\s*s/i);
+      const retrySec = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : null;
+
+      let customErrorHtml = '';
+      if (errText.toLowerCase().includes('quota') || errText.toLowerCase().includes('resource_exhausted')) {
+        customErrorHtml = `
+          <div style="padding: 14px; background: rgba(244,63,94,0.12); border: 1px solid rgba(244,63,94,0.4); border-radius: 8px; color: #fecdd3; line-height: 1.5;">
+            <strong style="color: #f43f5e; font-size: 13px;">⚠️ Chạm giới hạn lượt gọi API (Rate Limit Free Tier)</strong><br>
+            <span style="font-size: 12px; color: #f8fafc; display: block; margin: 6px 0;">
+              ${retrySec ? `Google giới hạn 20 lượt gọi/phút trên gói miễn phí. Vui lòng <strong>đợi ${retrySec} giây</strong> nữa để Google tự động mở lại!` : 'API Key đã dùng hết hạn ngạch gọi miễn phí (Quota Exceeded).'}
+            </span>
+            <div style="font-size: 11px; color: #cbd5e1; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; margin-top: 8px;">
+              💡 <strong>Cách giải quyết ngay:</strong><br>
+              • Đợi hết đếm ngược rồi bấm [⚡ Giải] lại.<br>
+              • Hoặc mở <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: #38bdf8; text-decoration: underline;">Google AI Studio ↗</a> tạo 1 API Key mới (ở Project mới hoặc tài khoản Gmail khác) dán vào là giải được ngay!
+            </div>
+          </div>
+        `;
+      } else {
+        customErrorHtml = `
+          <div style="padding: 12px; background: rgba(244,63,94,0.1); border: 1px solid rgba(244,63,94,0.3); border-radius: 8px; color: #fecdd3;">
+            <strong style="color: #f43f5e;">Lỗi:</strong> ${errText}<br><br>
+            <span style="font-size: 11px; color: #94a3b8;">Mẹo: Kiểm tra lại API Key hoặc dùng nút "Prompt" để dán vào gemini.google.com</span>
+          </div>
+        `;
+      }
+      aiContent.innerHTML = customErrorHtml;
     }
   }
 });
@@ -834,48 +897,120 @@ function renderMarkdown(md) {
   return `<div class="ai-rendered-body"><p>${html}</p></div>`;
 }
 
+function persistCurrentKeys() {
+  const k1 = apiKeyInput?.value.trim() || '';
+  const k2 = apiKeyInput2?.value.trim() || '';
+  const k3 = apiKeyInput3?.value.trim() || '';
+  const activeKeys = [k1, k2, k3].filter(Boolean);
+
+  // 1. Lưu đồng bộ lập tức vào localStorage (0ms, vĩnh viễn không thể mất dù tắt panel đột ngột)
+  try {
+    localStorage.setItem('gemini_api_key_1', k1);
+    localStorage.setItem('gemini_api_key_2', k2);
+    localStorage.setItem('gemini_api_key_3', k3);
+    localStorage.setItem('gemini_api_key', activeKeys[0] || '');
+    localStorage.setItem('gemini_api_keys', JSON.stringify(activeKeys));
+  } catch (e) {
+    console.warn('localStorage error:', e);
+  }
+
+  // 2. Lưu vào chrome.storage.local cho content script & service worker dùng
+  if (chrome?.storage?.local) {
+    chrome.storage.local.set({
+      'gemini_api_key': activeKeys[0] || '',
+      'gemini_api_keys': activeKeys,
+      'gemini_api_key_1': k1,
+      'gemini_api_key_2': k2,
+      'gemini_api_key_3': k3
+    });
+  }
+}
+
+// Tự động lưu ngay khi dán hoặc gõ vào bất kỳ ô nào (không bao giờ bị mất dù đóng panel ngay)
+['apiKeyInput', 'apiKeyInput2', 'apiKeyInput3'].forEach(id => {
+  safeListen(id, 'input', persistCurrentKeys);
+  safeListen(id, 'change', persistCurrentKeys);
+  safeListen(id, 'blur', persistCurrentKeys);
+  safeListen(id, 'paste', () => setTimeout(persistCurrentKeys, 30));
+});
+
+// Tự động lưu khi người dùng đóng sidepanel hoặc chuyển tab
+window.addEventListener('beforeunload', persistCurrentKeys);
+window.addEventListener('pagehide', persistCurrentKeys);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') persistCurrentKeys();
+});
+
 // Cài đặt API Key
 safeListen('btnToggleSettings', 'click', async () => {
   if (settingsBox) {
     const isOpening = settingsBox.style.display === 'none';
     settingsBox.style.display = isOpening ? 'flex' : 'none';
-    if (isOpening && apiKeyInput?.value.trim()) {
-      const models = await getAvailableGeminiModels(apiKeyInput.value.trim());
-      if (models.length > 0) populateModelSelect(models, modelSelect?.value);
+    if (isOpening) {
+      restoreKeysSync();
+      chrome.storage.local.get([
+        'gemini_api_key', 'gemini_api_keys',
+        'gemini_api_key_1', 'gemini_api_key_2', 'gemini_api_key_3'
+      ], (res) => {
+        const k1 = res?.gemini_api_key_1 || (Array.isArray(res?.gemini_api_keys) ? res.gemini_api_keys[0] : '') || res?.gemini_api_key || '';
+        const k2 = res?.gemini_api_key_2 || (Array.isArray(res?.gemini_api_keys) ? res.gemini_api_keys[1] : '') || '';
+        const k3 = res?.gemini_api_key_3 || (Array.isArray(res?.gemini_api_keys) ? res.gemini_api_keys[2] : '') || '';
+
+        if (apiKeyInput && k1 && !apiKeyInput.value) apiKeyInput.value = k1;
+        if (apiKeyInput2 && k2 && !apiKeyInput2.value) apiKeyInput2.value = k2;
+        if (apiKeyInput3 && k3 && !apiKeyInput3.value) apiKeyInput3.value = k3;
+      });
+
+      if (apiKeyInput?.value.trim()) {
+        const models = await getAvailableGeminiModels(apiKeyInput.value.trim());
+        if (models.length > 0) populateModelSelect(models, modelSelect?.value);
+      }
+    } else {
+      persistCurrentKeys();
     }
   }
 });
 
 safeListen('btnCloseSettings', 'click', () => {
+  persistCurrentKeys();
   if (settingsBox) settingsBox.style.display = 'none';
 });
 
 safeListen('btnSaveKey', 'click', async () => {
-  const key = apiKeyInput?.value.trim() || '';
-  if (!key) {
-    showToast('Vui lòng nhập API Key');
+  const k1 = apiKeyInput?.value.trim() || '';
+  const k2 = apiKeyInput2?.value.trim() || '';
+  const k3 = apiKeyInput3?.value.trim() || '';
+  const activeKeys = [k1, k2, k3].filter(Boolean);
+
+  if (activeKeys.length === 0) {
+    showToast('⚠️ Vui lòng nhập ít nhất 1 API Key');
     return;
   }
 
-  showToast('🔍 Đang kiểm tra API Key...');
-  const available = await getAvailableGeminiModels(key);
+  // 1. LƯU NGAY LẬP TỨC đồng bộ và đóng bảng settings ngay để người dùng yên tâm
+  persistCurrentKeys();
+  showToast(`✓ Đã lưu an toàn ${activeKeys.length} API Key!`);
+  if (settingsBox) settingsBox.style.display = 'none';
 
-  if (available.length > 0) {
-    populateModelSelect(available, modelSelect?.value);
-    const best = selectOptimalModel(available, modelSelect?.value);
-    if (modelSelect) modelSelect.value = best.name;
-    chrome.storage.local.set({ 'gemini_api_key': key, 'gemini_model': best.name }, () => {
-      showToast(`✓ Đã kết nối! Model: ${best.name}`);
-      if (settingsBox) settingsBox.style.display = 'none';
-    });
-  } else {
-    // Nếu không list được models, vẫn lưu key với model mặc định
-    const rawFb = modelSelect?.value || '';
-    let fallbackModel = (rawFb && isRealModel(rawFb)) ? rawFb : 'gemini-2.5-flash';
-    chrome.storage.local.set({ 'gemini_api_key': key, 'gemini_model': fallbackModel }, () => {
-      showToast(`✓ Đã lưu cài đặt (${fallbackModel})!`);
-      if (settingsBox) settingsBox.style.display = 'none';
-    });
+  // 2. Kiểm tra kết nối bất đồng bộ ở nền
+  try {
+    const available = await getAvailableGeminiModels(activeKeys[0]);
+    let bestModel = 'gemini-3.6-flash';
+    if (available && available.length > 0) {
+      populateModelSelect(available, modelSelect?.value);
+      const best = selectOptimalModel(available, modelSelect?.value);
+      bestModel = best.name;
+    } else {
+      const rawFb = modelSelect?.value || '';
+      bestModel = (rawFb && isSupportedModel(rawFb)) ? rawFb : 'gemini-3.6-flash';
+    }
+
+    if (modelSelect) modelSelect.value = bestModel;
+    chrome.storage.local.set({ 'gemini_model': bestModel });
+    try { localStorage.setItem('gemini_model', bestModel); } catch (e) {}
+    showToast(`✓ Đã kết nối! Kích hoạt xoay tua ${activeKeys.length} Key.`);
+  } catch (err) {
+    console.warn('Check models error:', err);
   }
 });
 
@@ -937,15 +1072,32 @@ async function solveFullQuizBatchPipeline(questions, tabId) {
     return;
   }
 
-  const { gemini_api_key: apiKey, gemini_model: savedModel } = await chrome.storage.local.get(['gemini_api_key', 'gemini_model']);
-  if (!apiKey) {
+  const res = await chrome.storage.local.get([
+    'gemini_api_key', 'gemini_api_keys',
+    'gemini_api_key_1', 'gemini_api_key_2', 'gemini_api_key_3',
+    'gemini_model'
+  ]);
+  let keys = Array.isArray(res?.gemini_api_keys) && res.gemini_api_keys.length > 0
+    ? res.gemini_api_keys
+    : [res?.gemini_api_key_1, res?.gemini_api_key_2, res?.gemini_api_key_3, res?.gemini_api_key].filter(Boolean);
+  if (keys.length === 0) {
+    try {
+      const lk1 = localStorage.getItem('gemini_api_key_1') || localStorage.getItem('gemini_api_key');
+      const lk2 = localStorage.getItem('gemini_api_key_2');
+      const lk3 = localStorage.getItem('gemini_api_key_3');
+      keys = [lk1, lk2, lk3].filter(Boolean);
+    } catch (e) {}
+  }
+  keys = Array.from(new Set(keys.filter(Boolean)));
+  const savedModel = res?.gemini_model;
+  if (keys.length === 0) {
     showToast('⚠️ Vui lòng cấu hình Gemini API Key trước!');
     if (settingsBox) settingsBox.style.display = 'flex';
     return;
   }
 
-  const model = (savedModel && isRealModel(savedModel)) ? savedModel : 'gemini-2.5-flash';
-  const BATCH_SIZE = 10; // Gửi nhiều câu 1 lần để giải nhanh, ít API call hơn
+  const model = (savedModel && isSupportedModel(savedModel)) ? savedModel : 'gemini-3.6-flash';
+  const BATCH_SIZE = 4; // Chia nhỏ đề bài để tránh quá tải tải trọng máy chủ Google
   const totalQuestions = questions.length;
   const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
   const totalImages = questions.reduce((acc, q) => acc + (q.images ? q.images.length : 0), 0);
@@ -985,7 +1137,7 @@ async function solveFullQuizBatchPipeline(questions, tabId) {
     const parts = buildMultimodalBatchParts(batchQuestions, startIdx + 1, endIdx);
 
     try {
-      const { text: batchText, model: usedModel } = await callGeminiMultimodalParts(apiKey, model, parts);
+      const { text: batchText, model: usedModel } = await callGeminiMultimodalParts(keys, model, parts);
       if (batchText) {
         lastUsedModel = usedModel;
         accumulatedMarkdown += `\n\n## 📝 Nhóm câu hỏi ${startIdx + 1} - ${endIdx}\n\n` + batchText;
@@ -1128,7 +1280,10 @@ function buildMultimodalBatchParts(batchQuestions, startNum, endNum) {
   return parts;
 }
 
-async function callGeminiMultimodalParts(apiKey, preferredModel, parts) {
+async function callGeminiMultimodalParts(apiKeyOrKeys, preferredModel, parts) {
+  const keys = (Array.isArray(apiKeyOrKeys) ? apiKeyOrKeys : [apiKeyOrKeys]).filter(Boolean);
+  if (keys.length === 0) throw new Error('Chưa cấu hình API Key');
+
   const sanitizedParts = parts.map(p => {
     if (p.inline_data) {
       return {
@@ -1141,56 +1296,97 @@ async function callGeminiMultimodalParts(apiKey, preferredModel, parts) {
     return p;
   });
 
-  const normalizedPreferred = (preferredModel && isRealModel(preferredModel)) ? preferredModel : 'gemini-2.5-flash';
+  const normalizedPreferred = (preferredModel && isSupportedModel(preferredModel)) ? preferredModel : 'gemini-3.6-flash';
 
   const modelsToTry = [
     normalizedPreferred,
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash'
-  ].filter((m, idx, arr) => m && arr.indexOf(m) === idx && isRealModel(m));
+    'gemini-3.7-flash',
+    'gemini-3.8-flash',
+    'gemini-3.6-flash'
+  ].filter((m, idx, arr) => m && arr.indexOf(m) === idx && isSupportedModel(m));
 
   let lastError = null;
 
-  for (const model of modelsToTry) {
-    for (const ver of ['v1beta', 'v1']) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+  for (let kIdx = 0; kIdx < keys.length; kIdx++) {
+    const currentApiKey = keys[kIdx];
+    let keyHitQuota = false;
 
-        const url = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey
-          },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: sanitizedParts }],
-            generationConfig: {
-              temperature: 0.0,
-              topP: 0.95
+    for (const model of modelsToTry) {
+      for (const ver of ['v1beta', 'v1']) {
+        const maxRetries = 1;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 35000);
+
+            const url = `https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${currentApiKey}`;
+            const res = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': currentApiKey
+              },
+              body: JSON.stringify({
+                contents: [{ role: 'user', parts: sanitizedParts }],
+                generationConfig: {
+                  temperature: 0.0,
+                  topP: 0.95
+                }
+              }),
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            const data = await res.json();
+            if (data.error) {
+              const errMsg = data.error.message || `Lỗi API (${model})`;
+              lastError = new Error(errMsg);
+
+              const errLower = errMsg.toLowerCase();
+              const isQuota = errLower.includes('quota') || 
+                              errLower.includes('resource_exhausted') || 
+                              errLower.includes('rate limit') || 
+                              res.status === 429;
+
+              if (isQuota) {
+                keyHitQuota = true;
+                if (kIdx < keys.length - 1) {
+                  showToast(`🔄 Key ${kIdx + 1} hết quota, tự động đổi sang Key ${kIdx + 2}/${keys.length}...`);
+                }
+                break;
+              }
+
+              const isHighDemand = (errLower.includes('high demand') || 
+                                   errLower.includes('overloaded') || 
+                                   res.status === 503);
+
+              if (isHighDemand && attempt < maxRetries) {
+                const waitSec = attempt === 0 ? 2 : 3;
+                showToast(`⏳ [${model}] Máy chủ quá tải (503), tự thử lại sau ${waitSec}s (${attempt + 1}/${maxRetries})...`);
+                await new Promise(r => setTimeout(r, waitSec * 1000));
+                continue;
+              }
+              break;
             }
-          }),
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
 
-        const data = await res.json();
-        if (data.error) {
-          lastError = new Error(data.error.message || `Lỗi API (${model})`);
-          continue;
+            const text = getAiResponseText(data);
+            if (text) {
+              return { text, model };
+            }
+          } catch (err) {
+            lastError = err;
+            break;
+          }
         }
-
-        const text = getAiResponseText(data);
-        if (text) {
-          return { text, model };
-        }
-      } catch (err) {
-        lastError = err;
+        if (keyHitQuota) break;
       }
+      if (keyHitQuota) break;
     }
   }
 
-  throw lastError || new Error('Không thể kết nối tới Gemini API');
+  let finalMsg = lastError?.message || 'Không thể kết nối tới Gemini API';
+  if (finalMsg.toLowerCase().includes('high demand') || finalMsg.toLowerCase().includes('spikes in demand')) {
+    finalMsg = 'Máy chủ Google Gemini đang tạm thời quá tải (High Demand). Vui lòng thử đổi sang model Gemini 3.7 / 3.8 hoặc thử lại sau 1 phút!';
+  }
+  throw new Error(finalMsg);
 }

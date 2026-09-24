@@ -39,18 +39,25 @@
         <span>Cấu hình Gemini API</span>
         <button class="btn-close" id="btnCloseSettings">✕</button>
       </div>
-      <input type="password" id="apiKeyInput" placeholder="Nhập API Key (AIzaSy...)" class="input-text">
+      <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px;">
+        <div style="font-size: 11px; font-weight: 600; color: #94a3b8; display: flex; justify-content: space-between;">
+          <span>Danh sách Gemini API Key (Xoay tua)</span>
+          <span style="color: #10b981; font-weight: normal;">🔄 Tự chuyển key khi hết quota</span>
+        </div>
+        <input type="password" id="apiKeyInput" placeholder="🔑 API Key 1 (AIzaSy... — Chính)" class="input-text">
+        <input type="password" id="apiKeyInput2" placeholder="🔄 API Key 2 (Dự phòng xoay tua 1 — Tùy chọn)" class="input-text">
+        <input type="password" id="apiKeyInput3" placeholder="🔄 API Key 3 (Dự phòng xoay tua 2 — Tùy chọn)" class="input-text">
+      </div>
       <div class="settings-row">
         <select id="modelSelect" class="select-box">
-          <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Mặc định — Nhanh &amp; Chuẩn xác)</option>
-          <option value="gemini-2.5-pro">Gemini 2.5 Pro (Chi tiết sâu, bài khó)</option>
-          <option value="gemini-2.0-flash">Gemini 2.0 Flash (Ổn định)</option>
-          <option value="gemini-1.5-flash">Gemini 1.5 Flash (Dự phòng)</option>
+          <option value="gemini-3.6-flash" selected>Gemini 3.6 Flash (Khuyên dùng — Nhanh &amp; Chuẩn xác)</option>
+          <option value="gemini-3.7-flash">Gemini 3.7 Flash (Mới — Ổn định &amp; Tối ưu)</option>
+          <option value="gemini-3.8-flash">Gemini 3.8 Flash (Thế hệ mới — Siêu tốc)</option>
         </select>
         <button class="btn btn-primary" id="btnSaveKey">Lưu</button>
       </div>
       <div class="settings-tip">
-        Khóa lưu cục bộ trong máy bạn, lấy miễn phí tại <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio ↗</a>
+        Các khóa lưu cục bộ. Khi 1 Key bị chạm trần 20 lượt/phút, hệ thống sẽ tự động chuyển sang Key tiếp theo! Lấy miễn phí tại <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio ↗</a>
       </div>
       <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
         <input type="checkbox" id="chkAutoFillQuiz" checked style="accent-color: #10b981; width: 14px; height: 14px; cursor: pointer;">
@@ -128,7 +135,6 @@
         <span class="status-dot"></span>
         <span id="footerStatus">Auto-clean khi Ctrl+C đang hoạt động</span>
       </div>
-      <div class="author-mark">Made by <strong>Anh Khoi Nguyen</strong></div>
     </footer>
   </div>
 

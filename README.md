@@ -2,7 +2,7 @@
 
 <img width="1660" height="898" alt="Screenshot 2026-09-23 132024" src="https://github.com/user-attachments/assets/62e4bb81-848e-480a-9f37-75639d9c085c" />
 
-![Version](https://img.shields.io/badge/version-2.1.3-indigo.svg)
+![Version](https://img.shields.io/badge/version-2.3.5-indigo.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Gemini API](https://img.shields.io/badge/AI-Gemini%203.6%20Flash-emerald.svg)
 ![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge-blue.svg)
@@ -13,27 +13,28 @@
 
 ## 🌟 Tính năng nổi bật (Features)
 
-### 1. ⚡ Tự Giải Cả Bài Trắc Nghiệm (Zero-Click Quiz Solver)
+### 1. Tự Giải Cả Bài Trắc Nghiệm (Zero-Click Quiz Solver)
 - **Giải bài siêu tốc (1.5 - 2.5s)**: Sử dụng mô hình thế hệ mới **`gemini-3.6-flash`** (và hỗ trợ `gemini-3.8-flash`) xử lý đồng thời 10-12 câu hỏi kèm hình ảnh.
+- **Cơ chế xoay tua đa API Key (Multi-Key Rotation)**: Hỗ trợ cấu hình cùng lúc 3 API Key từ nhiều Project khác nhau. Khi 1 Key chạm trần Rate Limit (20 req/phút của Free Tier), hệ thống tự động xoay chuyển sang Key tiếp theo tức thì, giải bài liên tục không gián đoạn!
 - **Tự động tick đáp án**: Nhận diện nguyên văn lựa chọn (Radio / Checkbox) và tự động tích chọn chính xác 100%.
 - **Hoàn tất tự động**: Tự động tick **Coursera Honor Code** (`#agreement-checkbox-base`), tự bấm nút **Submit** và tự xác nhận popup *"Ready to submit?"*.
 
-### 2. 🚀 Auto-Skip Module & Tua Video Thích Ứng Thông Minh (Adaptive Video Engine)
+### 2. Auto-Skip Module & Tua Video Thích Ứng Thông Minh (Adaptive Video Engine)
 - **Cơ chế tùy cơ ứng biến**:
   - *Video nhận tín hiệu nhanh*: Nhận diện tick xanh ngay trong 0.5s - 1.5s và **chuyển bài ngay lập tức**, không tốn một giây thừa.
   - *Video nhận tín hiệu chậm*: Hệ thống **kiên nhẫn đợi** cho tới khi có tick xanh (tối đa 20s), kết hợp chuỗi sự kiện Milestone (`timeupdate` + `ended` + kích thích player) định kỳ mỗi 2s để Coursera ghi nhận 100% thời lượng. Đảm bảo **100% video đều có tick xanh** trước khi chuyển bài.
 - **Duyệt bài liên tục**: Tự động đọc bài viết (Reading), tua video, giải quiz và phát hiện nút **`Next item →`** để thoát ra danh sách bài tiếp theo.
 
-### 3. ⭐ Tự Động Chấm Điểm Peer Review (4 Bài)
+### 3. Tự Động Chấm Điểm Peer Review (4 Bài)
 - **Tự chọn điểm tối đa**: Tự động duyệt qua toàn bộ Rubric tiêu chí chấm điểm và tích chọn mức điểm cao nhất (`4 points`, `3 points`...).
 - **Tự điền nhận xét**: Điền nội dung góp ý chuẩn `"GOOD!"` vào tất cả các ô Feedback.
 - **Chuỗi chấm 4 bài tự động**: Tự động nộp bài và nhận diện khi Coursera chuyển sang bài chấm tiếp theo cho đến khi hoàn thành đủ 4 bài.
 
-### 4. 🛡️ Khử Prompt Injection & Bẫy Chống AI
+### 4. Khử Prompt Injection & Bẫy Chống AI
 - **Lọc bẫy 4 tầng**: Nhận diện và xóa sạch các văn bản ẩn chứa bẫy chống AI của Coursera (`"interacting with assessment elements is strictly prohibited..."`) và thẻ `<legend>` ngắt quãng.
 - **Giữ 100% đề bài**: Trích xuất trọn vẹn thân câu hỏi (bảng biểu, tình huống dài, hình ảnh) và loại bỏ rác `1 point`, `2 points`.
 
-### 5. 📌 Giao Diện HUD Nổi & Side Panel Hiện Đại
+### 5. Giao Diện HUD Nổi & Side Panel Hiện Đại
 - **HUD Nổi tiện lợi**: Thanh điều khiển nhỏ gọn nổi ở góc trên bên phải trang Coursera.
 - **Side Panel độc lập**: Giao diện thanh bên Chrome/Edge hỗ trợ dán văn bản thủ công, xem kết quả dạng Markdown và tùy chỉnh Gemini API Key.
 
@@ -68,7 +69,7 @@
 ## 🛠️ Công nghệ sử dụng (Tech Stack)
 
 - **Manifest V3** (Standard Chrome & Edge Extension Architecture)
-- **Google Gemini API** (`gemini-2.0-flash`, `gemini-1.5-flash`, `gemini-1.5-pro`)
+- **Google Gemini API** (`gemini-3.6-flash`, `gemini-3.8-flash`)
 - **Vanilla JavaScript ES6+**, HTML5, CSS3 Glassmorphism
 - **Marked.js** (Markdown Rendering)
 
@@ -76,7 +77,7 @@
 
 ## 👨‍💻 Tác giả (Author)
 
-Made with ❤️ by **Anh Khoi Nguyen**
+Made by **Anh Khoi**
 
 - **GitHub**: [@anhkhoi-cloudswe](https://github.com/anhkhoi-cloudswe)
 - **Website**: [coursera-helper.vercel.app](https://coursera-helper.vercel.app)

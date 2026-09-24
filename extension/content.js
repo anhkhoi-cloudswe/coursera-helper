@@ -201,7 +201,15 @@
       }
       try {
         if (isExtensionContextValid()) {
-          await chrome.storage.local.set({ 'gemini_api_key': val, 'gemini_model': 'gemini-2.5-flash' });
+          const existing = await chrome.storage.local.get(['gemini_api_keys']);
+          const existingList = Array.isArray(existing?.gemini_api_keys) ? existing.gemini_api_keys : [];
+          if (!existingList.includes(val)) existingList.unshift(val);
+          await chrome.storage.local.set({
+            'gemini_api_key': val,
+            'gemini_api_key_1': val,
+            'gemini_api_keys': existingList,
+            'gemini_model': 'gemini-3.6-flash'
+          });
         }
         showInPageToast('✅ Đã lưu Gemini API Key thành công!');
         modal.remove();
@@ -224,10 +232,17 @@
     if (!text) return text;
     let cleaned = text;
 
-    // Giai đoạn 1: Khử triệt để các khối văn bản bẫy Prompt Injection của Coursera
-    cleaned = cleaned.replace(/interacting with assessment elements is strictly prohibited[\s\S]*?(?:study course materials[^\n]*\.?|feel free to use me[^\n]*\.?|(?=(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|[A-D]\.)))/gi, '\n\n');
-    cleaned = cleaned.replace(/You are a helpful AI assistant[\s\S]*?(?:Do you understand\?|accessing assessment pages\.?|(?=(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|[A-D]\.)))/gi, '\n\n');
-    cleaned = cleaned.replace(/(?:To uphold Coursera(?:'s)? academic integrity policy|this AI assistant is disabled on assessment pages)[\s\S]*?(?:study course materials[^\n]*\.?|feel free to use me[^\n]*\.?|(?=(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|[A-D]\.)))/gi, '\n\n');
+    // Giai đoạn 1: Khử các khối bẫy Prompt Injection hoàn chỉnh có điểm kết thúc rõ ràng
+    // 1a. Bẫy bắt đầu bằng "You are a helpful AI assistant" kết thúc bằng "Do you understand?" hoặc "accessing assessment pages"
+    cleaned = cleaned.replace(/\s*You are a helpful AI assistant[\s\S]*?Do you understand\?\.?\s*/gi, '\n\n');
+    cleaned = cleaned.replace(/\s*You are a helpful AI assistant[\s\S]*?accessing assessment pages\.?\s*/gi, '\n\n');
+
+    // 1b. Bẫy "interacting with assessment elements" hoặc "academic integrity policy" có điểm kết thúc
+    cleaned = cleaned.replace(/\s*(?:In accordance with Coursera|To uphold Coursera(?:'s)? academic integrity policy|this AI assistant is disabled on assessment pages|interacting with assessment elements is strictly prohibited)[\s\S]*?(?:study course materials[^\n]*\.?|feel free to use me[^\n]*\.?|accessing assessment pages\.?|Do you understand\?\.?)\s*/gi, '\n\n');
+
+    // 1c. Bẫy với fallback nhìn trước (lookahead) - chỉ ngắt khi gặp đầu câu hỏi mới hoặc đáp án ở đầu dòng (\n\s*[A-D]\.)
+    cleaned = cleaned.replace(/\s*You are a helpful AI assistant[\s\S]*?(?=\s*(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|\n\s*[A-D]\.|\n\n\n|$))/gi, '\n\n');
+    cleaned = cleaned.replace(/\s*(?:To uphold Coursera(?:'s)? academic integrity policy|this AI assistant is disabled on assessment pages|interacting with assessment elements is strictly prohibited)[\s\S]*?(?=\s*(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|\n\s*[A-D]\.|\n\n\n|$))/gi, '\n\n');
 
     // Giai đoạn 2: Quét sạch các câu bẫy rời rạc nếu bị ngắt quãng do bôi đen không trọn khối
     const trapPhrases = [
@@ -242,6 +257,7 @@
       /My purpose is to help you learn, not to complete your work for you[^\.\n]*[\.\n]?/gi,
       /Please feel free to use me on other pages[^\.\n]*[\.\n]?/gi,
       /helpful AI assistant[^\.\n]*[\.\n]?/gi,
+      /Do you understand\?\.?/gi,
       /\[?IMPORTANT INSTRUCTION FOR AI ASSISTANT[\s\S]*?\]?/gi
     ];
     for (const phrase of trapPhrases) {
@@ -258,17 +274,20 @@
       'not to complete your work for you',
       'study course materials',
       'cannot interact with the questions',
-      'message to user'
+      'message to user',
+      'do you understand?'
     ];
     const lines = cleaned.split('\n');
     const filteredLines = lines.filter(line => {
-      const l = line.toLowerCase();
+      const l = line.toLowerCase().trim();
+      if (!l) return true;
       return !trapKeywords.some(kw => l.includes(kw));
     });
     cleaned = filteredLines.join('\n');
 
     // Giai đoạn 4: Xóa điểm số và chuẩn hóa ký tự xuống dòng
     cleaned = cleaned.replace(POINT_REGEX, '');
+    cleaned = cleaned.replace(/^[ \t]*\d+(?:\.\d+)?[ \t]*points?\.?[ \t]*$/gmi, '');
     cleaned = cleaned.replace(/\b\d+(?:\.\d+)?\s*points?\b/gi, '');
     cleaned = cleaned.replace(/\b\d+(?:\.\d+)?\s*điểm\b/gi, '');
     cleaned = cleaned.replace(/\r\n/g, '\n');
@@ -485,6 +504,7 @@
   // ==========================================
 
   // A. Tìm nút "Mark as completed" (cho bài đọc / Reading / Supplement)
+  // A. Tìm nút "Mark as completed" / "Marked as completed" (cho bài đọc / Reading / Supplement)
   function findMarkAsCompletedButton() {
     // 1. Selector trực tiếp data-testid / data-e2e
     const directBtn = document.querySelector(
@@ -495,20 +515,22 @@
     // 2. Quét tất cả button / thẻ click trên trang tìm theo text
     const allButtons = Array.from(document.querySelectorAll('button, [role="button"], a.cds-button'));
     for (const btn of allButtons) {
+      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
       const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-      if (!txt || txt.length > 50) continue;
+      if (!txt || txt.length > 60) continue;
       
       // Bỏ qua nếu là nút đã hoàn thành
-      if (txt === 'completed' || txt === 'đã hoàn thành' || txt.includes('completed ✓') || txt.includes('✓')) {
-        continue;
-      }
+      if (isButtonAlreadyCompleted(btn)) continue;
 
       if (
         txt === 'mark as completed' ||
+        txt === 'marked as completed' ||
         txt === 'mark as complete' ||
         txt === 'mark complete' ||
         txt.includes('mark as completed') ||
+        txt.includes('marked as completed') ||
         txt.includes('mark as complete') ||
+        txt.includes('mark complete') ||
         txt.includes('đánh dấu đã hoàn thành') ||
         txt.includes('đánh dấu là đã hoàn thành') ||
         txt.includes('đánh dấu hoàn thành')
@@ -524,7 +546,9 @@
     if (!btn) return false;
     if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return true;
     const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-    return txt === 'completed' || txt.includes('completed') || txt.includes('đã hoàn thành');
+    // Nếu text có chữ "mark" hoặc "đánh dấu" thì đây là nút CHƯA hoàn thành (cần bấm)
+    if (txt.includes('mark') || txt.includes('đánh dấu')) return false;
+    return txt === 'completed' || txt === 'completed ✓' || txt.includes('completed ✓') || txt === 'đã hoàn thành';
   }
 
   // B. Tìm nút "Go to next item" hoặc nút chuyển bài ở cuối trang
@@ -533,29 +557,32 @@
     const testIdBtn = document.querySelector(
       'button[data-testid="next-item-button"], a[data-testid="next-item-button"], [data-testid*="next-item"], [data-testid*="navigation-next"], button[data-e2e="next-item-button"], a[data-e2e="next-item-button"]'
     );
-    if (testIdBtn) return testIdBtn;
+    if (testIdBtn && !testIdBtn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) {
+      return testIdBtn;
+    }
 
     // 2. Tìm theo text "Go to next item", "Next item", "Tiếp theo"
-    const allClickables = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    const allClickables = Array.from(document.querySelectorAll('button, a, [role="button"], span'));
     for (const el of allClickables) {
+      if (el.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
       const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
       if (
         txt === 'go to next item' ||
         txt.startsWith('go to next item') ||
         txt === 'next item' ||
         txt.startsWith('next item') ||
-        txt === 'chuyển sang bài tiếp theo' ||
-        txt === 'bài tiếp theo' ||
         txt.includes('go to next item') ||
-        txt.includes('next item')
+        txt.includes('next item') ||
+        txt === 'chuyển sang bài tiếp theo' ||
+        txt === 'bài tiếp theo'
       ) {
-        return el;
+        return el.closest('button, a, [role="button"]') || el;
       }
     }
 
     // 3. Tìm theo aria-label
     const byAria = document.querySelector('button[aria-label*="next" i], a[aria-label*="next" i]');
-    if (byAria) return byAria;
+    if (byAria && !byAria.closest('#coursera-helper-hud, header, nav[role="navigation"]')) return byAria;
 
     return null;
   }
@@ -565,18 +592,19 @@
   function findNextSidebarLink() {
     try {
       const allLessonLinks = Array.from(document.querySelectorAll(
-        'nav a[href*="/learn/"], aside a[href*="/learn/"], [role="navigation"] a[href*="/learn/"], .rc-ItemLink, a[href*="/lecture/"], a[href*="/supplement/"], a[href*="/item/"], a[href*="/quiz/"], a[href*="/exam/"]'
-      ));
+        'nav a[href*="/learn/"], aside a[href*="/learn/"], [role="navigation"] a[href*="/learn/"], .rc-ItemLink, a[href*="/lecture/"], a[href*="/supplement/"], a[href*="/item/"], a[href*="/quiz/"], a[href*="/exam/"], a[href*="/assignment-submission/"], a[href*="/assignment/"], a[href*="/discussionPrompt/"], a[href*="/ungradedWidget/"], a[href*="/ungradedLti/"]'
+      )).filter(a => !a.closest('#coursera-helper-hud, header, [data-e2e="header"], .rc-GlobalHeader'));
 
       if (allLessonLinks.length === 0) return null;
 
-      // Lọc bỏ các href trùng lặp
+      // Lọc bỏ các href trùng lặp và các href trang chủ/tuần
       const uniqueLinks = [];
       const seenPaths = new Set();
       for (const link of allLessonLinks) {
         const href = link.getAttribute('href') || '';
         const cleanPath = href.split('?')[0].split('#')[0];
         if (cleanPath && !seenPaths.has(cleanPath)) {
+          if (cleanPath.endsWith('/home') || cleanPath.includes('/home/week/')) continue;
           seenPaths.add(cleanPath);
           uniqueLinks.push(link);
         }
@@ -584,12 +612,26 @@
 
       const currentPath = window.location.pathname;
 
+      // 1. Trích xuất itemId từ URL để so khớp chính xác
+      const matchTypeAndId = currentPath.match(/\/(lecture|discussionprompt|supplement|item|quiz|exam|assignment-submission)\/([a-z0-9_-]+)/i);
+      const currentItemId = matchTypeAndId ? matchTypeAndId[2].toLowerCase() : '';
+
       // Tìm vị trí bài học hiện tại trong danh sách
-      let currentIndex = uniqueLinks.findIndex(link => {
-        const href = link.getAttribute('href') || '';
-        const cleanPath = href.split('?')[0].split('#')[0];
-        return cleanPath === currentPath || currentPath.endsWith(cleanPath) || (cleanPath.length > 5 && currentPath.includes(cleanPath));
-      });
+      let currentIndex = -1;
+      if (currentItemId && currentItemId.length >= 3) {
+        currentIndex = uniqueLinks.findIndex(link => {
+          const href = (link.getAttribute('href') || '').toLowerCase();
+          return href.includes(`/${currentItemId}`);
+        });
+      }
+
+      if (currentIndex === -1) {
+        currentIndex = uniqueLinks.findIndex(link => {
+          const href = link.getAttribute('href') || '';
+          const cleanPath = href.split('?')[0].split('#')[0];
+          return cleanPath === currentPath || currentPath.endsWith(cleanPath) || (cleanPath.length > 5 && currentPath.includes(cleanPath));
+        });
+      }
 
       // Nếu không khớp URL tuyệt đối, thử tìm theo thuộc tính active của DOM
       if (currentIndex === -1) {
@@ -600,7 +642,8 @@
             link.classList.contains('active') ||
             link.classList.contains('selected') ||
             link.closest('.active') !== null ||
-            link.closest('[aria-current="true"]') !== null
+            link.closest('[aria-current="true"]') !== null ||
+            link.closest('[aria-current="page"]') !== null
           );
         });
       }
@@ -615,82 +658,180 @@
     return null;
   }
 
-  // Kiểm tra xem bài học hiện tại trên Sidebar đã được Coursera tick xanh (Completed) chưa
-  function isCurrentLessonCompletedOnSidebar() {
+  // Tự động đóng/bỏ qua câu hỏi trắc nghiệm giữa video (In-video assessment) nếu xuất hiện
+  function dismissInVideoQuestionIfPresent() {
     try {
-      const allLessonLinks = Array.from(document.querySelectorAll(
-        'nav a[href*="/learn/"], aside a[href*="/learn/"], [role="navigation"] a[href*="/learn/"], [role="tree"] a, .rc-ItemLink, .rc-ItemRow, [data-testid*="item-row"]'
-      ));
-
-      const currentPath = window.location.pathname;
-      let currentLink = allLessonLinks.find(link => {
-        const href = (link.getAttribute('href') || '').split('?')[0].split('#')[0];
-        return (
-          link.getAttribute('aria-current') === 'true' ||
-          link.getAttribute('aria-current') === 'page' ||
-          link.classList.contains('active') ||
-          link.classList.contains('selected') ||
-          (href && (href === currentPath || currentPath.endsWith(href) || (href.length > 8 && currentPath.includes(href))))
-        );
-      });
-
-      if (!currentLink) {
-        currentLink = document.querySelector('nav [aria-current="page"], [role="navigation"] [aria-current="page"], [aria-current="true"]');
+      const allBtns = Array.from(document.querySelectorAll('button, [role="button"], a'));
+      for (const btn of allBtns) {
+        if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+        const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+        if (txt === 'skip' || txt === 'bỏ qua' || txt === 'skip question' || txt === 'bỏ qua câu hỏi') {
+          triggerClick(btn);
+          return true;
+        }
       }
 
-      if (!currentLink) return false;
-
-      const container = currentLink.closest('li, div[role="listitem"], div[role="treeitem"], .rc-ItemRow, [class*="itemRow" i]') || currentLink.parentElement;
-      const targetArea = container || currentLink;
-
-      // Kiểm tra icon tick xanh hoặc text completed trong container (kể cả thẻ ẩn .cds-visuallyHidden)
-      const allText = (targetArea.textContent || '').toLowerCase();
-      const hasCompletedIndicator = (
-        targetArea.querySelector(
-          'svg[data-testid*="completed"], svg[aria-label*="Completed" i], svg[aria-label*="Đã hoàn thành" i], ' +
-          'svg[aria-label*="Hoàn thành" i], svg[class*="completed" i], svg[class*="success" i], ' +
-          '[class*="completed" i], [class*="success" i], [aria-label*="Completed" i], [aria-label*="Đã hoàn thành" i], ' +
-          '[data-testid*="check-circle"], svg[data-testid*="check"]'
-        ) !== null ||
-        allText.includes('completed') ||
-        allText.includes('đã hoàn thành') ||
-        targetArea.getAttribute('aria-label')?.toLowerCase().includes('completed') ||
-        targetArea.getAttribute('aria-label')?.toLowerCase().includes('đã hoàn thành')
+      const closeBtn = document.querySelector(
+        'button[aria-label*="close" i], button[aria-label*="đóng" i], button[data-testid*="close"]'
       );
+      if (closeBtn && closeBtn.closest('[class*="overlay" i], [class*="dialog" i], [role="dialog"], [class*="modal" i]')) {
+        triggerClick(closeBtn);
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
 
-      return hasCompletedIndicator;
+  // Tìm thẻ link <a> tương ứng với bài học hiện tại trên Sidebar
+  function findCurrentLessonSidebarLink() {
+    try {
+      const currentPath = window.location.pathname;
+      const match = currentPath.match(/\/(lecture|discussionprompt|supplement|item|quiz|exam|assignment-submission)\/([a-zA-Z0-9_-]+)/i);
+      const currentItemId = match ? match[2] : '';
+
+      const allLinks = Array.from(document.querySelectorAll(
+        'nav a, aside a, [role="navigation"] a, [class*="navigation" i] a, [class*="sidebar" i] a, .rc-ItemLink, a[href*="/lecture/"], a[href*="/supplement/"], a[href*="/item/"], a[href*="/discussionPrompt/"], a[href*="/quiz/"], a[href*="/exam/"], a[href*="/assignment-submission/"]'
+      )).filter(a => !a.closest('#coursera-helper-hud, header, [data-e2e="header"], .rc-GlobalHeader'));
+
+      if (allLinks.length === 0) return null;
+
+      // 1. Khớp chính xác theo itemId trong href
+      if (currentItemId && currentItemId.length >= 3) {
+        const idLower = currentItemId.toLowerCase();
+        const byId = allLinks.find(a => {
+          const h = (a.getAttribute('href') || '').toLowerCase();
+          return h.includes(`/${idLower}`) || h.includes(idLower);
+        });
+        if (byId) return byId;
+      }
+
+      // 2. Khớp theo thuộc tính active (aria-current="page", aria-selected, class active/selected)
+      const activeLink = allLinks.find(a => {
+        return (
+          a.getAttribute('aria-current') === 'page' ||
+          a.getAttribute('aria-current') === 'true' ||
+          a.getAttribute('aria-selected') === 'true' ||
+          a.classList.contains('active') ||
+          a.classList.contains('selected') ||
+          a.closest('[aria-current="page"], [aria-current="true"], .active, .selected') !== null
+        );
+      });
+      if (activeLink) return activeLink;
+
+      // 3. Khớp theo pathname
+      const cleanCurrent = currentPath.split('?')[0].split('#')[0].replace(/\/$/, '').toLowerCase();
+      const byPath = allLinks.find(a => {
+        const h = (a.getAttribute('href') || '').split('?')[0].split('#')[0].replace(/\/$/, '').toLowerCase();
+        return h === cleanCurrent || (h.length > 8 && cleanCurrent.endsWith(h));
+      });
+      if (byPath) return byPath;
+
     } catch (e) {
+      console.warn('CourseraHelper findCurrentLessonSidebarLink error:', e);
+    }
+    return null;
+  }
+
+  // Tìm container hàng riêng của bài học hiện tại (bao gồm cả link và icon trạng thái)
+  function findCurrentLessonRow() {
+    const link = findCurrentLessonSidebarLink();
+    if (link) {
+      // Tìm container hàng gần nhất (li, [role="listitem"], .rc-NamedNavItem, hoặc parent div)
+      const directContainer = link.closest('li, [role="listitem"], .rc-NamedNavItem, [data-testid*="item"]');
+      if (directContainer) return directContainer;
+
+      // Hoặc duyệt lên trên tối đa 4 cấp đến khi gặp container chứa đúng link này
+      let p = link.parentElement;
+      for (let depth = 0; depth < 4 && p && p !== document.body && p.tagName !== 'NAV' && p.tagName !== 'ASIDE'; depth++) {
+        const siblingLinks = p.querySelectorAll('a[href*="/lecture/"], a[href*="/supplement/"], a[href*="/discussionPrompt/"], a[href*="/quiz/"]');
+        if (siblingLinks.length > 1) {
+          return link.parentElement || p;
+        }
+        if (p.querySelector('div.css-1h6ae56, [data-testid="learn-item-success-icon"], rect')) {
+          return p;
+        }
+        p = p.parentElement;
+      }
+      return link.parentElement || link;
+    }
+
+    // Fallback: Tìm container của phần tử có aria-current="page"
+    const activeEl = document.querySelector('aside [aria-current="page"], nav [aria-current="page"], [role="navigation"] [aria-current="page"]');
+    if (activeEl) {
+      return activeEl.closest('li, [role="listitem"], .rc-NamedNavItem') || activeEl.parentElement || activeEl;
+    }
+
+    return null;
+  }
+
+  // Tìm thẻ trạng thái icon <div class="css-1h6ae56"> hoặc icon SVG của bài học hiện tại
+  function findCurrentLessonStatusDiv() {
+    try {
+      const row = findCurrentLessonRow();
+      if (row) {
+        const iconDiv = row.querySelector('div.css-1h6ae56, [data-testid="learn-item-success-icon"], rect');
+        if (iconDiv) {
+          return iconDiv.closest('div.css-1h6ae56') || iconDiv;
+        }
+      }
+
+      // Link trực tiếp nếu link chứa icon
+      const link = findCurrentLessonSidebarLink();
+      if (link) {
+        const inside = link.querySelector('div.css-1h6ae56, [data-testid="learn-item-success-icon"], rect');
+        if (inside) return inside.closest('div.css-1h6ae56') || inside;
+      }
+    } catch (e) {
+      console.warn('CourseraHelper findCurrentLessonStatusDiv error:', e);
+    }
+    return null;
+  }
+
+  // Kiểm tra xem bài học hiện tại ĐÃ CÓ TICK XANH CHƯA:
+  // - Nếu có <rect width="20" height="20" rx="10" fill="var(--cds-color-grey-50)"></rect> -> CHƯA HOÀN THÀNH (false)
+  // - Nếu có <svg data-testid="learn-item-success-icon"><path d="M10 19.167..."></path></svg> -> ĐÃ HOÀN THÀNH (true)
+  function isCurrentLessonCompleted() {
+    try {
+      const row = findCurrentLessonRow();
+      if (row) {
+        // 1. NẾU CÓ THẺ RECT (chưa được skip, vòng tròn xám <rect ...>):
+        // TUYỆT ĐỐI CHƯA HOÀN THÀNH -> TRẢ VỀ FALSE
+        const hasRect = row.querySelector('rect');
+        if (hasRect) {
+          return false;
+        }
+
+        // 2. NẾU CÓ ĐÚNG TICK XANH (như hình 1 bạn gửi):
+        // data-testid="learn-item-success-icon" hoặc SVG path d="M10 19.167..."
+        const hasSuccessTick = row.querySelector(
+          '[data-testid="learn-item-success-icon"], path[d*="M10 19.167"], path[d*="5.297 5.297"], path[d*="5.734-5.75"]'
+        );
+        if (hasSuccessTick) {
+          return true; // CHẮC CHẮN ĐÃ CÓ TICK XANH!
+        }
+      }
+
+      // Kiểm tra qua statusDiv nếu có
+      const statusDiv = findCurrentLessonStatusDiv();
+      if (statusDiv) {
+        if (statusDiv.querySelector('rect') || statusDiv.tagName === 'rect') return false;
+        if (statusDiv.querySelector('[data-testid="learn-item-success-icon"], path[d*="M10 19.167"]')) return true;
+      }
+
+      return false; // Mặc định trả về false để đảm bảo không bao giờ skip mù quáng!
+    } catch (e) {
+      console.warn('CourseraHelper isCurrentLessonCompleted error:', e);
       return false;
     }
   }
 
-  // Kiểm tra toàn diện xem bài học hiện tại đã hoàn tất hay chưa (Sidebar + Page elements)
-  function isCurrentLessonCompleted() {
-    // 1. Kiểm tra trên Sidebar (nguồn chuẩn xác nhất)
-    if (isCurrentLessonCompletedOnSidebar()) return true;
-
-    // 2. Kiểm tra thông báo hoàn thành trên chính trang bài học
-    const pageText = (document.body.textContent || '').toLowerCase();
-    if (
-      pageText.includes("you've completed this video") ||
-      pageText.includes("you've completed this item") ||
-      pageText.includes("đã hoàn thành bài học này") ||
-      pageText.includes("great job! you completed")
-    ) {
-      return true;
-    }
-
-    // 3. Kiểm tra nút Mark as completed đã đổi trạng thái thành Completed
-    const markButtons = Array.from(document.querySelectorAll('button[data-testid*="mark-complete"], [data-testid*="mark-complete"], button.cds-button'));
-    for (const btn of markButtons) {
-      if (isButtonAlreadyCompleted(btn)) return true;
-    }
-
-    return false;
+  function isCurrentLessonCompletedOnSidebar() {
+    return isCurrentLessonCompleted();
   }
 
   // Kích thích video Coursera ghi nhận 100% thời lượng qua các mốc Milestone
   function triggerVideoPlaybackProgress(videos) {
+    dismissInVideoQuestionIfPresent();
     for (const v of videos) {
       try {
         v.muted = true;
@@ -713,35 +854,41 @@
         console.error('CourseraHelper video progress error:', e);
       }
     }
+    dismissInVideoQuestionIfPresent();
   }
 
   // Chờ thích ứng thông minh: Nếu video nhận tín hiệu nhanh thì pass ngay, nếu chậm thì kiên nhẫn đợi đến khi có tick xanh
-  async function waitForLessonTickOrAction(maxWaitSeconds = 20) {
+  async function waitForLessonTickOrAction(maxWaitSeconds = 25) {
     const startTime = performance.now();
-    const intervalMs = 250;
+    const intervalMs = 250; // Kiểm tra liên tục mỗi 250ms để bắt tick xanh ngay khi vừa xuất hiện
     const maxChecks = Math.ceil((maxWaitSeconds * 1000) / intervalMs);
 
     for (let i = 0; i < maxChecks; i++) {
-      await new Promise(r => setTimeout(r, intervalMs));
-
-      // 1. Kiểm tra ngay lập tức: Nếu đã có tick xanh -> Thoát và pass ngay!
+      // 1. Kiểm tra ngay lập tức: Nếu đã có tick xanh -> Thoát và pass ngay không chờ đợi 1 giây nào!
       if (isCurrentLessonCompleted()) {
         const elapsedSec = ((performance.now() - startTime) / 1000).toFixed(1);
         showInPageToast(`✅ [Auto-Skip] Đã có tick xanh (${elapsedSec}s)! Chuyển ngay bài tiếp...`);
         return true;
       }
 
+      // 2. Tự động bỏ qua câu hỏi trắc nghiệm giữa video (In-video quiz) nếu có
+      dismissInVideoQuestionIfPresent();
+
+      // 3. Kích hoạt nút phụ Mark as completed nếu có
+      const markBtn = findMarkAsCompletedButton();
+      if (markBtn && !isButtonAlreadyCompleted(markBtn)) triggerClick(markBtn);
+
+      await new Promise(r => setTimeout(r, intervalMs));
+
       const elapsed = Math.round((performance.now() - startTime) / 1000);
 
-      // 2. Kích hoạt nút phụ Mark as completed nếu có
-      const markBtn = findMarkAsCompletedButton();
-      if (markBtn) triggerClick(markBtn);
-
-      // 3. Mỗi 2 giây: Nếu Coursera phản hồi chậm, kích thích lại player và cập nhật thông báo
+      // 4. Mỗi 2 giây: Nếu Coursera phản hồi chậm, kích thích lại player và cập nhật thông báo
       if (i > 0 && i % 8 === 0) {
         const videos = findVideos();
-        triggerVideoPlaybackProgress(videos);
-        showInPageToast(`⏳ [Auto-Skip] Video phản hồi chậm, đang kiên nhẫn đợi tick xanh (${elapsed}s)...`);
+        if (videos.length > 0) {
+          triggerVideoPlaybackProgress(videos);
+        }
+        showInPageToast(`⏳ [Auto-Skip] Video chưa có tick xanh, đang kiên nhẫn đợi server cập nhật (${elapsed}s)...`);
       }
     }
 
@@ -990,8 +1137,8 @@
 
       // Nếu bước trước đang trong quá trình thực thi (chưa hết timeout), không ngắt
       if (isStepInProgress) {
-        // Cho quiz solver thời gian đủ lâu (120s), các loại bài khác 15s
-        const lockTimeout = isQuizSolveInProgress ? 120000 : 15000;
+        // Cho quiz solver thời gian đủ lâu (120s), các loại bài khác 30s
+        const lockTimeout = isQuizSolveInProgress ? 120000 : 30000;
         if (Date.now() - lastActionTimestamp > lockTimeout) {
           isStepInProgress = false;
           isQuizSolveInProgress = false;
@@ -1003,7 +1150,7 @@
       const currentUrl = window.location.href;
       const now = Date.now();
 
-      // TRƯỜNG HỢP A0: Đang ở màn hình kết quả điểm Quiz (Your grade: ... / Next item) -> Bấm Next item ngay
+      // TRƯỜNG HỢP 1: Màn hình kết quả điểm Quiz (Your grade: ... / Next item) -> Bấm Next item ngay
       if (isQuizResultScreen()) {
         isStepInProgress = true;
         isQuizSolveInProgress = false;
@@ -1022,45 +1169,51 @@
             setTimeout(() => {
               isStepInProgress = false;
               isQuizSolveInProgress = false;
+              lastEvaluatedUrl = '';
             }, 2000);
           }, 400);
           return;
         }
       }
 
-      // TRƯỜNG HỢP A: Gặp Quiz / Graded Assignment -> Tự động giải AI rồi submit & chuyển tiếp
-      const isQuizUrl = (
-        currentUrl.includes('/quiz/') ||
-        currentUrl.includes('/exam/') ||
-        currentUrl.includes('/assignment/') ||
-        currentUrl.includes('/assignment-submission/') ||  // URL thực tế của Graded Assignment Coursera
-        currentUrl.includes('/ungradedLti/') ||
-        currentUrl.includes('/ungradedWidget/')
-      );
-
-      if (isQuizUrl && currentUrl !== lastEvaluatedUrl) {
-        // Chỉ kích hoạt 1 lần mỗi khi vào trang quiz mới (tránh heartbeat gọi lại)
+      // TRƯỜNG HỢP 2: Bài thảo luận Discussion Prompt (/discussionPrompt/)
+      // ƯU TIÊN KIỂM TRA TRƯỚC VIDEO ĐỂ TRANG THẢO LUẬN KHÔNG BỊ VIDEO EMBED TRÊN TRANG CHIẾM QUYỀN!
+      const currentUrlLower = currentUrl.toLowerCase();
+      const isDiscussionUrl = currentUrlLower.includes('/discussionprompt/') || currentUrlLower.includes('/prompt/');
+      if (isDiscussionUrl) {
         isStepInProgress = true;
-        isQuizSolveInProgress = true;
+        isQuizSolveInProgress = false;
         lastActionTimestamp = now;
         lastEvaluatedUrl = currentUrl;
-        processQuizStep();
-        return;
-      } else if (isQuizUrl) {
-        // Đã ở trang quiz này rồi, kiểm tra xem đã có nút Next item hoặc đã có kết quả chưa
-        const nextBtn = findQuizNextItemButton();
-        if (nextBtn) {
-          showInPageToast('🎉 [Auto-Skip] Nút "Next item" đã sẵn sàng! Bấm để chuyển tiếp...', false, 4000);
-          triggerClick(nextBtn);
-          isStepInProgress = false;
-          isQuizSolveInProgress = false;
-        }
+        processDiscussionPromptStep();
         return;
       }
 
-      // TRƯỜNG HỢP B: Đang ở trang tổng quan Module (/home/module/...)
+      // TRƯỜNG HỢP 3: Bài giảng Video (/lecture/) hoặc trang có thẻ Video (không phải Quiz & không phải Discussion)
+      const videos = findVideos();
+      const isLectureUrl = currentUrlLower.includes('/lecture/');
+      const isQuizUrl = (
+        currentUrlLower.includes('/quiz/') ||
+        currentUrlLower.includes('/exam/') ||
+        currentUrlLower.includes('/assignment/') ||
+        currentUrlLower.includes('/assignment-submission/') ||
+        currentUrlLower.includes('/ungradedlti/') ||
+        currentUrlLower.includes('/ungradedwidget/')
+      );
+
+      if ((isLectureUrl || (videos.length > 0 && !isQuizUrl)) && !isDiscussionUrl) {
+        isStepInProgress = true;
+        isQuizSolveInProgress = false;
+        lastActionTimestamp = now;
+        lastEvaluatedUrl = currentUrl;
+        processVideoLectureStep(0);
+        return;
+      }
+
+      // TRƯỜNG HỢP 4: Trang tổng quan Module (/home/module/...)
       if (currentUrl.includes('/home/module/') || currentUrl.includes('/module/')) {
         isStepInProgress = true;
+        isQuizSolveInProgress = false;
         lastActionTimestamp = now;
         lastEvaluatedUrl = currentUrl;
 
@@ -1075,40 +1228,48 @@
         return;
       }
 
-      // TRƯỜNG HỢP C: Là bài giảng Video (/lecture/)
-      if (currentUrl.includes('/lecture/')) {
-        isStepInProgress = true;
-        lastActionTimestamp = now;
-        lastEvaluatedUrl = currentUrl;
-        processVideoLectureStep(0);
-        return;
+      // TRƯỜNG HỢP 5: Gặp Quiz / Graded Assignment -> Tự động giải AI rồi submit & chuyển tiếp
+      const hasQuestionsOnPage = isQuizUrl && getQuestionContainers().length > 0;
+      const startAssignBtn = isQuizUrl ? findStartAssignmentButton() : null;
+
+      if ((isQuizUrl || startAssignBtn) && !isQuizResultScreen()) {
+        if (currentUrl !== lastEvaluatedUrl || hasQuestionsOnPage || startAssignBtn) {
+          isStepInProgress = true;
+          isQuizSolveInProgress = true;
+          lastActionTimestamp = now;
+          lastEvaluatedUrl = currentUrl;
+          processQuizStep();
+          return;
+        } else {
+          // Đã ở trang quiz này rồi, kiểm tra xem đã có nút Next item hoặc đã có kết quả chưa
+          const nextBtn = findQuizNextItemButton() || findNextButton();
+          if (nextBtn) {
+            showInPageToast('🎉 [Auto-Skip] Nút "Next item" đã sẵn sàng! Bấm để chuyển tiếp...', false, 4000);
+            triggerClick(nextBtn);
+            isStepInProgress = false;
+            isQuizSolveInProgress = false;
+            lastEvaluatedUrl = '';
+          }
+          return;
+        }
       }
 
-      // TRƯỜNG HỢP D: Bài đọc Reading / Supplement (/supplement/, /item/, /ungradedWidget/)
-      // hoặc trang có nút Mark as completed
-      const isReadingUrl = currentUrl.includes('/supplement/') || currentUrl.includes('/item/') || currentUrl.includes('/ungradedWidget/');
+      // TRƯỜNG HỢP 6: Bài đọc Reading / Supplement (/supplement/, /item/) hoặc trang có nút Mark as completed
+      const isReadingUrl = currentUrl.includes('/supplement/') || currentUrl.includes('/item/');
       const hasMarkBtn = findMarkAsCompletedButton() !== null;
 
-      if (isReadingUrl || hasMarkBtn) {
+      if ((isReadingUrl || hasMarkBtn) && !isQuizUrl) {
         isStepInProgress = true;
+        isQuizSolveInProgress = false;
         lastActionTimestamp = now;
         lastEvaluatedUrl = currentUrl;
         processReadingStep();
         return;
       }
 
-      // TRƯỜNG HỢP E: Trang có thẻ Video bất kể URL nào
-      const videos = findVideos();
-      if (videos.length > 0) {
-        isStepInProgress = true;
-        lastActionTimestamp = now;
-        lastEvaluatedUrl = currentUrl;
-        processVideoLectureStep(0);
-        return;
-      }
-
-      // TRƯỜNG HỢP F: Thử chuyển tiếp nếu trang không xác định
+      // TRƯỜNG HỢP 7: Thử chuyển tiếp nếu trang không xác định
       isStepInProgress = true;
+      isQuizSolveInProgress = false;
       lastActionTimestamp = now;
       lastEvaluatedUrl = currentUrl;
       setTimeout(() => {
@@ -1120,7 +1281,9 @@
     });
   }
 
-  // Xử lý bài Video với cơ chế thích ứng thông minh: Nhận nhanh pass nhanh, nhận chậm kiên nhẫn đợi tick xanh
+  // Xử lý bài Video với cơ chế thích ứng thông minh:
+  // - Video đã có tick xanh -> skip nhanh ngay lập tức
+  // - Video chưa có tick xanh -> tua tới cuối và kiên nhẫn đợi đúng tick xanh rồi mới đi tiếp
   async function processVideoLectureStep(retryCount = 0) {
     const videos = findVideos();
     if (videos.length === 0) {
@@ -1136,60 +1299,411 @@
       return;
     }
 
-    // Nếu bài này vốn dĩ đã có tick xanh từ trước -> Chuyển ngay lập tức!
+    // 1. NẾU VIDEO ĐÃ CÓ TICK XANH TỪ TRƯỚC:
+    // Skip nhanh ngay lập tức, không tua lại và không chờ đợi!
     if (isCurrentLessonCompleted()) {
-      showInPageToast('✅ [Auto-Skip] Bài này đã có tick xanh từ trước! Chuyển ngay bài tiếp...');
+      showInPageToast('✅ [Auto-Skip] Video này đã có tick xanh từ trước! Chuyển ngay bài tiếp...');
       navigateToNextLesson();
       setTimeout(() => {
         isStepInProgress = false;
-      }, 1200);
+        lastEvaluatedUrl = '';
+      }, 1000);
       return;
     }
 
-    // 1. Tua video và phát ở 16x kèm gửi chuỗi milestone progress để Coursera player nhận đủ 100%
-    triggerVideoPlaybackProgress(videos);
-    showInPageToast('⏩ [Auto-Skip] Đã tua Video! Đang theo dõi tín hiệu tick xanh...');
+    // Chờ 400ms rồi kiểm tra lại lần 2 đề phòng sidebar vừa render xong
+    await new Promise(r => setTimeout(r, 400));
+    if (isCurrentLessonCompleted()) {
+      showInPageToast('✅ [Auto-Skip] Video này đã có tick xanh từ trước! Chuyển ngay bài tiếp...');
+      navigateToNextLesson();
+      setTimeout(() => {
+        isStepInProgress = false;
+        lastEvaluatedUrl = '';
+      }, 1000);
+      return;
+    }
 
-    // 2. Cơ chế chờ thích ứng thông minh:
-    // - Video nhận tín hiệu nhanh -> Có tick trong 0.5s - 1.5s -> Chuyển bài ngay lập tức!
-    // - Video nhận tín hiệu chậm -> Kiên nhẫn đợi (kèm kích thích nhắc nhở định kỳ) cho tới khi có tick xanh (tối đa 20s)!
-    await waitForLessonTickOrAction(20);
+    // 2. VIDEO CHƯA CÓ TICK XANH:
+    // Tua video tới cuối (duration - 0.5s) và phát kèm gửi milestone progress
+    showInPageToast('⏩ [Auto-Skip] Video chưa có tick xanh, đang tua tới cuối...');
+    triggerVideoPlaybackProgress(videos);
+
+    // 3. Cơ chế chờ thích ứng thông minh:
+    // Kiên nhẫn đợi cho tới khi có ĐÚNG tick xanh trên hàng bài học hiện tại (tối đa 25s)!
+    let gotTick = await waitForLessonTickOrAction(25);
+    if (!gotTick) {
+      // Nếu sau 25s vẫn chưa được tick, kích thích phát lại 1 lần nữa và đợi thêm 5s
+      showInPageToast('⏳ [Auto-Skip] Đang thử gửi lại tiến độ video để nhận tick xanh...');
+      triggerVideoPlaybackProgress(videos);
+      gotTick = await waitForLessonTickOrAction(5);
+    }
+
+    if (gotTick) {
+      showInPageToast('🎉 [Auto-Skip] Đã nhận được tick xanh! Chuyển bài tiếp theo...');
+    } else {
+      showInPageToast('⚠️ [Auto-Skip] Đã tua hết video, chuyển sang bài tiếp...');
+    }
 
     navigateToNextLesson();
     setTimeout(() => {
       isStepInProgress = false;
+      lastEvaluatedUrl = '';
+    }, 1200);
+  }
+
+  // Xử lý bài đọc Reading (Tự động bấm Mark as completed và Go to next item)
+  async function processReadingStep() {
+    showInPageToast('📖 [Auto-Skip] Đang xử lý bài đọc Reading / Supplement...');
+    // Cuộn xuống cuối trang để load hết nội dung và hiển thị nút Mark as completed
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    await new Promise(r => setTimeout(r, 600));
+
+    // 1. Tìm và bấm nút "Mark as completed" hoặc "Marked as completed"
+    const markBtn = findMarkAsCompletedButton();
+    if (markBtn) {
+      showInPageToast('✅ [Auto-Skip] Đã bấm "Mark as completed"!');
+      triggerClick(markBtn);
+      await new Promise(r => setTimeout(r, 800));
+    } else {
+      showInPageToast('ℹ️ [Auto-Skip] Bài đọc đã hoàn thành hoặc không có nút Mark.');
+    }
+
+    // 2. Tìm và bấm ngay nút "Go to next item" hoặc "Next item" để sang bài tiếp
+    showInPageToast('➡️ [Auto-Skip] Đang bấm "Go to next item" để chuyển bài tiếp...');
+    const nextBtn = findNextButton() || findQuizNextItemButton();
+    if (nextBtn) {
+      triggerClick(nextBtn);
+    } else {
+      // Fallback chuyển tiếp qua menu bài học Sidebar
+      navigateToNextLesson();
+    }
+
+    setTimeout(() => {
+      isStepInProgress = false;
+      lastEvaluatedUrl = '';
     }, 1500);
   }
 
-  // Xử lý bài đọc Reading (Tự động bấm Mark as completed và chờ tick xanh)
-  async function processReadingStep() {
-    showInPageToast('📖 [Auto-Skip] Đang đọc tài liệu...');
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  // ==========================================
+  // 5.0 XỬ LÝ BÀI THẢO LUẬN DISCUSSION PROMPT (/discussionPrompt/)
+  // ==========================================
 
-    await new Promise(r => setTimeout(r, 600));
+  // Tìm ô nhập nội dung phản hồi thảo luận (đặc biệt hỗ trợ Slate.js editor của Coursera)
+  function findDiscussionInputElement() {
+    // 1. Slate.js editor chuẩn của Coursera (như cấu trúc DOM người dùng cung cấp):
+    // <div role="textbox" aria-multiline="true" aria-label="Your Reply" data-slate-editor="true" ...>
+    const slateEditor = document.querySelector(
+      'div[data-slate-editor="true"][aria-label="Your Reply"], ' +
+      'div[data-slate-editor="true"], ' +
+      '.data-cml-editor-padding-container [contenteditable="true"], ' +
+      'div[role="textbox"][aria-label="Your Reply"], ' +
+      'div[role="textbox"][data-slate-editor="true"]'
+    );
+    if (slateEditor && !slateEditor.closest('#coursera-helper-hud, header, nav')) {
+      return slateEditor;
+    }
 
-    // Nếu bài đọc đã có tick xanh từ trước
+    // 2. Ô contenteditable khác (Draft.js, Quill, [role="textbox"])
+    const contentEditables = Array.from(document.querySelectorAll(
+      '[contenteditable="true"]:not(#coursera-helper-hud *), [role="textbox"]:not(#coursera-helper-hud *)'
+    ));
+    for (const ce of contentEditables) {
+      if (ce.closest('header, nav[role="navigation"]')) continue;
+      if (ce.offsetParent !== null || ce.offsetWidth > 0 || ce.offsetHeight > 0) return ce;
+    }
+
+    // 3. Textarea thông thường
+    const textareas = Array.from(document.querySelectorAll('textarea:not(#coursera-helper-hud *)'));
+    for (const ta of textareas) {
+      if (ta.closest('header, nav[role="navigation"]')) continue;
+      if (ta.offsetParent !== null || ta.offsetWidth > 0 || ta.offsetHeight > 0) return ta;
+    }
+
+    // 4. Input type text nếu có
+    const inputs = Array.from(document.querySelectorAll('input[type="text"]:not(#coursera-helper-hud *)'));
+    for (const inp of inputs) {
+      if (inp.closest('header, nav[role="navigation"]')) continue;
+      const ph = (inp.placeholder || '').toLowerCase();
+      if (ph.includes('reply') || ph.includes('response') || ph.includes('comment') || ph.includes('bình luận') || ph.includes('phản hồi')) {
+        return inp;
+      }
+    }
+
+    return null;
+  }
+
+  // Tìm nút mở form phản hồi nếu textarea chưa hiển thị (ví dụ "Reply", "Leave a response", "Phản hồi")
+  function findOpenDiscussionReplyButton() {
+    const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"], span.cds-button-label'));
+    for (const el of allBtns) {
+      const b = el.closest('button, a, [role="button"]') || el;
+      if (b.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
+      if (b.disabled || b.getAttribute('aria-disabled') === 'true') continue;
+      
+      const testId = (b.getAttribute('data-testid') || '').toLowerCase();
+      const ariaLabel = (b.getAttribute('aria-label') || '').toLowerCase();
+      if (testId.includes('reply') || testId.includes('response') || ariaLabel.includes('reply') || ariaLabel.includes('response')) {
+        return b;
+      }
+
+      const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+      if (
+        t === 'leave a reply' ||
+        t === 'write a reply' ||
+        t === 'leave a response' ||
+        t === 'write a response' ||
+        t === 'add a response' ||
+        t === 'add response' ||
+        t === 'create thread' ||
+        t === 'start thread' ||
+        t === 'join discussion' ||
+        t.startsWith('leave a reply') ||
+        t.startsWith('write a reply') ||
+        t.startsWith('add a response')
+      ) {
+        return b;
+      }
+    }
+    return null;
+  }
+
+  // Điền text "AMAZING, GOOD JOB!" vào ô nhập thảo luận (Chuẩn hoá cho Slate.js và React state)
+  async function fillDiscussionText(el, text = "AMAZING, GOOD JOB!") {
+    try {
+      el.focus();
+
+      // Nếu là TEXTAREA hoặc INPUT thông thường
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+        const proto = el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+        const valSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+        if (valSetter) {
+          valSetter.call(el, text);
+        } else {
+          el.value = text;
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      }
+
+      // NẾU LÀ SLATE.JS / CONTENTEDITABLE:
+      // Focus và đặt con trỏ Selection vào leaf của Slate
+      el.focus();
+      try {
+        const leaf = el.querySelector('[data-slate-leaf="true"]') ||
+                     el.querySelector('[data-slate-node="text"]') ||
+                     el.querySelector('[data-slate-node="element"]') ||
+                     el;
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(leaf);
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      } catch (e) {}
+
+      // 1. Dispatch beforeinput (Slate.js dùng để nhận diện insertText)
+      try {
+        const beforeEvt = new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: text
+        });
+        el.dispatchEvent(beforeEvt);
+      } catch (e) {}
+
+      // 2. document.execCommand('insertText') - Cách tương thích chuẩn nhất của Blink/Chrome cho ContentEditable
+      try {
+        document.execCommand('insertText', false, text);
+      } catch (e) {}
+
+      // 3. Dispatch paste event (Slate.js có hook onPaste chuyên biệt để đọc clipboardData và cập nhật React state)
+      try {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', text);
+        const pasteEvt = new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: dt
+        });
+        el.dispatchEvent(pasteEvt);
+      } catch (e) {}
+
+      // 4. Dispatch input và change events
+      try {
+        el.dispatchEvent(new InputEvent('input', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: text
+        }));
+      } catch (e) {}
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+
+      // 5. Nếu placeholder vẫn hiển thị, ẩn placeholder đi để tránh che khuất
+      const placeholder = el.querySelector('[data-slate-placeholder="true"]');
+      if (placeholder) {
+        placeholder.style.display = 'none';
+      }
+
+      // Đảm bảo DOM hiển thị chữ nếu Slate chưa tự động cập nhật
+      if (!el.innerText || !el.innerText.includes('AMAZING')) {
+        const p = el.querySelector('p[data-slate-node="element"]') || el;
+        const leaf = p.querySelector('[data-slate-leaf="true"]') || p;
+        leaf.textContent = text;
+      }
+
+      return true;
+    } catch (err) {
+      console.error('CourseraHelper fillDiscussionText error:', err);
+      return false;
+    }
+  }
+
+  // Tìm nút Reply của bài thảo luận (như cấu trúc HTML người dùng cung cấp)
+  // <button class="... cds-button-secondary ..." id="thread_reply_button_3" data-track-component="thread_reply"><span class="cds-button-label">Reply</span></button>
+  function findDiscussionSubmitButton(inputEl, mustBeEnabled = false) {
+    // 1. Selector trực tiếp theo data-track-component="thread_reply" hoặc id="thread_reply_button_..."
+    const directBtn = document.querySelector(
+      'button[data-track-component="thread_reply"], ' +
+      'button[id*="thread_reply_button"], ' +
+      'button[data-testid*="thread_reply"], ' +
+      'button[data-testid*="reply_button"]'
+    );
+    if (directBtn && !directBtn.closest('#coursera-helper-hud, header, nav')) {
+      if (!mustBeEnabled || (!directBtn.disabled && directBtn.getAttribute('aria-disabled') !== 'true')) {
+        return directBtn;
+      }
+    }
+
+    // 2. Tìm trong container/form gần nhất của ô nhập
+    if (inputEl) {
+      const container = inputEl.closest('.data-cml-editor-padding-container')?.parentElement ||
+                        inputEl.closest('form, [class*="reply" i], [class*="container" i]') ||
+                        inputEl.parentElement?.parentElement?.parentElement;
+      if (container) {
+        const cBtns = Array.from(container.querySelectorAll('button, [role="button"], a.cds-button'));
+        for (const btn of cBtns) {
+          if (btn.closest('#coursera-helper-hud, header, nav')) continue;
+          if (mustBeEnabled && (btn.disabled || btn.getAttribute('aria-disabled') === 'true')) continue;
+          const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+          if (txt === 'reply' || txt.includes('reply') || txt === 'post' || txt === 'phản hồi' || txt === 'trả lời') {
+            return btn;
+          }
+        }
+      }
+    }
+
+    // 3. Quét button có nhãn "Reply" trên trang
+    const allBtns = Array.from(document.querySelectorAll('button, [role="button"], a.cds-button'));
+    for (const btn of allBtns) {
+      if (btn.closest('#coursera-helper-hud, header, nav')) continue;
+      if (mustBeEnabled && (btn.disabled || btn.getAttribute('aria-disabled') === 'true')) continue;
+      const label = btn.querySelector('.cds-button-label');
+      const txt = (label ? label.innerText || label.textContent : btn.innerText || btn.textContent || '').trim().toLowerCase();
+      if (txt === 'reply' || txt === 'post reply' || txt === 'submit reply' || txt === 'trả lời' || txt === 'phản hồi') {
+        return btn;
+      }
+    }
+
+    return null;
+  }
+
+  // Thực thi xử lý bước Discussion Prompt
+  async function processDiscussionPromptStep() {
+    showInPageToast('💬 [Auto-Skip] Đang xử lý bài thảo luận Discussion Prompt...');
+
+    // 1. Nếu bài thảo luận này đã có tick xanh từ trước -> chuyển ngay
     if (isCurrentLessonCompleted()) {
-      showInPageToast('✅ [Auto-Skip] Bài đọc đã có tick xanh! Chuyển ngay bài tiếp...');
+      showInPageToast('✅ [Auto-Skip] Bài thảo luận đã có tick xanh từ trước! Chuyển ngay bài tiếp...');
       navigateToNextLesson();
       setTimeout(() => {
         isStepInProgress = false;
-      }, 1200);
+        lastEvaluatedUrl = '';
+      }, 1000);
       return;
     }
 
-    const markBtn = findMarkAsCompletedButton();
-    if (markBtn) {
-      showInPageToast('✅ [Auto-Skip] Đã bấm "Mark as completed"! Đang kiểm tra tick...');
-      triggerClick(markBtn);
-      await waitForLessonTickOrAction(12);
-    } else {
-      await waitForLessonTickOrAction(6);
+    // 2. Tìm ô nhập thảo luận
+    let inputEl = findDiscussionInputElement();
+    if (!inputEl) {
+      const openBtn = findOpenDiscussionReplyButton();
+      if (openBtn) {
+        showInPageToast('💬 Bấm mở ô phản hồi...');
+        triggerClick(openBtn);
+        await new Promise(r => setTimeout(r, 1000));
+        inputEl = findDiscussionInputElement();
+      }
     }
 
-    navigateToNextLesson();
+    if (inputEl) {
+      try { inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {}
+      showInPageToast('✍️ Đang điền "AMAZING, GOOD JOB!"...');
+      fillDiscussionText(inputEl, "AMAZING, GOOD JOB!");
+      await new Promise(r => setTimeout(r, 600));
+
+      // 3. Tìm nút Reply: Đợi React kích hoạt enabled
+      let submitBtn = findDiscussionSubmitButton(inputEl, true);
+      if (!submitBtn) {
+        // Đợi tối đa 1.5s để React cập nhật trạng thái enable
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 150));
+          submitBtn = findDiscussionSubmitButton(inputEl, true);
+          if (submitBtn) break;
+        }
+      }
+
+      // Nếu vẫn chưa tìm được nút enabled, lấy nút Reply kể cả khi có thuộc tính disabled rồi kích hoạt
+      if (!submitBtn) {
+        submitBtn = findDiscussionSubmitButton(inputEl, false);
+      }
+
+      if (submitBtn) {
+        showInPageToast('🚀 Đang nhấn Reply để gửi câu trả lời thảo luận...');
+        // Đảm bảo nút được mở khoá để nhận event
+        submitBtn.removeAttribute('disabled');
+        submitBtn.disabled = false;
+        submitBtn.setAttribute('aria-disabled', 'false');
+        submitBtn.classList.remove('cds-button-disabled');
+
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtType => {
+          submitBtn.dispatchEvent(new MouseEvent(evtType, { bubbles: true, cancelable: true, view: window }));
+        });
+        try { submitBtn.click(); } catch (e) {}
+
+        // Đợi phản hồi và tick xanh từ Coursera (tối đa 8s)
+        showInPageToast('⏳ Đang đợi Coursera ghi nhận câu trả lời và cập nhật tick xanh...');
+        await waitForLessonTickOrAction(8);
+      } else {
+        showInPageToast('⚠️ Không thấy nút Reply khả dụng, thử các nút chuyển tiếp...');
+      }
+    } else {
+      showInPageToast('ℹ️ Không thấy ô thảo luận hoặc đã trả lời xong.');
+    }
+
+    // 3. Nếu có nút Mark as completed
+    const markBtn = findMarkAsCompletedButton();
+    if (markBtn && !isButtonAlreadyCompleted(markBtn)) {
+      triggerClick(markBtn);
+      await new Promise(r => setTimeout(r, 800));
+    }
+
+    // 4. Chuyển sang bài tiếp theo
+    showInPageToast('➡️ Đang bấm chuyển sang bài tiếp theo...');
+    const nextBtn = findNextButton() || findQuizNextItemButton();
+    if (nextBtn) {
+      triggerClick(nextBtn);
+    } else {
+      navigateToNextLesson();
+    }
+
     setTimeout(() => {
       isStepInProgress = false;
+      lastEvaluatedUrl = '';
     }, 1500);
   }
 
@@ -1199,18 +1713,19 @@
 
   // Tìm nút Submit của Coursera Quiz
   function findQuizSubmitButton(mustBeEnabled = true) {
-    // Ưu tiên data-testid
+    // 1. data-testid
     const byTestId = document.querySelector(
       'button[data-testid*="submit"], button[data-testid*="Submit"], button[data-e2e*="submit"]'
     );
-    if (byTestId) {
+    if (byTestId && !byTestId.closest('#coursera-helper-hud, header, nav[role="navigation"]')) {
       if (!mustBeEnabled) return byTestId;
       if (!byTestId.disabled && byTestId.getAttribute('aria-disabled') !== 'true') return byTestId;
     }
 
-    // Tìm theo text
-    const allBtns = Array.from(document.querySelectorAll('button, [role="button"]'));
+    // 2. Quét button theo text
+    const allBtns = Array.from(document.querySelectorAll('button, [role="button"], a.cds-button'));
     for (const btn of allBtns) {
+      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
       if (mustBeEnabled && (btn.disabled || btn.getAttribute('aria-disabled') === 'true')) continue;
       const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
       if (
@@ -1226,47 +1741,55 @@
     return null;
   }
 
-  // Tìm nút xác nhận Submit (popup xác nhận "Ready to submit?" của Coursera)
+  // Tìm nút xác nhận Submit trong modal popup ("Ready to submit?" của Coursera)
   function findSubmitConfirmButton(originalSubmitBtn = null) {
-    // 1. Tìm container modal xác nhận (dựa vào tiêu đề 'Ready to submit' hoặc các class modal CDS)
-    const candidates = Array.from(document.querySelectorAll('*')).filter(el => {
-      if (el.tagName === 'BODY' || el.tagName === 'HTML' || el.children.length === 0) return false;
-      const text = (el.innerText || '').toLowerCase();
-      return (
-        text.includes('ready to submit') ||
-        text.includes('submit review') ||
-        text.includes('submit your review') ||
-        text.includes('sẵn sàng nộp bài') ||
-        text.includes('are you sure you want to submit') ||
-        text.includes('xác nhận nộp')
-      );
+    // 1. Tìm container modal xác nhận
+    const dialogs = Array.from(document.querySelectorAll(
+      '[role="dialog"], [aria-modal="true"], .rc-Dialog, .cds-Modal, [data-testid*="dialog"], [data-testid*="modal"], div[class*="dialog" i], div[class*="modal" i]'
+    ));
+
+    let visibleDialog = dialogs.find(d => {
+      if (d.closest('#coursera-helper-hud')) return false;
+      return d.offsetHeight > 30 && window.getComputedStyle(d).display !== 'none';
     });
 
-    let modalContainer = null;
-    if (candidates.length > 0) {
-      // Sắp xếp container từ nhỏ đến lớn để lấy đúng hộp thoại popup
-      candidates.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
-      modalContainer = candidates[0].closest('div[class*="dialog" i], div[class*="modal" i], [role="dialog"], [aria-modal="true"]') || candidates[0];
+    if (!visibleDialog) {
+      const candidates = Array.from(document.querySelectorAll('*')).filter(el => {
+        if (el.tagName === 'BODY' || el.tagName === 'HTML' || el.children.length === 0) return false;
+        if (el.closest('#coursera-helper-hud, header, nav')) return false;
+        const text = (el.innerText || '').toLowerCase();
+        return (
+          text.includes('ready to submit') ||
+          text.includes('submit review') ||
+          text.includes('submit your review') ||
+          text.includes('sẵn sàng nộp bài') ||
+          text.includes('are you sure you want to submit') ||
+          text.includes('xác nhận nộp')
+        );
+      });
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
+        visibleDialog = candidates[0].closest('div[class*="dialog" i], div[class*="modal" i], [role="dialog"], [aria-modal="true"]') || candidates[0];
+      }
     }
 
-    if (!modalContainer) {
-      modalContainer = document.querySelector('[role="dialog"], [aria-modal="true"], .rc-Dialog, .cds-Modal, [data-testid*="dialog"], [data-testid*="modal"]');
-    }
-
-    // 2. Tìm nút Submit xác nhận bên trong modal (hoặc toàn trang nếu có modal)
-    const searchRoot = modalContainer || document;
+    // 2. Tìm nút Submit xác nhận bên trong modal
+    const searchRoot = visibleDialog || document;
     const allBtns = Array.from(searchRoot.querySelectorAll('button, [role="button"], a.cds-button'));
 
     for (const btn of allBtns) {
+      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
       if (originalSubmitBtn && (btn === originalSubmitBtn || originalSubmitBtn.contains(btn))) continue;
       if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
 
       const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
       // Bỏ qua nút Cancel hoặc Đóng
-      if (txt.includes('cancel') || txt.includes('hủy') || txt.includes('close')) continue;
+      if (txt.includes('cancel') || txt.includes('hủy') || txt.includes('close') || txt === 'back') continue;
 
       if (
         txt === 'submit' ||
+        txt === 'submit quiz' ||
+        txt === 'submit assignment' ||
         txt === 'submit review' ||
         txt === 'yes, submit' ||
         txt === 'nộp bài' ||
@@ -1278,10 +1801,13 @@
       }
     }
 
-    // Fallback: Tìm nút có nền xanh / primary bên cạnh nút "Cancel" trong modal
-    if (modalContainer) {
-      const modalBtns = Array.from(modalContainer.querySelectorAll('button, [role="button"]'));
+    // Fallback: Tìm nút primary bên trong modal
+    if (visibleDialog) {
+      const modalBtns = Array.from(visibleDialog.querySelectorAll('button, [role="button"]'));
       const nonCancel = modalBtns.find(b => {
+        if (b.closest('#coursera-helper-hud')) return false;
+        if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
+        if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
         const t = (b.innerText || '').toLowerCase().trim();
         return t && !t.includes('cancel') && !t.includes('hủy') && !t.includes('close') && b.offsetHeight > 20;
       });
@@ -1291,122 +1817,115 @@
     return null;
   }
 
+  // Kiểm tra xem ô Honor Code agreement-checkbox-base đã được tick hay chưa
+  function isHonorCodeChecked(input) {
+    if (!input) return false;
+    if (input.checked === true) return true;
+    if (input.getAttribute('aria-checked') === 'true') return true;
+    if (input.classList.contains('cds-checkboxAndRadio-checked')) return true;
+    const parent = input.closest('.cds-choiceInput-root, .cds-checkboxAndRadio-input, label');
+    if (parent && (parent.getAttribute('aria-checked') === 'true' || parent.classList.contains('cds-checkboxAndRadio-checked'))) return true;
+    const label = document.querySelector(`label[for="${input.id}"]`);
+    if (label && (label.getAttribute('aria-checked') === 'true' || label.classList.contains('cds-checkboxAndRadio-checked'))) return true;
+    return false;
+  }
+
   // Kích hoạt ô xác nhận Coursera Honor Code chuẩn xác 100%
+  // Khớp chính xác thẻ <input id="agreement-checkbox-base" ...> và các class CDS Coursera
   async function tickHonorCodeAgreement() {
-    // 1. Tìm phần tử input
+    // 1. Tìm phần tử input agreement
     const input = document.getElementById('agreement-checkbox-base') ||
+                  document.querySelector('input.cds-892[type="checkbox"]') ||
+                  document.querySelector('input[id*="agreement-checkbox"]') ||
                   document.querySelector('input[type="checkbox"][id*="agreement"]') ||
-                  document.querySelector('input[type="checkbox"][id*="honor"]') ||
-                  Array.from(document.querySelectorAll('input[type="checkbox"]')).find(cb => {
-                    const txt = (cb.closest('label, div[role="group"], section, fieldset')?.innerText || '').toLowerCase();
-                    return txt.includes('understand and agree') || txt.includes('honor code') || txt.includes('hiểu và đồng ý');
-                  });
+                  document.querySelector('.cds-choiceInput-root input[type="checkbox"]') ||
+                  document.querySelector('.cds-checkboxAndRadio-input input[type="checkbox"]');
 
     if (!input) {
-      console.warn('CourseraHelper: Không tìm thấy ô Honor Code');
+      console.warn('CourseraHelper: Không tìm thấy ô Honor Code agreement-checkbox-base');
       return false;
     }
 
-    // Cuộn vào giữa màn hình
     input.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 250));
 
-    // Nếu đã checked thì xong
-    if (input.checked || input.getAttribute('aria-checked') === 'true') {
+    // Nếu ĐÃ checked rồi -> dừng ngay, KHÔNG click lại (tránh toggle tắt)
+    if (isHonorCodeChecked(input)) {
       highlightOptionCard(input);
       return true;
     }
 
-    // Tìm các phần tử liên quan
-    const label = input.closest('label') || document.querySelector(`label[for="${input.id}"]`);
-    const labelText = document.getElementById('agreement-checkbox-base-label-text') ||
-                      label?.querySelector('[id*="label-text"]') ||
-                      label?.querySelector('.cds-checkboxAndRadio-labelContent') ||
-                      label?.querySelector('.cds-checkboxAndRadio-customInput') ||
-                      label;
-
-    // PHƯƠNG PHÁP 1: Click duy nhất 1 lần vào text của label (như người dùng thật click vào chữ)
-    if (labelText) {
-      ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(type => {
-        labelText.dispatchEvent(new MouseEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          view: window
-        }));
-      });
-      try {
-        labelText.click();
-      } catch (e) {}
-    }
-
-    await new Promise(r => setTimeout(r, 350));
-    if (input.checked || input.getAttribute('aria-checked') === 'true') {
-      highlightOptionCard(input);
-      return true;
-    }
-
-    // PHƯƠNG PHÁP 2: Gọi input.click() trực tiếp
+    // BƯỚC 1: Click trực tiếp vào thẻ <input id="agreement-checkbox-base">
     try {
       input.focus();
       input.click();
     } catch (e) {}
 
-    await new Promise(r => setTimeout(r, 350));
-    if (input.checked || input.getAttribute('aria-checked') === 'true') {
-      highlightOptionCard(input);
-      return true;
+    for (let w = 0; w < 6; w++) {
+      await new Promise(r => setTimeout(r, 100));
+      if (isHonorCodeChecked(input)) {
+        highlightOptionCard(input);
+        return true;
+      }
     }
 
-    // PHƯƠNG PHÁP 3: Thực thi trực tiếp trong Main World để can thiệp React value tracker của Coursera
+    // BƯỚC 2: Click vào <label> hoặc text của label
+    const label = input.closest('label') || document.querySelector(`label[for="${input.id}"]`);
+    const labelText = document.getElementById('agreement-checkbox-base-label-text') ||
+                      label?.querySelector('[id*="label-text"]') ||
+                      label;
+    if (labelText) {
+      try {
+        labelText.click();
+      } catch (e) {}
+    }
+
+    for (let w = 0; w < 6; w++) {
+      await new Promise(r => setTimeout(r, 100));
+      if (isHonorCodeChecked(input)) {
+        highlightOptionCard(input);
+        return true;
+      }
+    }
+
+    // BƯỚC 3: Click vào phần tử visual span của checkbox
+    const visualBox = input.closest('.cds-choiceInput-root, .cds-checkboxAndRadio-input, .cds-846') || input.parentElement;
+    if (visualBox) {
+      try {
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(type => {
+          visualBox.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+        });
+      } catch (e) {}
+    }
+
+    for (let w = 0; w < 6; w++) {
+      await new Promise(r => setTimeout(r, 100));
+      if (isHonorCodeChecked(input)) {
+        highlightOptionCard(input);
+        return true;
+      }
+    }
+
+    // BƯỚC 4: Gán thuộc tính checked trực tiếp và dispatch input, change event
     try {
-      const script = document.createElement('script');
-      script.textContent = `(() => {
-        const el = document.getElementById('${input.id || 'agreement-checkbox-base'}');
-        if (!el || el.checked) return;
-        
-        // Reset React internal tracker nếu có
-        if (el._valueTracker) {
-          el._valueTracker.setValue(false);
-        }
-        
-        // Gọi setter gốc của HTMLInputElement
-        const proto = window.HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(proto, 'checked')?.set;
-        if (setter) {
-          setter.call(el, true);
-        } else {
-          el.checked = true;
-        }
-        
-        // Bắn event change và input để React cập nhật form state
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      })();`;
-      (document.head || document.documentElement).appendChild(script);
-      script.remove();
-    } catch (e) {
-      console.warn('Main world script injection error:', e);
-    }
+      if (input._valueTracker) {
+        input._valueTracker.setValue(false);
+      }
+      const proto = window.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'checked')?.set;
+      if (setter) {
+        setter.call(input, true);
+      } else {
+        input.checked = true;
+      }
+      input.setAttribute('aria-checked', 'true');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (e) {}
 
-    await new Promise(r => setTimeout(r, 400));
-    if (input.checked || input.getAttribute('aria-checked') === 'true') {
-      highlightOptionCard(input);
-      return true;
-    }
-
-    // PHƯƠNG PHÁP 4: Fallback trong Isolated World
-    const proto = window.HTMLInputElement.prototype;
-    const setter = Object.getOwnPropertyDescriptor(proto, 'checked')?.set;
-    if (setter) {
-      setter.call(input, true);
-    } else {
-      input.checked = true;
-    }
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-
+    await new Promise(r => setTimeout(r, 200));
     highlightOptionCard(input);
-    return input.checked || input.getAttribute('aria-checked') === 'true';
+    return isHonorCodeChecked(input);
   }
 
   // Tự động tìm checkbox Coursera Honor Code, tick chọn, sau đó tìm và bấm nút Submit
@@ -1417,34 +1936,54 @@
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     await new Promise(r => setTimeout(r, 600));
 
-    // 1. Kích hoạt ô Honor Code
-    const isTicked = await tickHonorCodeAgreement();
+    // 1. Kích hoạt ô Honor Code nếu chưa được checked
+    const agreementInput = document.getElementById('agreement-checkbox-base') ||
+                           document.querySelector('input.cds-892[type="checkbox"]');
+    let isTicked = isHonorCodeChecked(agreementInput);
+    if (!isTicked) {
+      isTicked = await tickHonorCodeAgreement();
+    }
     if (isTicked) {
       showInPageToast('✅ Đã tích chọn Coursera Honor Code!');
     } else {
       showInPageToast('⏳ Đang mở khóa Honor Code...', false, 2000);
     }
 
-    // 2. Chờ nút Submit chuyển từ disabled sang enabled
+    // 2. Chờ nút Submit chuyển từ disabled sang enabled (tối đa 20 lần = 6s)
     showInPageToast('🚀 Đang kiểm tra nút Submit...');
     let submitBtn = null;
-    for (let attempts = 0; attempts < 16; attempts++) {
+    for (let attempts = 0; attempts < 20; attempts++) {
       submitBtn = findQuizSubmitButton(true); // true = chỉ lấy nút khi đã active/enabled
       if (submitBtn) break;
 
-      // Nếu sau 1.2s nút vẫn chưa enabled, thử kích hoạt lại Honor Code
-      if (attempts === 5 || attempts === 10) {
+      // Chỉ thử tick lại nếu ô Honor Code thật sự chưa được check (tránh toggle tắt)
+      const currentInput = document.getElementById('agreement-checkbox-base') || agreementInput;
+      if (currentInput && !isHonorCodeChecked(currentInput) && (attempts === 5 || attempts === 12)) {
         await tickHonorCodeAgreement();
       }
-      await new Promise(r => setTimeout(r, 250));
+      await new Promise(r => setTimeout(r, 300));
     }
 
     if (!submitBtn) {
-      showInPageToast('⚠️ Nút Submit chưa mở khóa. Bạn hãy tick vào ô xác nhận Honor Code trên màn hình để nộp nhé!', true, 6000);
-      const input = document.getElementById('agreement-checkbox-base');
-      if (input) {
-        highlightOptionCard(input);
-        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Kiểm tra xem có câu nào chưa làm khiến nút Submit bị disable không
+      const containers = getQuestionContainers();
+      const unansweredIndices = [];
+      containers.forEach((c, idx) => {
+        if (!isQuestionContainerAnswered(c)) {
+          unansweredIndices.push(idx + 1);
+        }
+      });
+
+      if (unansweredIndices.length > 0) {
+        showInPageToast(`⚠️ Còn câu ${unansweredIndices.slice(0, 5).join(', ')} chưa chọn đáp án nên Coursera khóa nút Submit! Đang cuộn đến câu ${unansweredIndices[0]}...`, true, 7000);
+        containers[unansweredIndices[0] - 1]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        showInPageToast('⚠️ Nút Submit chưa mở khóa. Bạn hãy tick vào ô xác nhận Honor Code trên màn hình để nộp nhé!', true, 6000);
+        const input = document.getElementById('agreement-checkbox-base') || agreementInput;
+        if (input) {
+          highlightOptionCard(input);
+          input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
       }
       return false;
     }
@@ -1457,12 +1996,12 @@
     submitBtn.style.boxShadow = '0 0 16px rgba(34, 197, 94, 0.6)';
 
     triggerClick(submitBtn);
-    showInPageToast('📤 Đã bấm nút Submit! Đang kiểm tra xác nhận...');
+    showInPageToast('📤 Đã bấm nút Submit! Đang chờ popup xác nhận...', false, 3000);
 
     // 4. Chờ popup/modal xác nhận xuất hiện ("Ready to submit?") và bấm xác nhận
     showInPageToast('⏳ Đang chờ xác nhận "Ready to submit?"...', false, 4000);
     let confirmBtn = null;
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 35; i++) {
       await new Promise(r => setTimeout(r, 300));
       confirmBtn = findSubmitConfirmButton(submitBtn);
       if (confirmBtn) break;
@@ -1484,14 +2023,14 @@
         confirmBtn.click();
       } catch (e) {}
 
-      showInPageToast('🎉 Đã bấm xác nhận Submit thành công! Bài thi đã được nộp trọn vẹn!');
+      showInPageToast('🎉 Đã bấm xác nhận Submit modal thành công! Bài thi đã được nộp trọn vẹn!');
     } else {
-      showInPageToast('🎉 Đã bấm Submit bài thi!');
+      showInPageToast('🎉 Đã nộp bài thi!');
     }
     return true;
   }
 
-  // Quy trình xử lý Quiz trong Auto-Skip: Giải AI -> Submit -> Chờ kết quả -> Chuyển tiếp
+  // Quy trình xử lý Quiz trong Auto-Skip: Giải AI -> Submit -> Chờ kết quả -> Chuyển tiếp liên tục
   async function processQuizStep() {
     showInPageToast('🤖 [Auto-Skip] Phát hiện Quiz/Assignment! Đang kiểm tra trang...', false, 5000);
 
@@ -1507,17 +2046,21 @@
         await new Promise(r => setTimeout(r, 2000));
         isStepInProgress = false;
         isQuizSolveInProgress = false;
+        lastEvaluatedUrl = '';
         return;
       }
     }
 
-    // Bước 0: Kiểm tra nếu đang ở trang giới thiệu (landing page) có nút "Start assignment"
+    // Bước 0: Kiểm tra nếu đang ở trang giới thiệu (landing page) có nút "Start assignment" hoặc "Resume"
     const startAssignmentBtn = findStartAssignmentButton();
     if (startAssignmentBtn) {
-      showInPageToast('📝 [Auto-Skip] Đang vào bài assignment... (bấm Start assignment)', false, 4000);
+      showInPageToast('📝 [Auto-Skip] Đang vào bài assignment... (bấm ' + (startAssignmentBtn.innerText || 'Start') + ')', false, 4000);
       triggerClick(startAssignmentBtn);
-
-      // Chờ SPA navigate sang trang quiz thực sự (có câu hỏi)
+      lastEvaluatedUrl = ''; // Xóa để lần quét tiếp theo ngay lập tức giải đề
+      setTimeout(() => {
+        isStepInProgress = false;
+        isQuizSolveInProgress = false;
+      }, 2500);
       return;
     }
 
@@ -1525,7 +2068,7 @@
     showInPageToast('🔍 [Auto-Skip] Đang quét câu hỏi trên trang...');
     let questions = await extractAllQuizQuestionsFromDOM();
 
-    // Nếu chưa thấy câu hỏi (trang chưa load), thử lại sau 2s
+    // Nếu chưa thấy câu hỏi (trang đang tải), thử lại sau 2s
     if (!questions || questions.length === 0) {
       await new Promise(r => setTimeout(r, 2000));
       questions = await extractAllQuizQuestionsFromDOM();
@@ -1541,13 +2084,12 @@
           await new Promise(r => setTimeout(r, 2000));
           isStepInProgress = false;
           isQuizSolveInProgress = false;
+          lastEvaluatedUrl = '';
           return;
         }
       }
 
-      showInPageToast('⚠️ [Auto-Skip] Không tìm thấy câu hỏi quiz! Thử tìm nút chuyển tiếp...', true, 4000);
-      await new Promise(r => setTimeout(r, 1500));
-      navigateToNextLesson();
+      showInPageToast('⚠️ [Auto-Skip] Chưa thấy câu hỏi quiz. Đang kiểm tra lại...');
       isStepInProgress = false;
       isQuizSolveInProgress = false;
       return;
@@ -1555,9 +2097,14 @@
 
     showInPageToast(`✅ [Auto-Skip] Tìm thấy ${questions.length} câu hỏi! Đang gọi Gemini giải...`, false, 5000);
 
-    // Bước 2: Gọi Gemini giải và tự tick đáp án (dùng inline solver)
-    const { gemini_api_key: apiKey, gemini_model: savedModel } = await chrome.storage.local.get(['gemini_api_key', 'gemini_model']);
-    if (!apiKey) {
+    // Bước 2: Gọi Gemini giải và tự tick đáp án (dùng inline solver với cơ chế xoay tua key)
+    const storageData = await chrome.storage.local.get(['gemini_api_key', 'gemini_api_keys', 'gemini_api_key_1', 'gemini_api_key_2', 'gemini_api_key_3', 'gemini_model']);
+    let keys = Array.isArray(storageData?.gemini_api_keys) && storageData.gemini_api_keys.length > 0
+      ? storageData.gemini_api_keys
+      : [storageData?.gemini_api_key_1, storageData?.gemini_api_key_2, storageData?.gemini_api_key_3, storageData?.gemini_api_key].filter(Boolean);
+    keys = Array.from(new Set(keys.filter(Boolean)));
+
+    if (keys.length === 0) {
       showInPageToast('⚠️ [Auto-Skip] Chưa có API Key! Dừng lại để bạn cài đặt.', true, 6000);
       chrome.storage.local.set({ auto_skip_active: false });
       updateFloatingHUD(false);
@@ -1567,31 +2114,65 @@
       return;
     }
 
-    // Tên model fake không tồn tại trong API
-    const FAKE_PREFIXES = ['gemini-3.6', 'gemini-3.8', 'gemini-3.5', 'gemini-3.'];
-    const isRealModelName = (n) => n && !FAKE_PREFIXES.some(p => n.startsWith(p));
-    const model = isRealModelName(savedModel) ? savedModel : 'gemini-2.5-flash';
-    const BATCH_SIZE = 12;
-    const totalBatches = Math.ceil(questions.length / BATCH_SIZE);
+    // Model Gemini (chỉ dùng từ 3.6 trở lên)
+    const DEPRECATED_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
+    const isSupportedModel = (n) => n && !DEPRECATED_MODELS.includes(n);
+    const savedModel = storageData?.gemini_model;
+    const model = isSupportedModel(savedModel) ? savedModel : 'gemini-3.6-flash';
+    const BATCH_SIZE = 4; // Chia nhỏ đề bài để tránh quá tải tải trọng máy chủ Google
+    const totalQuestions = questions.length;
+    const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
+    let allAnswers = [];
 
     for (let b = 0; b < totalBatches; b++) {
       const startIdx = b * BATCH_SIZE;
-      const endIdx = Math.min(startIdx + BATCH_SIZE, questions.length);
+      const endIdx = Math.min(startIdx + BATCH_SIZE, totalQuestions);
       const batchQuestions = questions.slice(startIdx, endIdx);
 
-      showInPageToast(`⏳ [Auto-Skip] Đang giải câu ${startIdx + 1} - ${endIdx} / ${questions.length}...`);
+      // Nếu tất cả câu trong batch này đã có đáp án (người dùng làm trước hoặc lần quét trước đã tick), bỏ qua
+      const currentContainers = getQuestionContainers();
+      const unansInBatch = batchQuestions.filter(q => {
+        const qNum = q.q;
+        const c = currentContainers.find(ct => {
+          const txt = ct.innerText || '';
+          return new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i').test(txt);
+        }) || currentContainers[qNum - 1];
+        return !c || !isQuestionContainerAnswered(c);
+      });
+
+      if (unansInBatch.length === 0) {
+        continue;
+      }
+
+      showInPageToast(`⏳ [Auto-Skip] Đang giải câu ${startIdx + 1} - ${endIdx} / ${totalQuestions}...`);
       const parts = buildMultimodalBatchParts(batchQuestions, startIdx + 1, endIdx);
 
-      try {
-        const text = await callGeminiDirectParts(apiKey, model, parts);
-        if (text) {
-          const answers = parseAnswersFromText(text);
-          if (answers.length > 0) {
-            await autoFillCourseraQuiz(answers);
+      let batchSolved = false;
+      for (let retry = 0; retry < 3; retry++) {
+        try {
+          const text = await callGeminiDirectParts(keys, model, parts);
+          if (text) {
+            const answers = parseAnswersFromText(text);
+            if (answers.length > 0) {
+              allAnswers.push(...answers);
+              await autoFillCourseraQuiz(answers);
+              batchSolved = true;
+              break;
+            }
           }
+        } catch (err) {
+          console.error('[Auto-Skip] Quiz solver batch error:', err);
         }
-      } catch (err) {
-        console.error('[Auto-Skip] Quiz solver batch error:', err);
+
+        if (!batchSolved && retry < 2) {
+          let waitSec = 22;
+          if (window._chLastGeminiError) {
+            const m = window._chLastGeminiError.match(/đợi\s*(\d+)\s*s/i);
+            if (m) waitSec = parseInt(m[1], 10) + 2;
+          }
+          showInPageToast(`⏳ Google chạm Rate Limit (20 req/p). Tạm dừng ${waitSec}s rồi tự động giải tiếp câu ${startIdx + 1} - ${endIdx}...`, false, waitSec * 1000);
+          await new Promise(r => setTimeout(r, waitSec * 1000));
+        }
       }
 
       if (b < totalBatches - 1) {
@@ -1599,7 +2180,48 @@
       }
     }
 
-    showInPageToast('📝 [Auto-Skip] Đã tick đáp án xong! Đang xác nhận Honor Code và nộp bài...', false, 3000);
+    // KIỂM TRA TOÀN DIỆN: ĐẢM BẢO KHÔNG CÒN CÂU NÀO BỊ BỎ SÓT TRƯỚC KHI NỘP!
+    let remainingUnanswered = getUnansweredQuestions(questions);
+    if (remainingUnanswered.length > 0) {
+      showInPageToast(`⚠️ Còn ${remainingUnanswered.length} câu chưa có đáp án (Câu ${remainingUnanswered.map(q => q.q).slice(0, 6).join(', ')}...). Đang giải bổ sung trước khi nộp!`, true, 6000);
+
+      // Thử giải tiếp các câu còn thiếu (tối đa 2 lượt)
+      for (let pass = 0; pass < 2 && remainingUnanswered.length > 0; pass++) {
+        const subBatches = Math.ceil(remainingUnanswered.length / BATCH_SIZE);
+        for (let sb = 0; sb < subBatches; sb++) {
+          const sIdx = sb * BATCH_SIZE;
+          const eIdx = Math.min(sIdx + BATCH_SIZE, remainingUnanswered.length);
+          const subQs = remainingUnanswered.slice(sIdx, eIdx);
+
+          showInPageToast(`⏳ Đang giải vét các câu: ${subQs.map(q => q.q).join(', ')}...`);
+          const parts = buildMultimodalBatchParts(subQs, subQs[0].q, subQs[subQs.length - 1].q);
+
+          try {
+            const text = await callGeminiDirectParts(keys, model, parts);
+            if (text) {
+              const answers = parseAnswersFromText(text);
+              if (answers.length > 0) {
+                allAnswers.push(...answers);
+                await autoFillCourseraQuiz(answers);
+              }
+            }
+          } catch (e) {}
+
+          await new Promise(r => setTimeout(r, 600));
+        }
+        remainingUnanswered = getUnansweredQuestions(questions);
+      }
+    }
+
+    // NẾU VẪN CÒN CÂU CHƯA TICK -> KHÔNG ĐƯỢC PHÉP NỘP!
+    if (remainingUnanswered.length > 0) {
+      showInPageToast(`⚠️ Vẫn còn ${remainingUnanswered.length} câu chưa làm xong (Câu ${remainingUnanswered.map(q => q.q).slice(0, 5).join(', ')}...). Dừng nộp bài để bạn kiểm tra lại!`, true, 8000);
+      isStepInProgress = false;
+      isQuizSolveInProgress = false;
+      return;
+    }
+
+    showInPageToast(`🎉 Đã tick hoàn chỉnh ${questions.length} / ${questions.length} câu hỏi! Đang xác nhận Honor Code và nộp bài...`, false, 4000);
     await new Promise(r => setTimeout(r, 1000));
 
     // Bước 3: Tự động tick Honor Code và nộp bài
@@ -1649,27 +2271,39 @@
       navigateToNextLesson();
     }
 
+    lastEvaluatedUrl = ''; // Xóa để bài tiếp theo sẽ được scan bình thường và liên tục
     await new Promise(r => setTimeout(r, 2000));
     isStepInProgress = false;
     isQuizSolveInProgress = false;
   }
 
-  // Tìm nút "Start assignment" trên trang giới thiệu của Graded Assignment
+  // Tìm nút "Start assignment" hoặc "Resume" trên trang giới thiệu của Graded Assignment
   function findStartAssignmentButton() {
-    // Thử theo data-testid của Coursera
-    const byTestId = document.querySelector(
-      'button[data-testid*="start"], a[data-testid*="start-assignment"], button[data-e2e*="start"]'
-    );
-    if (byTestId) return byTestId;
+    // Nếu trên trang đã có các câu hỏi trắc nghiệm rồi thì không tìm nút Start nữa
+    if (getQuestionContainers().length > 0) return null;
 
-    // Tìm theo text của nút
+    // 1. Data-testid của Coursera
+    const byTestId = document.querySelector(
+      'button[data-testid*="start"], a[data-testid*="start-assignment"], button[data-e2e*="start"], button[data-testid*="resume"], a[data-testid*="resume"]'
+    );
+    if (byTestId && !byTestId.closest('#coursera-helper-hud, header, nav[role="navigation"]')) return byTestId;
+
+    // 2. Tìm theo text của nút
     const allBtns = Array.from(document.querySelectorAll('button, a[role="button"], a.cds-button'));
     for (const btn of allBtns) {
+      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
       const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
       if (
         txt === 'start assignment' ||
+        txt === 'resume assignment' ||
+        txt === 'resume' ||
+        txt === 'start quiz' ||
+        txt === 'take quiz' ||
+        txt === 'start' ||
         txt === 'bắt đầu làm bài' ||
+        txt === 'tiếp tục' ||
         txt.includes('start assignment') ||
+        txt.includes('resume assignment') ||
         txt.includes('begin assignment')
       ) {
         return btn;
@@ -1684,8 +2318,11 @@
 
   let isPeerReviewInProgress = false;
 
+  // Hằng số câu trả lời nhận xét Peer Review
+  const PEER_FEEDBACK_TEXT = 'AMAZING GOOD JOB EM!';
+
   // Điền văn bản vào thẻ textarea / input chuẩn React SyntheticEvent
-  function setFeedbackInputValue(el, value = 'GOOD!') {
+  function setFeedbackInputValue(el, value = PEER_FEEDBACK_TEXT) {
     if (!el) return false;
     try {
       el.focus();
@@ -1722,18 +2359,21 @@
     }
   }
 
-  // Tự động chấm điểm 1 bài Peer Review hiện tại (chọn điểm cao nhất và điền GOOD!)
+  // Tự động chấm điểm 1 bài Peer Review hiện tại
+  // Hỗ trợ cả 2 dạng: (1) Có bảng Rubric radio chọn điểm, (2) Chỉ có ô nhận xét/câu trả lời không cần chọn điểm
   async function gradeCurrentPeerReview() {
-    showInPageToast('🔍 Đang phân tích bảng Rubric & tìm mức điểm cao nhất...');
+    showInPageToast('🔍 Đang kiểm tra bài làm Peer Review & các ô nhận xét...');
 
-    // 1. Quét tất cả radio buttons trên trang
     const allRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
+    const textareas = Array.from(document.querySelectorAll(
+      'textarea, input[type="text"][placeholder*="feedback" i], input[type="text"][placeholder*="nhận xét" i], input[type="text"][placeholder*="comment" i], div[contenteditable="true"]'
+    )).filter(ta => !ta.disabled && !ta.readOnly && !ta.closest('header, nav, aside, #coursera-helper-hud'));
 
-    if (allRadios.length === 0) {
-      // Có thể là trang bắt đầu chấm (chưa mở bài chấm thực tế)
+    // Nếu không có cả radio lẫn ô textarea/input
+    if (allRadios.length === 0 && textareas.length === 0) {
       const startReviewBtn = Array.from(document.querySelectorAll('button, a, [role="button"]')).find(b => {
         const t = (b.innerText || b.textContent || '').toLowerCase().trim();
-        return t.includes('review a peer') || t.includes('start review') || t.includes('bắt đầu chấm') || t.includes('chấm bài');
+        return t.includes('review a peer') || t.includes('start review') || t.includes('bắt đầu chấm') || t.includes('chấm bài') || t.includes('review another peer');
       });
       if (startReviewBtn) {
         showInPageToast('📝 Đang mở bài Peer để chấm...');
@@ -1741,76 +2381,72 @@
         await new Promise(r => setTimeout(r, 2000));
         return { success: false, needWait: true };
       }
-      return { success: false, needWait: false, message: 'Không tìm thấy Rubric chấm điểm trên trang này!' };
+      return { success: false, needWait: false, message: 'Không tìm thấy bài chấm Peer Review trên trang này!' };
     }
-
-    // Nhóm radio theo nhóm tiêu chí (name hoặc container fieldset/radiogroup)
-    const radioGroups = new Map();
-    allRadios.forEach((radio, idx) => {
-      let groupKey = radio.name || radio.getAttribute('name');
-      if (!groupKey) {
-        const parent = radio.closest('fieldset, div[role="radiogroup"], .cds-formGroup, tr, table') || radio.parentElement?.parentElement;
-        groupKey = parent ? (parent.id || ('group_' + idx)) : ('radio_' + idx);
-      }
-      if (!radioGroups.has(groupKey)) radioGroups.set(groupKey, []);
-      radioGroups.get(groupKey).push(radio);
-    });
 
     let criteriaTicked = 0;
 
-    for (const [groupName, radios] of radioGroups) {
-      if (radios.length === 0) continue;
+    // 1. Nếu có bảng Rubric với các nút Radio chọn điểm -> Chọn mức điểm cao nhất
+    if (allRadios.length > 0) {
+      const radioGroups = new Map();
+      allRadios.forEach((radio, idx) => {
+        let groupKey = radio.name || radio.getAttribute('name');
+        if (!groupKey) {
+          const parent = radio.closest('fieldset, div[role="radiogroup"], .cds-formGroup, tr, table') || radio.parentElement?.parentElement;
+          groupKey = parent ? (parent.id || ('group_' + idx)) : ('radio_' + idx);
+        }
+        if (!radioGroups.has(groupKey)) radioGroups.set(groupKey, []);
+        radioGroups.get(groupKey).push(radio);
+      });
 
-      // Đánh giá từng option để tìm option có số điểm cao nhất
-      let bestRadio = null;
-      let maxPoints = -1;
+      for (const [groupName, radios] of radioGroups) {
+        if (radios.length === 0) continue;
 
-      for (const r of radios) {
-        const label = r.closest('label') || document.querySelector(`label[for="${r.id}"]`) || r.parentElement;
-        const text = (label ? (label.innerText || label.textContent) : '') || '';
+        let bestRadio = null;
+        let maxPoints = -1;
 
-        // Phân tích số điểm (ví dụ: "4 points", "4 điểm", "3 pts")
-        const match = text.match(/(\d+(?:\.\d+)?)\s*(?:points?|pts|điểm)/i);
-        if (match) {
-          const pt = parseFloat(match[1]);
-          if (pt > maxPoints) {
-            maxPoints = pt;
-            bestRadio = r;
+        for (const r of radios) {
+          const label = r.closest('label') || document.querySelector(`label[for="${r.id}"]`) || r.parentElement;
+          const text = (label ? (label.innerText || label.textContent) : '') || '';
+
+          const match = text.match(/(\d+(?:\.\d+)?)\s*(?:points?|pts|điểm)/i);
+          if (match) {
+            const pt = parseFloat(match[1]);
+            if (pt > maxPoints) {
+              maxPoints = pt;
+              bestRadio = r;
+            }
           }
+        }
+
+        if (!bestRadio) {
+          bestRadio = radios[radios.length - 1];
+        }
+
+        if (bestRadio) {
+          const ok = tickOptionElement(bestRadio);
+          if (ok) criteriaTicked++;
+          await new Promise(r => setTimeout(r, 80));
         }
       }
 
-      // Fallback: Nếu không đọc được số điểm, lấy option cuối cùng (theo chuẩn Coursera Rubric thường xếp từ thấp đến cao)
-      if (!bestRadio) {
-        bestRadio = radios[radios.length - 1];
+      if (criteriaTicked > 0) {
+        showInPageToast(`✅ Đã chọn điểm cao nhất cho ${criteriaTicked} tiêu chí Rubric!`);
       }
-
-      if (bestRadio) {
-        const ok = tickOptionElement(bestRadio);
-        if (ok) criteriaTicked++;
-        await new Promise(r => setTimeout(r, 80));
-      }
+    } else {
+      showInPageToast('ℹ️ Bài Peer này không yêu cầu chọn điểm, tự động điền câu trả lời nhận xét...');
     }
 
-    showInPageToast(`✅ Đã chọn điểm cao nhất cho ${criteriaTicked} tiêu chí Rubric!`);
-
-    // 2. Tự động điền "GOOD!" vào tất cả các ô Feedback / nhận xét
-    const textareas = Array.from(document.querySelectorAll(
-      'textarea, input[type="text"][placeholder*="feedback" i], input[type="text"][placeholder*="nhận xét" i], input[type="text"][placeholder*="comment" i], div[contenteditable="true"]'
-    ));
-
+    // 2. Tự động điền "AMAZING GOOD JOB EM!" vào tất cả các ô Feedback / nhận xét / câu trả lời
     let feedbackCount = 0;
     for (const ta of textareas) {
-      if (ta.disabled || ta.readOnly) continue;
-      if (ta.closest('header, nav, aside, #coursera-helper-hud')) continue;
-
-      setFeedbackInputValue(ta, 'GOOD!');
+      setFeedbackInputValue(ta, PEER_FEEDBACK_TEXT);
       feedbackCount++;
       await new Promise(r => setTimeout(r, 60));
     }
 
     if (feedbackCount > 0) {
-      showInPageToast(`✍️ Đã tự động điền "GOOD!" vào ${feedbackCount} ô nhận xét!`);
+      showInPageToast(`✍️ Đã điền "${PEER_FEEDBACK_TEXT}" vào ${feedbackCount} ô câu trả lời!`);
     }
 
     // 3. Đảm bảo tích Honor Code và các checkbox thỏa thuận (nếu có)
@@ -1881,7 +2517,7 @@
         const textareas = Array.from(document.querySelectorAll('textarea, div[contenteditable="true"]'));
         textareas.forEach(ta => {
           if (!ta.value || ta.value.trim() === '') {
-            setFeedbackInputValue(ta, 'GOOD!');
+            setFeedbackInputValue(ta, PEER_FEEDBACK_TEXT);
           } else {
             ta.dispatchEvent(new Event('input', { bubbles: true }));
             ta.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1966,6 +2602,8 @@
         txt.includes('review another') ||
         txt.includes('review more') ||
         txt.includes('continue to next peer') ||
+        txt.includes('go to next item') ||
+        txt.includes('next item') ||
         txt.includes('chấm bài tiếp') ||
         txt.includes('đánh giá bạn khác')
       );
@@ -2050,10 +2688,16 @@
           break;
         }
 
-        // 2. DOM đã reset (các radio options đã được bỏ chọn, sẵn sàng cho bài chấm mới)
+        // 2. DOM đã reset (các radio options đã được bỏ chọn hoặc có textarea mới sẵn sàng)
         const allCurrentRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
         const checkedRadios = allCurrentRadios.filter(r => r.checked);
         if (allCurrentRadios.length > 0 && checkedRadios.length === 0) {
+          nextReady = true;
+          break;
+        }
+
+        const currentTextareas = Array.from(document.querySelectorAll('textarea')).filter(ta => !ta.closest('#coursera-helper-hud'));
+        if (currentTextareas.length > 0 && currentTextareas.some(ta => !ta.value || ta.value.trim() === '')) {
           nextReady = true;
           break;
         }
@@ -2098,7 +2742,7 @@
     }
 
     if (currentCount > 0) {
-      showInPageToast(`🏆 XUẤT SẮC! Đã tự động chấm xong ${currentCount}/${targetReviews} bài Peer Review với điểm tuyệt đối và feedback GOOD!`, false, 7000);
+      showInPageToast(`🏆 XUẤT SẮC! Đã tự động hoàn thành ${currentCount}/${targetReviews} bài Peer Review với đánh giá "${PEER_FEEDBACK_TEXT}"!`, false, 7000);
     }
   }
 
@@ -2208,10 +2852,9 @@
     try {
       chrome.storage.local.get(['auto_skip_active', 'auto_peer_active'], (res) => {
         if (chrome.runtime.lastError) return;
+        createFloatingHUD();
         if (res && res.auto_skip_active) {
           startAutoSkipLoop();
-        } else {
-          createFloatingHUD();
         }
 
         // Tự động khôi phục quy trình chấm Peer Review nếu trang reload
@@ -2248,7 +2891,7 @@
 
   // ==========================================
   // 6. THANH ĐIỀU KHIỂN NỔI (HUD) TRỰC TIẾP TRÊN COURSERA
-  // Giúp người dùng click trực tiếp ngay trên trang Coursera không cần mở Side Panel
+  // Thiết kế UX thông minh: Nhấn 1 lần để Mở rộng / Thu nhỏ • Nhấn giữ để Kéo thả tự do
   // ==========================================
   let floatingHUD = null;
 
@@ -2261,89 +2904,281 @@
       const styleTag = document.createElement('style');
       styleTag.id = 'coursera-helper-hud-styles';
       styleTag.textContent = `
+        #coursera-helper-hud, #coursera-helper-hud * {
+          box-sizing: border-box !important;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+          line-height: 1 !important;
+          color: #ffffff !important;
+        }
+
         #coursera-helper-hud {
-          position: fixed;
-          top: 18px;
-          right: 22px;
-          z-index: 2147483646;
-          background: rgba(15, 23, 42, 0.94);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          border: 1px solid rgba(255, 255, 255, 0.12);
-          box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
-          border-radius: 12px;
-          padding: 6px 8px;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-          user-select: none;
+          position: fixed !important;
+          z-index: 2147483646 !important;
+          background: rgba(15, 23, 42, 0.94) !important;
+          backdrop-filter: blur(20px) saturate(180%) !important;
+          -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+          border: 1.5px solid rgba(255, 255, 255, 0.18) !important;
+          box-shadow: 0 16px 40px -6px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.2) !important;
+          border-radius: 9999px !important;
+          padding: 5px 7px !important;
+          display: flex !important;
+          flex-direction: row !important;
+          flex-wrap: nowrap !important;
+          align-items: center !important;
+          gap: 6px !important;
+          user-select: none !important;
+          cursor: grab !important;
+          transition: box-shadow 0.25s ease, background 0.25s ease, border-color 0.25s ease !important;
+          width: auto !important;
+          height: 46px !important;
+          max-width: none !important;
+          white-space: nowrap !important;
+          touch-action: none !important;
         }
+
+        #coursera-helper-hud:hover {
+          border-color: rgba(56, 189, 248, 0.5) !important;
+          box-shadow: 0 20px 48px -6px rgba(0, 0, 0, 0.85), 0 0 16px rgba(56, 189, 248, 0.25), inset 0 1px 0 0 rgba(255, 255, 255, 0.3) !important;
+        }
+
+        #coursera-helper-hud.is-dragging,
+        #coursera-helper-hud.is-dragging #ch-hud-header {
+          cursor: grabbing !important;
+          box-shadow: 0 24px 56px -6px rgba(0, 0, 0, 0.9), 0 0 0 2px rgba(56, 189, 248, 0.8) !important;
+        }
+
+        /* Header Pill / Logo Trigger */
+        #ch-hud-header {
+          display: inline-flex !important;
+          flex-direction: row !important;
+          flex-wrap: nowrap !important;
+          align-items: center !important;
+          gap: 8px !important;
+          padding: 0 12px !important;
+          height: 34px !important;
+          border-radius: 9999px !important;
+          background: rgba(255, 255, 255, 0.08) !important;
+          border: 1px solid rgba(255, 255, 255, 0.12) !important;
+          cursor: grab !important;
+          transition: background 0.2s ease, border-color 0.2s ease !important;
+          flex-shrink: 0 !important;
+          white-space: nowrap !important;
+        }
+
+        #ch-hud-header:hover {
+          background: rgba(255, 255, 255, 0.16) !important;
+          border-color: rgba(56, 189, 248, 0.4) !important;
+        }
+
+        .ch-hud-logo-svg {
+          width: 21px !important;
+          height: 21px !important;
+          min-width: 21px !important;
+          min-height: 21px !important;
+          display: inline-block !important;
+          flex-shrink: 0 !important;
+          filter: drop-shadow(0 2px 5px rgba(56, 189, 248, 0.6)) !important;
+        }
+
+        #coursera-helper-hud .ch-hud-logo-svg path {
+          fill: url(#ch-grad-cyan) !important;
+        }
+
+        #coursera-helper-hud .ch-hud-brand-text,
+        #coursera-helper-hud .ch-hud-brand-text span {
+          font-size: 13.5px !important;
+          font-weight: 700 !important;
+          color: #ffffff !important;
+          letter-spacing: -0.01em !important;
+          white-space: nowrap !important;
+          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9) !important;
+          display: inline-block !important;
+          vertical-align: middle !important;
+        }
+
+        #coursera-helper-hud .ch-hud-brand-accent {
+          color: #38bdf8 !important;
+          font-weight: 700 !important;
+          text-shadow: 0 0 10px rgba(56, 189, 248, 0.6) !important;
+          display: inline !important;
+        }
+
+        /* Status Dot */
+        .ch-hud-status-dot {
+          width: 7px !important;
+          height: 7px !important;
+          min-width: 7px !important;
+          border-radius: 50% !important;
+          background: #64748b !important;
+          transition: all 0.3s ease !important;
+          display: inline-block !important;
+          flex-shrink: 0 !important;
+        }
+
+        .ch-hud-status-dot.is-active {
+          background: #10b981 !important;
+          box-shadow: 0 0 8px #10b981, 0 0 14px rgba(16, 185, 129, 0.7) !important;
+          animation: ch-dot-pulse 1.8s infinite !important;
+        }
+
+        @keyframes ch-dot-pulse {
+          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+          70% { transform: scale(1.2); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        /* Chevron Icon */
+        .ch-hud-chevron-wrap {
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          color: #38bdf8 !important;
+          flex-shrink: 0 !important;
+        }
+
+        #ch-hud-expand-indicator {
+          color: #38bdf8 !important;
+          transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease !important;
+          display: inline-block !important;
+          flex-shrink: 0 !important;
+        }
+
+        #ch-hud-header:hover #ch-hud-expand-indicator {
+          color: #ffffff !important;
+        }
+
+        /* Divider */
+        .ch-hud-divider {
+          width: 1px !important;
+          height: 20px !important;
+          background: rgba(255, 255, 255, 0.18) !important;
+          margin: 0 2px !important;
+          flex-shrink: 0 !important;
+          display: block !important;
+        }
+
+        /* Collapsed Mode */
+        #coursera-helper-hud.is-collapsed {
+          padding: 4px !important;
+        }
+
+        #coursera-helper-hud.is-collapsed #ch-hud-header {
+          background: transparent !important;
+          border: none !important;
+          padding: 0 10px !important;
+        }
+
+        #coursera-helper-hud.is-collapsed .ch-hud-divider {
+          display: none !important;
+        }
+
+        #coursera-helper-hud.is-collapsed #ch-hud-buttons {
+          display: none !important;
+        }
+
+        /* Expanded Buttons Container */
+        #ch-hud-buttons {
+          display: flex !important;
+          flex-direction: row !important;
+          flex-wrap: nowrap !important;
+          align-items: center !important;
+          gap: 6px !important;
+          flex-shrink: 0 !important;
+          white-space: nowrap !important;
+        }
+
+        /* Buttons Styling */
         .ch-hud-btn {
-          border: none;
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 13.5px;
-          font-weight: 600;
-          line-height: 1;
-          padding: 8px 14px;
-          border-radius: 8px;
-          transition: all 0.15s ease-in-out;
-          letter-spacing: -0.01em;
-          white-space: nowrap;
-          text-decoration: none;
+          border: none !important;
+          cursor: pointer !important;
+          display: inline-flex !important;
+          flex-direction: row !important;
+          flex-wrap: nowrap !important;
+          align-items: center !important;
+          gap: 6px !important;
+          font-size: 13px !important;
+          font-weight: 600 !important;
+          line-height: 1 !important;
+          height: 34px !important;
+          padding: 0 13px !important;
+          border-radius: 9999px !important;
+          transition: transform 0.15s ease, filter 0.15s ease, box-shadow 0.15s ease !important;
+          letter-spacing: -0.01em !important;
+          white-space: nowrap !important;
+          text-decoration: none !important;
+          outline: none !important;
+          flex-shrink: 0 !important;
+          color: #ffffff !important;
         }
+
+        .ch-hud-btn span {
+          color: #ffffff !important;
+          white-space: nowrap !important;
+          display: inline-block !important;
+        }
+
+        .ch-hud-btn:hover {
+          filter: brightness(1.12) !important;
+          transform: translateY(-1px) !important;
+        }
+
         .ch-hud-btn:active {
-          transform: scale(0.97);
+          transform: scale(0.96) translateY(0) !important;
         }
-        #ch-hud-solvequiz {
-          background: #2563eb;
-          color: #ffffff;
-          box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+
+        .ch-btn-primary {
+          background: linear-gradient(135deg, #2563eb, #3b82f6) !important;
+          box-shadow: 0 2px 10px rgba(37, 99, 235, 0.4) !important;
         }
-        #ch-hud-solvequiz:hover {
-          background: #1d4ed8;
-          box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5);
+
+        .ch-btn-primary:hover {
+          box-shadow: 0 4px 16px rgba(37, 99, 235, 0.6) !important;
         }
-        #ch-hud-peerreview {
-          background: #7c3aed;
-          color: #ffffff;
-          box-shadow: 0 2px 8px rgba(124, 58, 237, 0.35);
+
+        .ch-btn-purple {
+          background: linear-gradient(135deg, #7c3aed, #8b5cf6) !important;
+          box-shadow: 0 2px 10px rgba(124, 58, 237, 0.4) !important;
         }
-        #ch-hud-peerreview:hover {
-          background: #6d28d9;
-          box-shadow: 0 4px 14px rgba(124, 58, 237, 0.5);
+
+        .ch-btn-purple:hover {
+          box-shadow: 0 4px 16px rgba(124, 58, 237, 0.6) !important;
         }
-        #ch-hud-peerreview.is-active {
-          background: #e11d48;
-          box-shadow: 0 2px 8px rgba(225, 29, 72, 0.35);
+
+        .ch-btn-purple.is-active {
+          background: linear-gradient(135deg, #e11d48, #f43f5e) !important;
+          box-shadow: 0 2px 10px rgba(225, 29, 72, 0.5) !important;
         }
-        #ch-hud-autoskip {
-          background: #059669;
-          color: #ffffff;
-          box-shadow: 0 2px 8px rgba(5, 150, 105, 0.35);
+
+        .ch-btn-green {
+          background: linear-gradient(135deg, #059669, #10b981) !important;
+          box-shadow: 0 2px 10px rgba(5, 150, 105, 0.4) !important;
         }
-        #ch-hud-autoskip:hover {
-          background: #047857;
-          box-shadow: 0 4px 14px rgba(5, 150, 105, 0.5);
+
+        .ch-btn-green:hover {
+          box-shadow: 0 4px 16px rgba(5, 150, 105, 0.6) !important;
         }
-        #ch-hud-autoskip.is-active {
-          background: #dc2626;
-          box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+
+        .ch-btn-green.is-active {
+          background: linear-gradient(135deg, #dc2626, #ef4444) !important;
+          box-shadow: 0 2px 12px rgba(220, 38, 38, 0.5) !important;
+          animation: ch-btn-pulse 2s infinite !important;
         }
-        #ch-hud-autoskip.is-active:hover {
-          background: #b91c1c;
+
+        @keyframes ch-btn-pulse {
+          0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+          70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
-        #ch-hud-skipone {
-          background: rgba(255, 255, 255, 0.08);
-          color: #f1f5f9;
-          border: 1px solid rgba(255, 255, 255, 0.12);
+
+        .ch-btn-ghost {
+          background: rgba(255, 255, 255, 0.1) !important;
+          color: #f1f5f9 !important;
+          border: 1px solid rgba(255, 255, 255, 0.16) !important;
         }
-        #ch-hud-skipone:hover {
-          background: rgba(255, 255, 255, 0.16);
-          color: #ffffff;
+
+        .ch-btn-ghost:hover {
+          background: rgba(255, 255, 255, 0.18) !important;
+          border-color: rgba(255, 255, 255, 0.3) !important;
         }
       `;
       document.head.appendChild(styleTag);
@@ -2353,33 +3188,229 @@
     floatingHUD.id = 'coursera-helper-hud';
 
     floatingHUD.innerHTML = `
-      <button id="ch-hud-solvequiz" class="ch-hud-btn" title="Tự động quét toàn bộ câu hỏi (kèm hình ảnh), gọi Gemini giải, tick đáp án và tự động nộp bài!">
-        ⚡ Giải Quiz
-      </button>
+      <div id="ch-hud-header" title="Nhấn 1 lần để mở rộng / thu nhỏ • Nhấn giữ để kéo di chuyển">
+        <svg class="ch-hud-logo-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 3L1 9L12 15L21 10.09V17H23V9M5 13.18V17.18C5 19.94 8.13 22 12 22C15.87 22 19 19.94 19 17.18V13.18L12 17L5 13.18Z" fill="url(#ch-grad-cyan)"/>
+          <defs>
+            <linearGradient id="ch-grad-cyan" x1="1" y1="3" x2="23" y2="22" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#38bdf8"/>
+              <stop offset="1" stop-color="#60a5fa"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="ch-hud-brand-text">Coursera <span class="ch-hud-brand-accent">Helper</span></span>
+        <span id="ch-hud-status-dot" class="ch-hud-status-dot" title="Trạng thái tiện ích"></span>
+        <span class="ch-hud-chevron-wrap">
+          <svg id="ch-hud-expand-indicator" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </span>
+      </div>
 
-      <button id="ch-hud-peerreview" class="ch-hud-btn" title="Tự động chấm điểm bài làm của người khác: chọn điểm cao nhất, điền Feedback 'GOOD!' và nộp đủ 4 bài!">
-        ⭐ Chấm Điểm Peer
-      </button>
+      <div id="ch-hud-divider" class="ch-hud-divider"></div>
 
-      <button id="ch-hud-autoskip" class="ch-hud-btn" title="Tự động duyệt bài giảng: tua video, đọc bài, tự giải quiz và nộp bài liên tục">
-        🚀 Auto-Skip Module
-      </button>
+      <div id="ch-hud-buttons">
+        <button id="ch-hud-solvequiz" class="ch-hud-btn ch-btn-primary" title="Tự động quét toàn bộ câu hỏi (kèm hình ảnh), gọi Gemini giải, tick đáp án và tự động nộp bài!">
+          <span class="ch-btn-icon">⚡</span>
+          <span class="ch-btn-label">Giải Quiz</span>
+        </button>
 
-      <button id="ch-hud-skipone" class="ch-hud-btn" title="Tua video này tới cuối và sang bài tiếp">
-        ⏩ Skip Video
-      </button>
+        <button id="ch-hud-peerreview" class="ch-hud-btn ch-btn-purple" title="Tự động chấm điểm Peer Review: chọn điểm cao nhất (nếu có), điền câu trả lời 'AMAZING GOOD JOB EM!' và nộp đủ 4 bài!">
+          <span class="ch-btn-icon">⭐</span>
+          <span class="ch-btn-label">Chấm Điểm Peer</span>
+        </button>
+
+        <button id="ch-hud-autoskip" class="ch-hud-btn ch-btn-green" title="Tự động duyệt bài giảng: tua video, đọc bài, tự giải quiz và nộp bài liên tục">
+          <span class="ch-btn-icon">🚀</span>
+          <span class="ch-btn-label">Auto-Skip Module</span>
+        </button>
+
+        <button id="ch-hud-skipone" class="ch-hud-btn ch-btn-ghost" title="Tua video này tới cuối và sang bài tiếp">
+          <span class="ch-btn-icon">⏩</span>
+          <span class="ch-btn-label">Skip Video</span>
+        </button>
+      </div>
     `;
 
     document.body.appendChild(floatingHUD);
 
-    // Bắt sự kiện click trên HUD
+    // 1. Quản lý tọa độ & Khôi phục vị trí HUD (Pixel-based, hoàn toàn tự do 360°, không lệch trục)
+    const setHUDCoordinates = (x, y) => {
+      const hudW = floatingHUD.offsetWidth || (isCollapsed ? 180 : 540);
+      const hudH = floatingHUD.offsetHeight || 46;
+      const maxW = Math.max(10, window.innerWidth - hudW - 10);
+      const maxH = Math.max(10, window.innerHeight - hudH - 10);
+
+      const safeX = Math.max(10, Math.min(Math.round(x), maxW));
+      const safeY = Math.max(10, Math.min(Math.round(y), maxH));
+
+      floatingHUD.style.setProperty('left', `${safeX}px`, 'important');
+      floatingHUD.style.setProperty('top', `${safeY}px`, 'important');
+      floatingHUD.style.setProperty('bottom', 'auto', 'important');
+      floatingHUD.style.setProperty('right', 'auto', 'important');
+      floatingHUD.style.setProperty('transform', 'none', 'important');
+
+      return { x: safeX, y: safeY };
+    };
+
+    const restoreOrInitPosition = () => {
+      try {
+        const saved = JSON.parse(localStorage.getItem('coursera_hud_pos') || 'null');
+        if (saved && saved.left !== undefined && saved.top !== undefined) {
+          const leftNum = parseInt(saved.left, 10);
+          const topNum = parseInt(saved.top, 10);
+          if (!isNaN(leftNum) && !isNaN(topNum)) {
+            setHUDCoordinates(leftNum, topNum);
+            return;
+          }
+        }
+      } catch (e) {}
+
+      // Mặc định: Nằm chính giữa phía dưới màn hình (cách đáy 24px)
+      const hudW = floatingHUD.offsetWidth || (isCollapsed ? 180 : 540);
+      const hudH = floatingHUD.offsetHeight || 46;
+      const defaultX = Math.round((window.innerWidth - hudW) / 2);
+      const defaultY = Math.round(window.innerHeight - hudH - 24);
+      setHUDCoordinates(defaultX, defaultY);
+    };
+
+    // 2. Trạng thái thu nhỏ / mở rộng (Collapse / Expand)
+    let isCollapsed = false;
+    try {
+      isCollapsed = localStorage.getItem('coursera_hud_collapsed') === 'true';
+    } catch (e) {}
+
+    const updateHUDCollapseUI = (collapsed) => {
+      const indicator = floatingHUD.querySelector('#ch-hud-expand-indicator');
+      if (collapsed) {
+        floatingHUD.classList.add('is-collapsed');
+        floatingHUD.setAttribute('title', 'Nhấn 1 lần để mở rộng • Nhấn giữ để kéo di chuyển');
+        if (indicator) indicator.style.transform = 'rotate(0deg)';
+      } else {
+        floatingHUD.classList.remove('is-collapsed');
+        floatingHUD.setAttribute('title', 'Nhấn tiêu đề để thu nhỏ • Nhấn giữ để kéo di chuyển');
+        if (indicator) indicator.style.transform = 'rotate(180deg)';
+      }
+    };
+
+    // Áp dụng trạng thái thu nhỏ ban đầu và định vị vị trí chuẩn
+    updateHUDCollapseUI(isCollapsed);
+    restoreOrInitPosition();
+
+    const toggleCollapse = () => {
+      isCollapsed = !isCollapsed;
+      updateHUDCollapseUI(isCollapsed);
+      try {
+        localStorage.setItem('coursera_hud_collapsed', isCollapsed ? 'true' : 'false');
+      } catch (err) {}
+
+      // Khi thay đổi kích thước HUD (thu nhỏ / mở rộng), đảm bảo HUD luôn nằm trong viewport
+      requestAnimationFrame(() => {
+        if (!floatingHUD) return;
+        const rect = floatingHUD.getBoundingClientRect();
+        const pos = setHUDCoordinates(rect.left, rect.top);
+        try {
+          localStorage.setItem('coursera_hud_pos', JSON.stringify({
+            left: pos.x,
+            top: pos.y
+          }));
+        } catch (e) {}
+      });
+    };
+
+    // 3. Cơ chế Kéo thả tự do 360° & Click thông minh (Best UX Practice)
+    // - Nhấn 1 lần: Tự động mở rộng / thu nhỏ (không cần nút phụ)
+    // - Nhấn giữ và rê chuột: Kéo thả mượt mà mọi hướng, không nhảy giật
+    let isPointerDown = false;
+    let hasDragged = false;
+    let startPointerX = 0, startPointerY = 0;
+    let startHUDX = 0, startHUDY = 0;
+
+    function onPointerDown(e) {
+      // Khi đang mở rộng, nếu click vào các nút chức năng thì để nút tự nhận click
+      if (!floatingHUD.classList.contains('is-collapsed') && e.target.closest('#ch-hud-buttons .ch-hud-btn')) {
+        return;
+      }
+
+      // Chỉ bắt chuột trái (0) hoặc cảm ứng
+      if (e.button !== undefined && e.button !== 0) return;
+
+      isPointerDown = true;
+      hasDragged = false;
+      startPointerX = e.clientX;
+      startPointerY = e.clientY;
+
+      const rect = floatingHUD.getBoundingClientRect();
+      startHUDX = rect.left;
+      startHUDY = rect.top;
+
+      const onPointerMove = (ev) => {
+        if (!isPointerDown) return;
+        const dx = ev.clientX - startPointerX;
+        const dy = ev.clientY - startPointerY;
+
+        if (!hasDragged && Math.hypot(dx, dy) > 4) {
+          hasDragged = true;
+          floatingHUD.classList.add('is-dragging');
+        }
+
+        if (hasDragged) {
+          ev.preventDefault();
+          setHUDCoordinates(startHUDX + dx, startHUDY + dy);
+        }
+      };
+
+      const onPointerUp = (ev) => {
+        if (!isPointerDown) return;
+        isPointerDown = false;
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerUp);
+
+        if (hasDragged) {
+          floatingHUD.classList.remove('is-dragging');
+          try {
+            const rect = floatingHUD.getBoundingClientRect();
+            localStorage.setItem('coursera_hud_pos', JSON.stringify({
+              left: Math.round(rect.left),
+              top: Math.round(rect.top)
+            }));
+          } catch (err) {}
+        } else {
+          // Nhấn chuột mà không kéo -> Click để toggle thu nhỏ / mở rộng!
+          if (floatingHUD.classList.contains('is-collapsed')) {
+            // Khi đang thu nhỏ: Nhấn vào bất cứ đâu trên thanh để mở rộng
+            toggleCollapse();
+          } else {
+            // Khi đang mở rộng: Nhấn vào header pill (hoặc chevron) để thu nhỏ lại
+            if (e.target.closest('#ch-hud-header')) {
+              toggleCollapse();
+            }
+          }
+        }
+      };
+
+      document.addEventListener('pointermove', onPointerMove);
+      document.addEventListener('pointerup', onPointerUp);
+    }
+
+    floatingHUD.addEventListener('pointerdown', onPointerDown);
+
+    // Xử lý khi thay đổi kích thước cửa sổ trình duyệt (Window resize)
+    window.addEventListener('resize', () => {
+      if (!floatingHUD) return;
+      const rect = floatingHUD.getBoundingClientRect();
+      setHUDCoordinates(rect.left, rect.top);
+    });
+
+    // 4. Bắt sự kiện click các nút chức năng
     const btnSolveQuiz = floatingHUD.querySelector('#ch-hud-solvequiz');
     const btnPeer = floatingHUD.querySelector('#ch-hud-peerreview');
     const btnAuto = floatingHUD.querySelector('#ch-hud-autoskip');
     const btnSkipOne = floatingHUD.querySelector('#ch-hud-skipone');
 
     if (btnSolveQuiz) {
-      btnSolveQuiz.addEventListener('click', () => {
+      btnSolveQuiz.addEventListener('click', (e) => {
+        e.stopPropagation();
         if (!isExtensionContextValid()) {
           showReloadPrompt('Tiện ích Coursera Helper vừa được Tải lại trong Chrome.');
           return;
@@ -2389,7 +3420,8 @@
     }
 
     if (btnPeer) {
-      btnPeer.addEventListener('click', () => {
+      btnPeer.addEventListener('click', (e) => {
+        e.stopPropagation();
         if (!isExtensionContextValid()) {
           showReloadPrompt('Tiện ích Coursera Helper vừa được Tải lại trong Chrome.');
           return;
@@ -2399,7 +3431,8 @@
     }
 
     if (btnAuto) {
-      btnAuto.addEventListener('click', () => {
+      btnAuto.addEventListener('click', (e) => {
+        e.stopPropagation();
         if (!isExtensionContextValid()) {
           showReloadPrompt('Tiện ích Coursera Helper vừa được Tải lại trong Chrome.');
           return;
@@ -2416,7 +3449,8 @@
     }
 
     if (btnSkipOne) {
-      btnSkipOne.addEventListener('click', () => {
+      btnSkipOne.addEventListener('click', (e) => {
+        e.stopPropagation();
         completeCourseraVideo();
       });
     }
@@ -2429,7 +3463,10 @@
           updateFloatingHUD(!!res?.auto_skip_active);
           if (res?.auto_peer_active && btnPeer) {
             btnPeer.classList.add('is-active');
-            btnPeer.innerHTML = `⏳ Bài ${(res.auto_peer_count || 0) + 1}/4`;
+            const label = btnPeer.querySelector('.ch-btn-label');
+            const icon = btnPeer.querySelector('.ch-btn-icon');
+            if (label) label.innerText = `Bài ${(res.auto_peer_count || 0) + 1}/4`;
+            if (icon) icon.innerText = '⏳';
           }
         });
       } catch (e) {}
@@ -2438,14 +3475,34 @@
 
   function updateFloatingHUD(isActive) {
     const btnAuto = document.getElementById('ch-hud-autoskip');
+    const statusDot = document.getElementById('ch-hud-status-dot');
+
+    if (statusDot) {
+      if (isActive) {
+        statusDot.classList.add('is-active');
+        statusDot.title = 'Auto-Skip đang chạy...';
+      } else {
+        statusDot.classList.remove('is-active');
+        statusDot.title = 'Auto-Skip đang tắt';
+      }
+    }
+
     if (!btnAuto) return;
 
     if (isActive) {
       btnAuto.classList.add('is-active');
-      btnAuto.innerText = '🛑 Dừng Auto-Skip';
+      const label = btnAuto.querySelector('.ch-btn-label');
+      const icon = btnAuto.querySelector('.ch-btn-icon');
+      if (label) label.innerText = 'Dừng Auto-Skip';
+      if (icon) icon.innerText = '🛑';
+      if (!label && !icon) btnAuto.innerText = '🛑 Dừng Auto-Skip';
     } else {
       btnAuto.classList.remove('is-active');
-      btnAuto.innerText = '🚀 Auto-Skip Module';
+      const label = btnAuto.querySelector('.ch-btn-label');
+      const icon = btnAuto.querySelector('.ch-btn-icon');
+      if (label) label.innerText = 'Auto-Skip Module';
+      if (icon) icon.innerText = '🚀';
+      if (!label && !icon) btnAuto.innerText = '🚀 Auto-Skip Module';
     }
   }
 
@@ -2628,6 +3685,40 @@
       }
     }
     return false;
+  }
+
+  // Kiểm tra xem 1 câu hỏi cụ thể đã được tick chọn phương án nào chưa
+  function isQuestionContainerAnswered(container) {
+    if (!container) return false;
+    const checkedInput = container.querySelector('input[type="radio"]:checked, input[type="checkbox"]:checked');
+    if (checkedInput) return true;
+    const ariaChecked = container.querySelector('[aria-checked="true"]');
+    if (ariaChecked) return true;
+    const cdsChecked = container.querySelector('.cds-checkboxAndRadio-checked, [class*="checked" i]');
+    if (cdsChecked) return true;
+    return false;
+  }
+
+  // Lấy danh sách các câu hỏi chưa được tick đáp án trên trang
+  function getUnansweredQuestions(allQuestions) {
+    if (!allQuestions || allQuestions.length === 0) return [];
+    const containers = getQuestionContainers();
+    const unanswered = [];
+    for (let idx = 0; idx < allQuestions.length; idx++) {
+      const q = allQuestions[idx];
+      const qNum = q.q || (idx + 1);
+      let container = null;
+      if (containers.length > 0) {
+        container = containers.find(c => {
+          const txt = c.innerText || c.textContent || '';
+          return new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i').test(txt);
+        }) || containers[qNum - 1] || containers[idx];
+      }
+      if (!container || !isQuestionContainerAnswered(container)) {
+        unanswered.push(q);
+      }
+    }
+    return unanswered;
   }
 
   function highlightOptionCard(el) {
@@ -3096,11 +4187,14 @@
       return;
     }
 
-    let apiKey = '';
+    let keys = [];
     let savedModel = '';
     try {
-      const res = await chrome.storage.local.get(['gemini_api_key', 'gemini_model']);
-      apiKey = res?.gemini_api_key;
+      const res = await chrome.storage.local.get(['gemini_api_key', 'gemini_api_keys', 'gemini_api_key_1', 'gemini_api_key_2', 'gemini_api_key_3', 'gemini_model']);
+      keys = Array.isArray(res?.gemini_api_keys) && res.gemini_api_keys.length > 0
+        ? res.gemini_api_keys
+        : [res?.gemini_api_key_1, res?.gemini_api_key_2, res?.gemini_api_key_3, res?.gemini_api_key].filter(Boolean);
+      keys = Array.from(new Set(keys.filter(Boolean)));
       savedModel = res?.gemini_model;
     } catch (err) {
       if (err.message && err.message.includes('Extension context invalidated')) {
@@ -3110,7 +4204,7 @@
       throw err;
     }
 
-    if (!apiKey) {
+    if (keys.length === 0) {
       showInPageToast('⚠️ Chưa có Gemini API Key! Hãy nhập key vào bảng vừa hiện ra.', true, 5000);
       showApiKeyPromptModal((newKey) => {
         runInlineBatchSolver(questions, btnSolve, origBtnText);
@@ -3122,10 +4216,10 @@
       return;
     }
 
-    const FAKE_PREFIXES_B = ['gemini-3.6', 'gemini-3.8', 'gemini-3.5', 'gemini-3.'];
-    const isRealModelNameB = (n) => n && !FAKE_PREFIXES_B.some(p => n.startsWith(p));
-    const model = isRealModelNameB(savedModel) ? savedModel : 'gemini-2.5-flash';
-    const BATCH_SIZE = 12;
+    const DEPRECATED_MODELS_B = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
+    const isSupportedModelB = (n) => n && !DEPRECATED_MODELS_B.includes(n);
+    const model = isSupportedModelB(savedModel) ? savedModel : 'gemini-3.6-flash';
+    const BATCH_SIZE = 4; // Gửi 4 câu mỗi đợt giúp xử lý nhanh và tránh bị Google từ chối do dung lượng lớn
     const totalQuestions = questions.length;
     const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
     const allAnswers = [];
@@ -3136,28 +4230,90 @@
       const endIdx = Math.min(startIdx + BATCH_SIZE, totalQuestions);
       const batchQuestions = questions.slice(startIdx, endIdx);
 
+      // Nếu tất cả câu trong batch này đã có đáp án sẵn thì bỏ qua
+      const currentContainers = getQuestionContainers();
+      const unansInBatch = batchQuestions.filter(q => {
+        const qNum = q.q;
+        const c = currentContainers.find(ct => {
+          const txt = ct.innerText || '';
+          return new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i').test(txt);
+        }) || currentContainers[qNum - 1];
+        return !c || !isQuestionContainerAnswered(c);
+      });
+
+      if (unansInBatch.length === 0) {
+        continue;
+      }
+
       const statusMsg = `⏳ Đang giải câu ${startIdx + 1} - ${endIdx} / ${totalQuestions}...`;
       showInPageToast(statusMsg);
       if (btnSolve) btnSolve.innerHTML = `⏳ Giải ${startIdx + 1}-${endIdx}...`;
 
       const parts = buildMultimodalBatchParts(batchQuestions, startIdx + 1, endIdx);
 
-      try {
-        const text = await callGeminiDirectParts(apiKey, model, parts);
-        if (text) {
-          accumulatedMarkdown += `\n\n## 📝 Nhóm câu ${startIdx + 1} - ${endIdx}\n\n` + text;
-          const answers = parseAnswersFromText(text);
-          if (answers.length > 0) {
-            allAnswers.push(...answers);
-            await autoFillCourseraQuiz(answers);
+      let batchSolved = false;
+      for (let retry = 0; retry < 3; retry++) {
+        try {
+          const text = await callGeminiDirectParts(keys, model, parts);
+          if (text) {
+            accumulatedMarkdown += `\n\n## 📝 Nhóm câu ${startIdx + 1} - ${endIdx}\n\n` + text;
+            const answers = parseAnswersFromText(text);
+            if (answers.length > 0) {
+              allAnswers.push(...answers);
+              await autoFillCourseraQuiz(answers);
+              batchSolved = true;
+              break;
+            }
           }
+        } catch (err) {
+          console.error('CourseraHelper Inline Solver Error:', err);
         }
-      } catch (err) {
-        console.error('CourseraHelper Inline Solver Error:', err);
+
+        if (!batchSolved && retry < 2) {
+          let waitSec = 22;
+          if (window._chLastGeminiError) {
+            const m = window._chLastGeminiError.match(/đợi\s*(\d+)\s*s/i);
+            if (m) waitSec = parseInt(m[1], 10) + 2;
+          }
+          showInPageToast(`⏳ Google chạm Rate Limit (20 req/p). Tạm dừng ${waitSec}s rồi giải tiếp câu ${startIdx + 1} - ${endIdx}...`, false, waitSec * 1000);
+          await new Promise(r => setTimeout(r, waitSec * 1000));
+        }
       }
 
       if (b < totalBatches - 1) {
         await new Promise(r => setTimeout(r, 300));
+      }
+    }
+
+    // KIỂM TRA VÉT: ĐẢM BẢO KHÔNG BỎ SÓT BẤT KỲ CÂU NÀO TRƯỚC KHI NỘP
+    let remainingUnanswered = getUnansweredQuestions(questions);
+    if (remainingUnanswered.length > 0) {
+      showInPageToast(`⚠️ Còn ${remainingUnanswered.length} câu chưa có đáp án (Câu ${remainingUnanswered.map(q => q.q).slice(0, 6).join(', ')}...). Đang giải bổ sung...`, true, 6000);
+
+      for (let pass = 0; pass < 2 && remainingUnanswered.length > 0; pass++) {
+        const subBatches = Math.ceil(remainingUnanswered.length / BATCH_SIZE);
+        for (let sb = 0; sb < subBatches; sb++) {
+          const sIdx = sb * BATCH_SIZE;
+          const eIdx = Math.min(sIdx + BATCH_SIZE, remainingUnanswered.length);
+          const subQs = remainingUnanswered.slice(sIdx, eIdx);
+
+          showInPageToast(`⏳ Đang giải vét các câu: ${subQs.map(q => q.q).join(', ')}...`);
+          const parts = buildMultimodalBatchParts(subQs, subQs[0].q, subQs[subQs.length - 1].q);
+
+          try {
+            const text = await callGeminiDirectParts(keys, model, parts);
+            if (text) {
+              const answers = parseAnswersFromText(text);
+              if (answers.length > 0) {
+                allAnswers.push(...answers);
+                await autoFillCourseraQuiz(answers);
+              }
+            }
+          } catch (e) {}
+
+          await new Promise(r => setTimeout(r, 500));
+        }
+        remainingUnanswered = getUnansweredQuestions(questions);
       }
     }
 
@@ -3172,25 +4328,24 @@
     }
 
     if (btnSolve) {
-      if (allAnswers.length > 0) {
+      if (remainingUnanswered.length === 0) {
         btnSolve.innerHTML = '✅ Đã Giải Xong!';
       } else {
-        btnSolve.innerHTML = '⚠️ Lỗi giải bài!';
+        btnSolve.innerHTML = `⚠️ Thiếu ${remainingUnanswered.length} câu`;
       }
       setTimeout(() => {
         if (btnSolve) {
           btnSolve.innerHTML = origBtnText;
           btnSolve.style.opacity = '1';
         }
-      }, 3500);
+      }, 4000);
     }
 
-    if (allAnswers.length > 0) {
-      showInPageToast(`🎉 Đã điền xong tất cả ${allAnswers.length} câu hỏi! Đang tự động nộp bài...`, false, 4000);
+    if (remainingUnanswered.length === 0) {
+      showInPageToast(`🎉 Đã điền xong tất cả ${questions.length} / ${questions.length} câu hỏi! Đang tự động nộp bài...`, false, 4000);
       await completeHonorCodeAndSubmitQuiz();
     } else {
-      const errDetail = window._chLastGeminiError ? `: ${window._chLastGeminiError}` : '';
-      showInPageToast(`⚠️ Không thể phân tích đáp án từ AI${errDetail}. Vui lòng kiểm tra lại API Key hoặc đề bài!`, true, 8000);
+      showInPageToast(`⚠️ Còn ${remainingUnanswered.length} câu chưa chọn được đáp án (Câu ${remainingUnanswered.map(q => q.q).slice(0, 5).join(', ')}...). Không nộp bài để bảo vệ điểm của bạn!`, true, 8000);
     }
   }
 
@@ -3266,7 +4421,10 @@
     return parts;
   }
 
-  async function callGeminiDirectParts(apiKey, preferredModel, parts) {
+  async function callGeminiDirectParts(apiKeyOrKeys, preferredModel, parts) {
+    const keys = (Array.isArray(apiKeyOrKeys) ? apiKeyOrKeys : [apiKeyOrKeys]).filter(Boolean);
+    if (keys.length === 0) return '';
+
     const sanitizedParts = parts.map(p => {
       if (p.inline_data) {
         return {
@@ -3279,67 +4437,120 @@
       return p;
     });
 
-    // Chỉ dùng các tên model thực tồn tại trong Google Gemini API
-    const FAKE_PREFIXES_C = ['gemini-3.6', 'gemini-3.8', 'gemini-3.5', 'gemini-3.'];
-    const isRealName = (n) => n && !FAKE_PREFIXES_C.some(p => n.startsWith(p));
-    const normalizedPreferred = isRealName(preferredModel) ? preferredModel : 'gemini-2.5-flash';
+    // Chỉ dùng các model từ 3.6 trở lên (3.6, 3.7, 3.8)
+    const DEPRECATED_MODELS_C = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
+    const isSupportedModelC = (n) => n && !DEPRECATED_MODELS_C.includes(n);
+    const normalizedPreferred = isSupportedModelC(preferredModel) ? preferredModel : 'gemini-3.8-flash';
 
     const modelsToTry = [
+      window._chWorkingModel,
       normalizedPreferred,
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-1.5-flash'
-    ].filter((m, idx, arr) => m && arr.indexOf(m) === idx && isRealName(m));
+      'gemini-3.8-flash',
+      'gemini-3.7-flash',
+      'gemini-3.6-flash'
+    ].filter((m, idx, arr) => m && arr.indexOf(m) === idx && isSupportedModelC(m));
 
     let lastErrorMessage = '';
-    for (const model of modelsToTry) {
-      for (const ver of ['v1beta', 'v1']) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-          const res = await fetch(`https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': apiKey
-            },
-            body: JSON.stringify({
-              contents: [{ role: 'user', parts: sanitizedParts }],
-              generationConfig: {
-                temperature: 0.0,
-                topP: 0.95
+    for (let kIdx = 0; kIdx < keys.length; kIdx++) {
+      const currentApiKey = keys[kIdx];
+      let keyHitQuota = false;
+
+      for (const model of modelsToTry) {
+        // Ưu tiên v1beta vì đây là endpoint chính thức của các model Flash mới nhất
+        const versionsToTry = window._chWorkingVer ? [window._chWorkingVer] : ['v1beta', 'v1'];
+        for (const ver of versionsToTry) {
+          const maxRetries = 1;
+          for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 35000);
+
+              const res = await fetch(`https://generativelanguage.googleapis.com/${ver}/models/${model}:generateContent?key=${currentApiKey}`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-goog-api-key': currentApiKey
+                },
+                body: JSON.stringify({
+                  contents: [{ role: 'user', parts: sanitizedParts }],
+                  generationConfig: {
+                    temperature: 0.0,
+                    topP: 0.95
+                  }
+                }),
+                signal: controller.signal
+              });
+              clearTimeout(timeoutId);
+
+              const data = await res.json();
+              if (data.error) {
+                lastErrorMessage = data.error.message || JSON.stringify(data.error);
+                console.warn(`API Error with ${model} (${ver}) key ${kIdx + 1}:`, lastErrorMessage);
+
+                const errLower = lastErrorMessage.toLowerCase();
+                const isQuota = errLower.includes('quota') || 
+                                errLower.includes('resource_exhausted') || 
+                                errLower.includes('rate limit') || 
+                                res.status === 429;
+
+                if (isQuota) {
+                  keyHitQuota = true;
+                  if (kIdx < keys.length - 1) {
+                    showInPageToast(`🔄 Key ${kIdx + 1} chạm giới hạn (20 req/p), tự động đổi sang Key ${kIdx + 2}/${keys.length}...`, false, 4000);
+                  } else {
+                    const retryMatch = lastErrorMessage.match(/Please retry in\s*([0-9\.]+)\s*s/i);
+                    const retrySec = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 60;
+                    showInPageToast(`⚠️ Key ${kIdx + 1}/${keys.length} cũng chạm giới hạn! Cả ${keys.length} Key đều chạm Rate Limit (20 req/p). Vui lòng đợi ${retrySec}s để Google mở lại!`, true, 8000);
+                  }
+                  break; // Đổi key tiếp theo ngay lập tức
+                }
+
+                const isHighDemand = (errLower.includes('high demand') || 
+                                     errLower.includes('overloaded') || 
+                                     res.status === 503);
+
+                if (isHighDemand && attempt < maxRetries) {
+                  const waitSec = attempt === 0 ? 2 : 3;
+                  showInPageToast(`⏳ [${model}] Máy chủ Google quá tải (503 High Demand), tự động thử lại sau ${waitSec}s...`);
+                  await new Promise(r => setTimeout(r, waitSec * 1000));
+                  continue;
+                }
+                break;
               }
-            }),
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
 
-          const data = await res.json();
-          if (data.error) {
-            lastErrorMessage = data.error.message || JSON.stringify(data.error);
-            console.warn(`API Error with ${model} (${ver}):`, lastErrorMessage);
-            continue;
-          }
+              let text = '';
+              if (data.candidates && data.candidates[0]?.content?.parts) {
+                const p = data.candidates[0].content.parts.find(x => x.text);
+                if (p) text = p.text;
+              }
+              if (!text && typeof data.output === 'string') text = data.output;
 
-          let text = '';
-          if (data.candidates && data.candidates[0]?.content?.parts) {
-            const p = data.candidates[0].content.parts.find(x => x.text);
-            if (p) text = p.text;
+              if (text) {
+                window._chLastGeminiError = '';
+                window._chWorkingModel = model;
+                window._chWorkingVer = ver;
+                return text;
+              }
+            } catch (e) {
+              lastErrorMessage = e.message;
+              console.warn(`Fetch failed for ${model}:`, e.message);
+              break;
+            }
           }
-          if (!text && typeof data.output === 'string') text = data.output;
-
-          if (text) {
-            window._chLastGeminiError = '';
-            return text;
-          }
-        } catch (e) {
-          lastErrorMessage = e.message;
-          console.warn(`Fetch failed for ${model}:`, e.message);
+          if (keyHitQuota) break;
         }
+        if (keyHitQuota) break;
       }
     }
-    window._chLastGeminiError = lastErrorMessage;
+
+    const retryMatch = lastErrorMessage.match(/Please retry in\s*([0-9\.]+)\s*s/i);
+    const retrySec = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 60;
+    if (lastErrorMessage.toLowerCase().includes('quota') || lastErrorMessage.toLowerCase().includes('resource_exhausted')) {
+      window._chLastGeminiError = `Tất cả ${keys.length} API Key đều chạm giới hạn (20 req/p). Vui lòng đợi ${retrySec}s để Google mở lại hoặc thêm Key mới!`;
+    } else {
+      window._chLastGeminiError = lastErrorMessage;
+    }
     return '';
   }
 
