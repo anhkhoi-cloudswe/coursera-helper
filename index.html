@@ -17,24 +17,28 @@
 
   <style>
     :root {
-      --bg: #090b10;
-      --card-bg: rgba(17, 21, 31, 0.75);
-      --card-solid: #11151f;
-      --border: rgba(255, 255, 255, 0.08);
-      --border-focus: rgba(99, 102, 241, 0.5);
+      --bg: #0d1117;
+      --card-bg: #161b26;
+      --card-solid: #161b26;
+      --header-bg: #1e2433;
+      --border: #262f40;
+      --border-neo: 2px solid #000000;
+      --shadow-neo: 3px 3px 0px #000000;
+      --shadow-neo-lg: 5px 5px 0px #000000;
+      --shadow-neo-sm: 2px 2px 0px #000000;
       --primary: #6366f1;
       --primary-hover: #4f46e5;
-      --primary-light: rgba(99, 102, 241, 0.12);
-      --primary-glow: rgba(99, 102, 241, 0.25);
       --emerald: #10b981;
-      --emerald-light: rgba(16, 185, 129, 0.12);
+      --emerald-hover: #059669;
+      --purple: #a855f7;
       --rose: #f43f5e;
+      --amber: #f59e0b;
       --text: #f8fafc;
       --text-muted: #94a3b8;
       --text-dim: #64748b;
-      --radius-sm: 8px;
-      --radius-md: 12px;
-      --radius-lg: 16px;
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
       --radius-full: 9999px;
     }
 
@@ -44,34 +48,35 @@
       padding: 0;
     }
 
-    /* Custom Sleek Dark Scrollbars */
+    /* Custom Sleek Neo-Brutalist Scrollbars */
     ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
+      width: 7px;
+      height: 7px;
     }
     ::-webkit-scrollbar-track {
-      background: transparent;
+      background: #090d16;
+      border-left: 1px solid #000;
     }
     ::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.14);
+      background: #2b3548;
+      border: 1px solid #000;
       border-radius: 4px;
     }
     ::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.25);
+      background: var(--primary);
     }
 
     html, body {
       height: 100vh;
       max-height: 100vh;
-      overflow: hidden; /* Cố định 1 màn hình, không xuất hiện thanh cuộn trang */
+      overflow: hidden;
     }
 
     body {
       font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
       background-color: var(--bg);
-      background-image: 
-        radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.12) 0%, transparent 60%),
-        radial-gradient(circle at 100% 100%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+      background-image: radial-gradient(#1e293b 1.5px, transparent 1.5px);
+      background-size: 22px 22px;
       background-attachment: fixed;
       color: var(--text);
       display: flex;
@@ -87,22 +92,20 @@
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      min-height: 0; /* Giúp flexbox co giãn vừa khít màn hình */
+      gap: 12px;
+      min-height: 0;
     }
 
-    /* Top Navigation Bar */
+    /* Top Navigation Bar - Neo Brutalism */
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 8px 16px;
-      background: var(--card-bg);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid var(--border);
+      padding: 10px 18px;
+      background: var(--header-bg);
+      border: var(--border-neo);
       border-radius: var(--radius-md);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      box-shadow: var(--shadow-neo-lg);
       flex-shrink: 0;
       gap: 12px;
     }
@@ -110,166 +113,178 @@
     .brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
 
     .brand-icon {
-      width: 34px;
-      height: 34px;
-      border-radius: 9px;
-      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
+      background: var(--primary);
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo-sm);
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 0 16px var(--primary-glow);
+      flex-shrink: 0;
     }
 
     .brand-icon svg {
-      width: 18px;
-      height: 18px;
+      width: 20px;
+      height: 20px;
       color: white;
     }
 
     .brand-info h1 {
-      font-size: 0.98rem;
-      font-weight: 700;
+      font-size: 1.05rem;
+      font-weight: 800;
       color: var(--text);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .version-tag {
-      font-size: 0.65rem;
-      font-weight: 600;
-      padding: 1px 6px;
-      background: var(--primary-light);
-      border: 1px solid rgba(99, 102, 241, 0.3);
-      color: #a5b4fc;
-      border-radius: var(--radius-full);
-      letter-spacing: 0.02em;
-    }
-
-    .brand-info p {
-      font-size: 0.74rem;
-      color: var(--text-muted);
-      margin-top: 1px;
-    }
-
-    .nav-actions {
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
-    /* Buttons */
+    .version-tag {
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 2px 7px;
+      background: #312e81;
+      border: 1.5px solid #000000;
+      box-shadow: 1.5px 1.5px 0px #000000;
+      color: #c7d2fe;
+      border-radius: var(--radius-full);
+      letter-spacing: 0.04em;
+    }
+
+    .brand-info p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 1px;
+      font-weight: 500;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Neo-Brutalist Buttons */
     .btn {
       font-family: inherit;
       font-size: 0.8rem;
-      font-weight: 600;
-      padding: 6px 12px;
+      font-weight: 700;
+      height: 34px;
+      padding: 0 13px;
       border-radius: var(--radius-sm);
       cursor: pointer;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
-      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-      border: 1px solid transparent;
+      transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo);
       outline: none;
       user-select: none;
       white-space: nowrap;
+      box-sizing: border-box;
+    }
+
+    .btn:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 4px 4px 0px #000000;
     }
 
     .btn:active {
-      transform: scale(0.98);
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px 0px #000000;
     }
 
     .btn-default {
-      background: rgba(255, 255, 255, 0.04);
+      background: #242c3d;
       color: var(--text);
-      border-color: var(--border);
     }
 
     .btn-default:hover {
-      background: rgba(255, 255, 255, 0.08);
-      border-color: rgba(255, 255, 255, 0.15);
+      background: #2d374d;
+      color: #ffffff;
     }
 
     .btn-primary {
       background: var(--primary);
-      color: white;
-      box-shadow: 0 2px 10px rgba(99, 102, 241, 0.3);
+      color: #ffffff;
     }
 
     .btn-primary:hover {
       background: var(--primary-hover);
-      box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
     }
 
     .btn-emerald {
       background: var(--emerald);
-      color: #064e3b;
-      font-weight: 700;
-      box-shadow: 0 2px 10px rgba(16, 185, 129, 0.25);
+      color: #000000;
+      font-weight: 800;
     }
 
     .btn-emerald:hover {
-      background: #059669;
-      color: white;
+      background: #34d399;
+      color: #000000;
     }
 
     .btn-ai {
-      background: linear-gradient(135deg, #6366f1 0%, #9333ea 100%);
-      color: white;
-      font-weight: 700;
-      box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
-      position: relative;
-      overflow: hidden;
+      background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+      color: #ffffff;
+      font-weight: 800;
     }
 
     .btn-ai:hover {
-      box-shadow: 0 6px 22px rgba(147, 51, 234, 0.45);
-      transform: translateY(-1px);
+      background: linear-gradient(135deg, #9333ea 0%, #db2777 100%);
     }
 
     .btn-ghost {
       background: transparent;
+      border-color: transparent;
+      box-shadow: none;
       color: var(--text-muted);
     }
 
     .btn-ghost:hover {
       color: var(--text);
-      background: rgba(255, 255, 255, 0.05);
+      background: #242c3d;
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo-sm);
     }
 
     .kbd {
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.68rem;
-      padding: 2px 5px;
+      padding: 1px 5px;
       border-radius: 4px;
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      color: var(--text-muted);
+      background: #000000;
+      border: 1px solid #334155;
+      color: #a5b4fc;
+      box-shadow: 1px 1px 0px #000000;
     }
 
-    /* Live Analytics Chips */
+    /* Live Analytics Chips - Neo Brutalist */
     .metrics-bar {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
       flex-shrink: 0;
     }
 
     .metric-chip {
-      background: var(--card-bg);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
+      background: var(--header-bg);
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo-sm);
       border-radius: var(--radius-full);
-      padding: 4px 12px;
-      font-size: 0.75rem;
+      padding: 5px 14px;
+      font-size: 0.76rem;
+      font-weight: 600;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
     }
 
     .metric-chip span {
@@ -279,22 +294,23 @@
     .metric-chip strong {
       color: #a5b4fc;
       font-family: 'JetBrains Mono', monospace;
-      font-weight: 600;
+      font-weight: 800;
+      font-size: 0.82rem;
     }
 
     .metric-dot {
-      width: 6px;
-      height: 6px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background: var(--emerald);
-      box-shadow: 0 0 8px var(--emerald);
+      border: 1.5px solid #000000;
     }
 
     /* Workspace Grid */
     .workspace-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      gap: 14px;
       flex: 1;
       min-height: 0;
       height: 100%;
@@ -302,7 +318,7 @@
 
     @media (max-width: 992px) {
       html, body {
-        overflow: auto; /* Trên màn hình quá nhỏ thì cho cuộn để tránh đè chữ */
+        overflow: auto;
         height: auto;
       }
       .workspace-grid {
@@ -314,43 +330,39 @@
       }
     }
 
-    /* Cards */
+    /* Cards - Neo Brutalist */
     .editor-card {
       background: var(--card-bg);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid var(--border);
+      border: var(--border-neo);
       border-radius: var(--radius-md);
       display: flex;
       flex-direction: column;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      box-shadow: var(--shadow-neo-lg);
       overflow: hidden;
-      transition: border-color 0.2s ease;
       height: 100%;
       min-height: 0;
     }
 
-    .editor-card:focus-within {
-      border-color: rgba(99, 102, 241, 0.35);
-    }
-
     .card-header {
-      padding: 8px 14px;
-      border-bottom: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.015);
+      height: 52px;
+      padding: 0 14px;
+      border-bottom: var(--border-neo);
+      background: var(--header-bg);
       display: flex;
       justify-content: space-between;
       align-items: center;
       flex-shrink: 0;
       gap: 8px;
+      box-sizing: border-box;
     }
 
     .card-title {
-      font-size: 0.85rem;
-      font-weight: 600;
-      display: flex;
+      font-size: 0.88rem;
+      font-weight: 700;
+      display: inline-flex;
       align-items: center;
-      gap: 7px;
+      gap: 8px;
+      height: 34px;
       color: var(--text);
     }
 
@@ -359,37 +371,47 @@
     }
 
     .tab-pills {
-      display: flex;
-      background: rgba(0, 0, 0, 0.25);
+      display: inline-flex;
+      align-items: center;
+      height: 34px;
+      background: #0d1117;
       padding: 2px;
       border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo-sm);
+      box-sizing: border-border;
     }
 
     .tab-btn {
       font-family: inherit;
       font-size: 0.76rem;
-      font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 5px;
-      border: none;
+      font-weight: 700;
+      height: 26px;
+      padding: 0 10px;
+      border-radius: 4px;
+      border: 1.5px solid transparent;
       background: transparent;
       color: var(--text-muted);
       cursor: pointer;
-      display: flex;
+      display: inline-flex;
       align-items: center;
-      gap: 5px;
-      transition: all 0.15s ease;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.12s ease;
+      box-sizing: border-box;
+      white-space: nowrap;
     }
 
     .tab-btn.active {
-      background: rgba(255, 255, 255, 0.1);
-      color: var(--text);
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+      background: var(--primary);
+      color: #ffffff;
+      border-color: #000000;
+      box-shadow: 1px 1px 0px #000000;
     }
 
     .tab-btn:hover:not(.active) {
       color: var(--text);
+      background: #1e2433;
     }
 
     /* Textarea & Code View */
@@ -400,18 +422,19 @@
       position: relative;
       min-height: 0;
       overflow: hidden;
+      background: #090d16;
     }
 
     textarea {
       width: 100%;
       height: 100%;
-      padding: 14px 16px;
+      padding: 16px;
       background: transparent;
       border: none;
       color: var(--text);
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.82rem;
-      line-height: 1.6;
+      font-size: 0.84rem;
+      line-height: 1.65;
       resize: none;
       outline: none;
       white-space: pre-wrap;
@@ -419,7 +442,8 @@
     }
 
     textarea::placeholder {
-      color: #64748b;
+      color: #475569;
+      font-weight: 500;
     }
 
     /* Output Viewports */
@@ -438,71 +462,77 @@
       display: flex;
     }
 
-    /* AI Answer Staged Render */
+    /* AI Answer Staged Render - Neo Brutalist formatting */
     .ai-render-area {
-      padding: 16px 18px;
+      padding: 18px 20px;
       line-height: 1.7;
       font-size: 0.88rem;
-      color: #e2e8f0;
+      color: #f1f5f9;
       overflow-y: auto;
       flex: 1;
     }
 
     .ai-render-area h1, .ai-render-area h2, .ai-render-area h3 {
-      color: #818cf8;
-      margin-top: 14px;
-      margin-bottom: 6px;
-      font-weight: 700;
+      color: #a5b4fc;
+      margin-top: 16px;
+      margin-bottom: 8px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
     .ai-render-area p {
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
 
     .ai-render-area strong {
       color: #34d399;
-      font-weight: 700;
+      font-weight: 800;
     }
 
     .ai-render-area blockquote {
-      border-left: 3px solid var(--primary);
-      padding: 6px 12px;
-      margin: 10px 0;
-      background: rgba(99, 102, 241, 0.05);
-      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      border: var(--border-neo);
+      border-left: 4px solid var(--primary);
+      padding: 10px 14px;
+      margin: 12px 0;
+      background: #131722;
+      box-shadow: var(--shadow-neo-sm);
+      border-radius: var(--radius-sm);
       color: #c7d2fe;
     }
 
     .ai-render-area ul, .ai-render-area ol {
-      margin-left: 18px;
-      margin-bottom: 10px;
+      margin-left: 20px;
+      margin-bottom: 12px;
     }
 
     .ai-render-area li {
-      margin-bottom: 4px;
+      margin-bottom: 6px;
     }
 
     .card-footer {
-      padding: 5px 14px;
-      border-top: 1px solid var(--border);
-      background: rgba(0, 0, 0, 0.15);
+      padding: 7px 16px;
+      border-top: var(--border-neo);
+      background: var(--header-bg);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 0.72rem;
+      font-size: 0.74rem;
+      font-weight: 600;
       color: var(--text-dim);
       flex-shrink: 0;
     }
 
-    /* Settings Modal / Popover */
+    /* Modal - Neo Brutalism */
     .modal-overlay {
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(8px);
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
       display: none;
       align-items: center;
       justify-content: center;
@@ -515,13 +545,13 @@
     }
 
     .modal-dialog {
-      background: #111520;
-      border: 1px solid var(--border);
+      background: var(--card-bg);
+      border: 2.5px solid #000000;
       border-radius: var(--radius-lg);
       max-width: 480px;
       width: 100%;
       padding: 24px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      box-shadow: var(--shadow-neo-lg);
       display: flex;
       flex-direction: column;
       gap: 18px;
@@ -531,11 +561,13 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      padding-bottom: 10px;
+      border-bottom: var(--border-neo);
     }
 
     .modal-header h3 {
       font-size: 1.1rem;
-      font-weight: 700;
+      font-weight: 800;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -549,24 +581,26 @@
 
     .form-group label {
       font-size: 0.82rem;
-      font-weight: 600;
-      color: var(--text-muted);
+      font-weight: 700;
+      color: var(--text);
     }
 
     .input-field {
-      background: #090b10;
-      border: 1px solid var(--border);
+      background: #090d16;
+      border: var(--border-neo);
       border-radius: var(--radius-sm);
       padding: 10px 14px;
       color: var(--text);
       font-family: 'JetBrains Mono', monospace;
       font-size: 0.85rem;
       outline: none;
-      transition: border-color 0.15s ease;
+      box-shadow: var(--shadow-neo-sm);
+      transition: all 0.12s ease;
     }
 
     .input-field:focus {
-      border-color: var(--primary);
+      border-color: #818cf8;
+      box-shadow: 3px 3px 0px var(--primary);
     }
 
     select.input-field {
@@ -576,36 +610,34 @@
 
     .form-helper {
       font-size: 0.75rem;
-      color: var(--text-dim);
+      color: var(--text-muted);
       line-height: 1.5;
+      font-weight: 500;
     }
 
     .form-helper a {
-      color: var(--primary);
-      text-decoration: none;
-    }
-
-    .form-helper a:hover {
+      color: #818cf8;
+      font-weight: 700;
       text-decoration: underline;
     }
 
-    /* Toast Notification */
+    /* Toast Notification - Neo Brutalism */
     .toast-center {
       position: fixed;
       bottom: 28px;
       left: 50%;
       transform: translateX(-50%) translateY(20px);
-      background: #1e2433;
-      border: 1px solid rgba(99, 102, 241, 0.4);
-      color: #e2e8f0;
-      padding: 10px 20px;
+      background: var(--header-bg);
+      border: var(--border-neo);
+      color: var(--text);
+      padding: 10px 22px;
       border-radius: var(--radius-full);
       font-size: 0.85rem;
-      font-weight: 600;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      font-weight: 800;
+      box-shadow: var(--shadow-neo);
       opacity: 0;
       pointer-events: none;
-      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       z-index: 9999;
       display: flex;
       align-items: center;
@@ -617,7 +649,7 @@
       transform: translateX(-50%) translateY(0);
     }
 
-    /* Skeleton Loading */
+    /* Loader */
     .ai-spinner-box {
       display: flex;
       flex-direction: column;
@@ -632,11 +664,11 @@
     .quantum-loader {
       width: 44px;
       height: 44px;
-      border: 3px solid rgba(99, 102, 241, 0.15);
+      border: 3.5px solid #1e2433;
       border-top-color: var(--primary);
-      border-right-color: #a855f7;
+      border-right-color: var(--purple);
       border-radius: 50%;
-      animation: spin 0.75s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+      animation: spin 0.75s linear infinite;
     }
 
     @keyframes spin {
@@ -730,12 +762,10 @@
           <!-- Segmented Tab Controls -->
           <div class="tab-pills">
             <button class="tab-btn active" id="tabCleaned" data-tab="viewCleaned">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
               Văn bản sạch
             </button>
             <button class="tab-btn" id="tabAi" data-tab="viewAi">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-              Đáp án Gemini ✨
+              Đáp án Gemini
             </button>
           </div>
 
