@@ -1,5 +1,7 @@
 # Coursera Helper — Quiz Cleaner & AI Solver 🚀
 
+<img width="1660" height="898" alt="Screenshot 2026-09-23 132024" src="https://github.com/user-attachments/assets/62e4bb81-848e-480a-9f37-75639d9c085c" />
+
 ![Version](https://img.shields.io/badge/version-2.1.3-indigo.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Gemini API](https://img.shields.io/badge/AI-Gemini%203.6%20Flash-emerald.svg)
