@@ -11,9 +11,6 @@
   "background": {
     "service_worker": "background.js"
   },
-  "side_panel": {
-    "default_path": "sidepanel.html"
-  },
   "action": {
     "default_title": "Mở Coursera Helper Side Panel"
   },
