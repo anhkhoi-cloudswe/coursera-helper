@@ -22,6 +22,18 @@
   window._courseraHelperActive = true;
   window._courseraHelperInjected = true;
 
+  // Đảm bảo main-world script luôn được nhúng vào trang để vượt seek-lock và fast-forward lock
+  function injectMainWorldScript() {
+    if (document.getElementById('ch-main-script')) return;
+    try {
+      const s = document.createElement('script');
+      s.id = 'ch-main-script';
+      s.src = chrome.runtime.getURL('injected.js');
+      (document.head || document.documentElement).appendChild(s);
+    } catch (e) {}
+  }
+  injectMainWorldScript();
+
   // Kiểm tra tính hợp lệ của Context Extension
   function isExtensionContextValid() {
     try {
@@ -1001,17 +1013,22 @@
     videos.forEach(unlockVideo);
   }, 1000);
 
-  // Kích thích video Coursera ghi nhận 100% thời lượng qua các mốc Milestone + Gọi trực tiếp API
+  // Kích thích video Coursera ghi nhận 100% thời lượng qua Main-World injection + Milestones + Gọi trực tiếp API
   function triggerVideoPlaybackProgress(videos) {
     dismissInVideoQuestionIfPresent();
 
+    // 1. Kích hoạt Main-World event để bypass seek-lock trực tiếp trên engine của Coursera
+    try {
+      window.dispatchEvent(new CustomEvent('COURSERA_HELPER_SKIP_VIDEO'));
+    } catch (e) {}
+
+    // 2. Dự phòng trong Content Script context: phát siêu tốc và đẩy mốc tiến độ
     for (const v of videos) {
       try {
         unlockVideo(v);
         v._forcePlaying = true;
         v.muted = true;
 
-        // Ép tốc độ phát cao nhất
         try {
           if (nativeRate && nativeRate.set) {
             nativeRate.set.call(v, 16);
@@ -1024,7 +1041,7 @@
 
         const dur = (v.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 2) ? v.duration : 1200;
 
-        // Bắn chuỗi mốc tiến độ (milestones) từ 25% -> 50% -> 75% -> 95% -> 100%
+        // Bắn chuỗi mốc tiến độ từ 25% -> 50% -> 75% -> 95% -> 100%
         const milestones = [dur * 0.25, dur * 0.5, dur * 0.75, dur * 0.95, Math.max(0, dur - 0.5), dur];
         for (const t of milestones) {
           try {
@@ -1053,24 +1070,21 @@
     dismissInVideoQuestionIfPresent();
   }
 
-  // Chờ thích ứng thông minh: Nếu video nhận tín hiệu nhanh thì pass ngay, nếu chậm thì kiên nhẫn đợi đến khi có tick xanh
-  async function waitForLessonTickOrAction(maxWaitSeconds = 25) {
+  // Chờ thích ứng thông minh: Nếu video nhận tín hiệu nhanh thì pass ngay, tối đa chờ 6 giây
+  async function waitForLessonTickOrAction(maxWaitSeconds = 6) {
     const startTime = performance.now();
-    const intervalMs = 250; // Kiểm tra liên tục mỗi 250ms để bắt tick xanh ngay khi vừa xuất hiện
+    const intervalMs = 250;
     const maxChecks = Math.ceil((maxWaitSeconds * 1000) / intervalMs);
 
     for (let i = 0; i < maxChecks; i++) {
-      // 1. Kiểm tra ngay lập tức: Nếu đã có tick xanh -> Thoát và pass ngay không chờ đợi 1 giây nào!
       if (isCurrentLessonCompleted()) {
         const elapsedSec = ((performance.now() - startTime) / 1000).toFixed(1);
         showInPageToast(`✅ [Auto-Skip] Đã có tick xanh (${elapsedSec}s)! Chuyển ngay bài tiếp...`);
         return true;
       }
 
-      // 2. Tự động bỏ qua câu hỏi trắc nghiệm giữa video (In-video quiz) nếu có
       dismissInVideoQuestionIfPresent();
 
-      // 3. Kích hoạt nút phụ Mark as completed nếu có
       const markBtn = findMarkAsCompletedButton();
       if (markBtn && !isButtonAlreadyCompleted(markBtn)) triggerClick(markBtn);
 
@@ -1078,17 +1092,15 @@
 
       const elapsed = Math.round((performance.now() - startTime) / 1000);
 
-      // 4. Mỗi 2 giây: Nếu Coursera phản hồi chậm, kích thích lại player và cập nhật thông báo
       if (i > 0 && i % 8 === 0) {
         const videos = findVideos();
         if (videos.length > 0) {
           triggerVideoPlaybackProgress(videos);
         }
-        showInPageToast(`⏳ [Auto-Skip] Video chưa có tick xanh, đang kiên nhẫn đợi server cập nhật (${elapsed}s)...`);
+        showInPageToast(`⏳ [Auto-Skip] Đang đồng bộ tiến độ video với máy chủ (${elapsed}s)...`);
       }
     }
 
-    // Đã chờ hết maxWaitSeconds
     return isCurrentLessonCompleted();
   }
 
@@ -1261,7 +1273,7 @@
       triggerVideoPlaybackProgress(videos);
       showInPageToast('⏩ Đã tua Video! Đang kiểm tra tick xanh...');
 
-      waitForLessonTickOrAction(16).then(() => {
+      waitForLessonTickOrAction(6).then(() => {
         navigateToNextLesson();
       });
       return true;
@@ -1520,24 +1532,22 @@
     }
 
     // 2. VIDEO CHƯA CÓ TICK XANH:
-    // Tua video tới cuối (duration - 0.5s) và phát kèm gửi milestone progress
-    showInPageToast('⏩ [Auto-Skip] Video chưa có tick xanh, đang tua tới cuối...');
+    showInPageToast('⏩ [Auto-Skip] Đang vượt khóa và tua Video...');
     triggerVideoPlaybackProgress(videos);
 
-    // 3. Cơ chế chờ thích ứng thông minh:
-    // Kiên nhẫn đợi cho tới khi có ĐÚNG tick xanh trên hàng bài học hiện tại (tối đa 25s)!
-    let gotTick = await waitForLessonTickOrAction(25);
+    // 3. Cơ chế chờ thích ứng:
+    // Đợi tối đa 6s để Coursera ghi nhận nhịp tim phát
+    let gotTick = await waitForLessonTickOrAction(6);
     if (!gotTick) {
-      // Nếu sau 25s vẫn chưa được tick, kích thích phát lại 1 lần nữa và đợi thêm 5s
-      showInPageToast('⏳ [Auto-Skip] Đang thử gửi lại tiến độ video để nhận tick xanh...');
+      showInPageToast('⏳ [Auto-Skip] Đang thử gửi lại tiến độ video...');
       triggerVideoPlaybackProgress(videos);
-      gotTick = await waitForLessonTickOrAction(5);
+      gotTick = await waitForLessonTickOrAction(3);
     }
 
     if (gotTick) {
       showInPageToast('🎉 [Auto-Skip] Đã nhận được tick xanh! Chuyển bài tiếp theo...');
     } else {
-      showInPageToast('⚠️ [Auto-Skip] Đã tua hết video, chuyển sang bài tiếp...');
+      showInPageToast('➡️ [Auto-Skip] Đã hoàn tất đồng bộ video, chuyển sang bài tiếp...');
     }
 
     navigateToNextLesson();
