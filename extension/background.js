@@ -1,59 +1,20 @@
 // Coursera Helper — Background Service Worker
-// Quản lý Side Panel độc lập theo từng Tab (Per-Tab Isolation)
-// Chỉ hiển thị trên tab Coursera, khi chuyển sang tab khác Side Panel tự động ẩn
+// Best Practice: Tab-Specific Side Panel
+// Mở Side Panel gắn liền với Tab hiện tại, tự động ẩn khi người dùng chuyển sang tab khác
 
-// 1. Cấu hình hành vi click icon mở Side Panel
-chrome.sidePanel
-  .setPanelBehavior({ openPanelOnActionClick: true })
-  .catch((error) => console.error("Lỗi cấu hình Side Panel:", error));
-
-// 2. Hàm kích hoạt Side Panel chỉ riêng trên Tab Coursera, vô hiệu hóa trên tab khác
-async function configureTabSidePanel(tabId, url) {
-  if (!tabId) return;
-  const isCoursera = url && (
-    url.includes('coursera.org') || 
-    url.startsWith('https://www.coursera.org') || 
-    url.startsWith('https://coursera.org')
-  );
-
-  try {
-    if (isCoursera) {
-      // Tab Coursera: Bật Side Panel riêng cho tab này
-      await chrome.sidePanel.setOptions({
-        tabId: tabId,
-        path: 'sidepanel.html',
-        enabled: true
-      });
-    } else {
-      // Tab khác: Tắt Side Panel để không hiển thị khi user chuyển tab
-      await chrome.sidePanel.setOptions({
-        tabId: tabId,
-        enabled: false
-      });
+// 1. Khi người dùng click vào biểu tượng Extension ở bất kỳ tab nào,
+// mở Side Panel RIÊNG cho Tab đó (Tab-Specific Scope)
+chrome.action.onClicked.addListener(async (tab) => {
+  if (tab && tab.id) {
+    try {
+      await chrome.sidePanel.open({ tabId: tab.id });
+    } catch (err) {
+      console.error("Không thể mở Side Panel cho tab:", tab.id, err);
     }
-  } catch (err) {
-    // Bỏ qua nếu tab đã bị đóng
-  }
-}
-
-// 3. Lắng nghe khi tab tải trang hoặc chuyển hướng URL
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.url || changeInfo.status === 'complete') {
-    configureTabSidePanel(tabId, tab.url || changeInfo.url);
   }
 });
 
-// 4. Lắng nghe khi người dùng chuyển qua lại giữa các tab (Tab Switch / Activation)
-chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  try {
-    const tab = await chrome.tabs.get(activeInfo.tabId);
-    if (tab && tab.id) {
-      await configureTabSidePanel(tab.id, tab.url);
-    }
-  } catch (e) {}
-});
-
-// 5. Lắng nghe yêu cầu mở Side Panel từ Content Script nếu có
+// 2. Lắng nghe yêu cầu mở Side Panel từ Content Script (khi người dùng bấm nút trên HUD nổi Coursera)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "open_side_panel") {
     if (sender.tab && sender.tab.id) {
@@ -66,17 +27,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return false;
 });
 
-// 6. Khởi tạo cấu hình cho tất cả các tab khi Extension khởi động / nạp lại
+// 3. Tự động nạp lại content.js vào các tab Coursera đang mở khi tiện ích được Reload / Cập nhật
 chrome.runtime.onInstalled.addListener(async () => {
   try {
-    const allTabs = await chrome.tabs.query({});
-    for (const tab of allTabs) {
-      if (tab.id) {
-        configureTabSidePanel(tab.id, tab.url);
-      }
-    }
-
-    // Tự động nạp lại content.js vào các tab Coursera đang mở
     const courseraTabs = await chrome.tabs.query({ url: ['*://*.coursera.org/*', '*://coursera.org/*'] });
     for (const tab of courseraTabs) {
       if (tab.id && !tab.url.startsWith('chrome://')) {
