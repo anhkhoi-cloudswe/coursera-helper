@@ -774,10 +774,10 @@ QUY TẮC GIẢI & TRÌNH BÀY:
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
     const htmlHeader = `
       <div class="ai-result-header">
-        <span class="ai-time-badge">⚡ Đã giải trong ${elapsed}s (${successfulModel})</span>
-        <div style="display: flex; gap: 6px;">
-          <button class="btn-copy-quick" id="btnQuickFillCoursera" title="Tự động tick các đáp án này vào bài trắc nghiệm Coursera">🎯 Tự tick Coursera</button>
-          <button class="btn-copy-quick" id="btnQuickCopyAi" title="Copy toàn bộ đáp án">📋 Copy tất cả</button>
+        <span class="ai-time-badge">⚡ ${elapsed}s (${successfulModel})</span>
+        <div style="display: flex; gap: 4px; flex-shrink: 0;">
+          <button class="btn-copy-quick" id="btnQuickFillCoursera" title="Tự động tick các đáp án này vào bài trắc nghiệm Coursera">🎯 Tự tick</button>
+          <button class="btn-copy-quick" id="btnQuickCopyAi" title="Copy toàn bộ đáp án">📋 Copy</button>
         </div>
       </div>
     `;
@@ -1190,10 +1190,10 @@ function renderProgressiveResults(accumulatedMarkdown, model, currentCount, tota
   const percent = Math.round((currentCount / totalCount) * 100);
   const header = `
     <div class="ai-result-header">
-      <span class="ai-time-badge">⚡ Đang giải: ${currentCount}/${totalCount} câu (${percent}%) - ${model}</span>
-      <div style="display: flex; gap: 6px;">
-        <button class="btn-copy-quick" id="btnQuickFillCoursera" title="Tự động tick lại">🎯 Tự tick Coursera</button>
-        <button class="btn-copy-quick" id="btnQuickCopyAi" title="Copy toàn bộ đáp án">📋 Copy tất cả</button>
+      <span class="ai-time-badge">⚡ ${currentCount}/${totalCount} (${percent}%) - ${model}</span>
+      <div style="display: flex; gap: 4px; flex-shrink: 0;">
+        <button class="btn-copy-quick" id="btnQuickFillCoursera" title="Tự động tick lại">🎯 Tự tick</button>
+        <button class="btn-copy-quick" id="btnQuickCopyAi" title="Copy toàn bộ đáp án">📋 Copy</button>
       </div>
     </div>
   `;

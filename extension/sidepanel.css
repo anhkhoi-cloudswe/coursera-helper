@@ -199,19 +199,26 @@ body {
 
 .settings-row {
   display: flex;
+  align-items: center;
   gap: 8px;
+  width: 100%;
 }
 
 .select-box {
   flex: 1;
+  min-width: 0;
+  width: 0;
   background: #090d16;
   border: var(--border-neo);
   box-shadow: var(--shadow-neo-sm);
   color: var(--text);
   border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 6px 8px;
+  font-size: 11.5px;
   outline: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .settings-tip {
@@ -411,6 +418,10 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .btn-copy-quick {
@@ -424,6 +435,8 @@ textarea::placeholder {
   font-weight: 700;
   cursor: pointer;
   transition: all 0.12s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-copy-quick:hover {
