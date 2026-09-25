@@ -829,31 +829,227 @@
     return isCurrentLessonCompleted();
   }
 
-  // Kích thích video Coursera ghi nhận 100% thời lượng qua các mốc Milestone
+  // ==========================================
+  // COURSERA DIRECT COMPLETION & SEEK-LOCK BYPASS
+  // ==========================================
+
+  const nativeTime = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'currentTime');
+  const nativeRate = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playbackRate');
+  const hookedVideos = new WeakSet();
+  const courseIdCache = {};
+
+  function getCourseraCSRFToken() {
+    try {
+      const parts = document.cookie.split(';');
+      for (let i = 0; i < parts.length; i++) {
+        const [k, v] = parts[i].split('=');
+        if (!k || !v) continue;
+        const key = k.trim().toLowerCase();
+        if (key === 'csrf3-token' || key === 'csrf' || key === 'csrf-token' || key === '__204u') {
+          return decodeURIComponent(v.trim());
+        }
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  function getCourseraUserId() {
+    try {
+      if (window.__PRELOADED_STATE__) {
+        const s = JSON.stringify(window.__PRELOADED_STATE__);
+        const m = s.match(/"userId"\s*:\s*"?(\d+)"?/i) || s.match(/"id"\s*:\s*(\d{5,})/);
+        if (m) return m[1];
+      }
+      const parts = document.cookie.split(';');
+      for (const p of parts) {
+        const [k, v] = p.split('=');
+        if (k && k.trim() === 'CAUTH') {
+          const m = decodeURIComponent(v || '').match(/"id":\s*(\d+)/);
+          if (m) return m[1];
+        }
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  async function getCourseraCourseId(slug) {
+    if (!slug) return '';
+    if (courseIdCache[slug]) return courseIdCache[slug];
+    try {
+      const res = await fetch(`/api/courses.v1?q=slug&slug=${encodeURIComponent(slug)}&fields=id`, {
+        credentials: 'include'
+      });
+      const data = await res.json();
+      const cid = data?.elements?.[0]?.id || '';
+      if (cid) courseIdCache[slug] = cid;
+      return cid;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // Gửi trực tiếp API lên hệ thống Coursera để xác nhận 100% hoàn thành (Kể cả khi video bị khóa)
+  async function completeVideoViaAPI() {
+    try {
+      const path = window.location.pathname;
+      const m = path.match(/\/learn\/([^/]+)\/(?:lecture|supplement|item|ungradedLab|gradedLab|exam|quiz)\/([^/?#]+)/);
+      if (!m) return false;
+
+      const slug = m[1];
+      const itemId = m[2];
+      const csrf = getCourseraCSRFToken();
+      const courseId = await getCourseraCourseId(slug);
+      const userId = getCourseraUserId();
+
+      const headers = {
+        'Content-Type': 'application/json;charset=UTF-8'
+      };
+      if (csrf) {
+        headers['CSRF3-Token'] = csrf;
+        headers['X-CSRF3-Token'] = csrf;
+      }
+
+      const tasks = [];
+
+      // 1. onDemandLectureViews.v1 - API chính thức đánh dấu hoàn thành bài giảng Video
+      if (courseId && itemId) {
+        tasks.push(
+          fetch('/api/onDemandLectureViews.v1', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({
+              courseId: courseId,
+              itemId: itemId,
+              isCompleted: true,
+              watchedUpTo: 999999,
+              videoProgress: 1,
+              percentWatched: 1
+            })
+          }).catch(() => {})
+        );
+
+        // 2. onDemandLearnerMaterials.v1 - Ghi nhận vật liệu học hoàn thành
+        tasks.push(
+          fetch('/api/onDemandLearnerMaterials.v1', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({
+              courseId: courseId,
+              itemId: itemId,
+              isCompleted: true
+            })
+          }).catch(() => {})
+        );
+      }
+
+      // 3. videoEvents API (ViewedUpto)
+      if (userId && slug && itemId) {
+        tasks.push(
+          fetch(`/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/videoEvents`, {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: JSON.stringify({
+              type: 'ViewedUpto',
+              videoPosition: 999999
+            })
+          }).catch(() => {})
+        );
+      }
+
+      await Promise.allSettled(tasks);
+      console.log('[CourseraHelper] Sent direct completion API for video item:', itemId);
+      return true;
+    } catch (e) {
+      console.warn('[CourseraHelper] completeVideoViaAPI error:', e);
+      return false;
+    }
+  }
+
+  // Mở khóa toàn bộ hạn chế seeking trên phần tử Video (cho phép tua tự do kể cả khóa học bị khóa)
+  function unlockVideo(v) {
+    if (!v || hookedVideos.has(v)) return;
+    hookedVideos.add(v);
+
+    // Chặn Coursera lắng nghe seeking/seeked để không thể reset currentTime ngược lại
+    ['seeking', 'seeked'].forEach(evt => {
+      v.addEventListener(evt, e => {
+        e.stopImmediatePropagation();
+      }, { capture: true });
+    });
+
+    // Chặn sự kiện tạm dừng do Coursera áp đặt
+    v.addEventListener('pause', e => {
+      if (v._forcePlaying) {
+        setTimeout(() => {
+          v.play().catch(() => {});
+        }, 120);
+      }
+    }, { capture: true });
+
+    // Tự động bỏ qua câu hỏi giữa video
+    v.addEventListener('timeupdate', () => {
+      dismissInVideoQuestionIfPresent();
+    });
+  }
+
+  // Định kỳ quét và mở khóa mọi video trên trang
+  setInterval(() => {
+    const videos = findVideos();
+    videos.forEach(unlockVideo);
+  }, 1000);
+
+  // Kích thích video Coursera ghi nhận 100% thời lượng qua các mốc Milestone + Gọi trực tiếp API
   function triggerVideoPlaybackProgress(videos) {
     dismissInVideoQuestionIfPresent();
+
     for (const v of videos) {
       try {
+        unlockVideo(v);
+        v._forcePlaying = true;
         v.muted = true;
-        v.playbackRate = 16;
-        const dur = (v.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 2) ? v.duration : 0;
-        if (dur > 0) {
-          // Bắn chuỗi sự kiện timeupdate qua các mốc thời gian để beacon tracking Coursera ghi nhận
-          const milestones = [dur * 0.25, dur * 0.5, dur * 0.75, dur * 0.95, Math.max(0, dur - 0.5)];
-          for (const t of milestones) {
-            v.currentTime = t;
-            v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+
+        // Ép tốc độ phát cao nhất
+        try {
+          if (nativeRate && nativeRate.set) {
+            nativeRate.set.call(v, 16);
+          } else {
+            v.playbackRate = 16;
           }
-        } else {
-          v.currentTime = 999999;
+        } catch (e) {
+          v.playbackRate = 16;
         }
+
+        const dur = (v.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 2) ? v.duration : 1200;
+
+        // Bắn chuỗi mốc tiến độ (milestones) từ 25% -> 50% -> 75% -> 95% -> 100%
+        const milestones = [dur * 0.25, dur * 0.5, dur * 0.75, dur * 0.95, Math.max(0, dur - 0.5), dur];
+        for (const t of milestones) {
+          try {
+            if (nativeTime && nativeTime.set) {
+              nativeTime.set.call(v, t);
+            } else {
+              v.currentTime = t;
+            }
+          } catch (e) {
+            v.currentTime = t;
+          }
+          v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+        }
+
         v.play().catch(() => {});
         v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
         v.dispatchEvent(new Event('ended', { bubbles: true }));
+        v._forcePlaying = false;
       } catch (e) {
         console.error('CourseraHelper video progress error:', e);
       }
     }
+
+    // Đồng thời gọi trực tiếp API Coursera ghi nhận 100% hoàn thành
+    completeVideoViaAPI().catch(() => {});
     dismissInVideoQuestionIfPresent();
   }
 
