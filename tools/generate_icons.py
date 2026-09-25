@@ -16,7 +16,7 @@ def draw_perfect_shield(size):
     def p(x, y):
         return (x * S / 24.0, y * S / 24.0)
 
-    # 2. Outer Shield Solid Polygon (Seamless, 0% Gap)
+    # 2. Outer Shield Solid Polygon (Seamless, 0% Gap at top)
     outer_pts = []
     N = 35
 
@@ -77,14 +77,19 @@ def draw_perfect_shield(size):
     # Cutout Inner Area
     draw.polygon(inner_pts, fill="#6366f1")
 
-    # 4. Single Crisp Checkmark (No extra caps/V-lines)
-    stroke_w = int(S * 0.088)
-    chk_pts = [p(9.0, 12.0), p(11.2, 14.2), p(15.2, 9.8)]
-    draw.line(chk_pts, fill="#ffffff", width=stroke_w, joint="round")
+    # 4. Perfectly Smooth Checkmark (Straight segments + 100% round caps & round vertex)
+    stroke_w = int(S * 0.082)
+    p_start = p(9.0, 12.0)
+    p_vertex = p(11.2, 14.0)
+    p_end = p(15.4, 9.6)
 
-    # Round caps on checkmark ends
+    # Draw individual straight segments without miter joint artifacts
+    draw.line([p_start, p_vertex], fill="#ffffff", width=stroke_w)
+    draw.line([p_vertex, p_end], fill="#ffffff", width=stroke_w)
+
+    # Smooth round caps at start, vertex, and end
     r_cap = stroke_w / 2.0
-    for pt in [chk_pts[0], chk_pts[-1]]:
+    for pt in [p_start, p_vertex, p_end]:
         draw.ellipse([pt[0]-r_cap, pt[1]-r_cap, pt[0]+r_cap, pt[1]+r_cap], fill="#ffffff")
 
     return img.resize((size, size), Image.Resampling.LANCZOS)
@@ -96,4 +101,4 @@ sizes = [16, 48, 128, 300]
 for sz in sizes:
     icon_img = draw_perfect_shield(sz)
     icon_img.save(os.path.join(out_dir, f"icon{sz}.png"), "PNG")
-    print(f"Generated 100% solid, gap-free icon{sz}.png successfully.")
+    print(f"Generated 100% smooth, vertex-rounded icon{sz}.png successfully.")
