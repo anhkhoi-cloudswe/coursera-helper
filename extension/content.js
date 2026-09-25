@@ -1045,59 +1045,87 @@
     videos.forEach(unlockVideo);
   }, 1000);
 
-  // Kích thích video Coursera ghi nhận 100% thời lượng qua Main-World injection + Milestones + Gọi trực tiếp API
-  function triggerVideoPlaybackProgress(videos) {
+  // Tua video đến 85% rồi phát thật ở 16x để gửi heartbeat telemetry thực tế lên Coursera backend
+  // Trả về Promise<boolean> resolve khi video ended hoặc timeout
+  function playVideoToEnd(video, timeoutMs = 90000) {
+    return new Promise(resolve => {
+      if (!video) return resolve(false);
+
+      unlockVideo(video);
+      video._forcePlaying = true;
+      video.muted = true;
+
+      const dur = (video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 2)
+        ? video.duration : 1200;
+
+      // Tua đến 85% để phát phần cuối nhanh hơn
+      const seekTo = Math.max(video.currentTime || 0, dur * 0.85);
+      try {
+        if (nativeTime && nativeTime.set) {
+          nativeTime.set.call(video, seekTo);
+        } else {
+          video.currentTime = seekTo;
+        }
+      } catch (e) {
+        video.currentTime = seekTo;
+      }
+
+      // Đặt tốc độ phát tối đa
+      try {
+        if (nativeRate && nativeRate.set) {
+          nativeRate.set.call(video, 16);
+        } else {
+          video.playbackRate = 16;
+        }
+      } catch (e) {
+        video.playbackRate = 16;
+      }
+
+      // Timeout fallback
+      const timeout = setTimeout(() => {
+        cleanup();
+        resolve(false);
+      }, timeoutMs);
+
+      function onEnded() {
+        cleanup();
+        resolve(true);
+      }
+
+      function cleanup() {
+        video.removeEventListener('ended', onEnded);
+        video._forcePlaying = false;
+        clearTimeout(timeout);
+      }
+
+      video.addEventListener('ended', onEnded, { once: true });
+      video.play().catch(() => {
+        // Nếu play() bị từ chối, fallback sang API
+        cleanup();
+        resolve(false);
+      });
+    });
+  }
+
+  // Khởi động phát video và gọi API hoàn thành - kết hợp cả hai cách
+  async function triggerVideoPlaybackProgress(videos) {
     dismissInVideoQuestionIfPresent();
 
-    // 1. Kích hoạt Main-World event để bypass seek-lock trực tiếp trên engine của Coursera
+    // 1. Gọi Main-World event để bypass seek-lock
     try {
       window.dispatchEvent(new CustomEvent('COURSERA_HELPER_SKIP_VIDEO'));
     } catch (e) {}
 
-    // 2. Dự phòng trong Content Script context: phát siêu tốc và đẩy mốc tiến độ
+    // 2. Với mỗi video, tua đến 85% rồi phát thật ở 16x
     for (const v of videos) {
       try {
-        unlockVideo(v);
-        v._forcePlaying = true;
-        v.muted = true;
-
-        try {
-          if (nativeRate && nativeRate.set) {
-            nativeRate.set.call(v, 16);
-          } else {
-            v.playbackRate = 16;
-          }
-        } catch (e) {
-          v.playbackRate = 16;
-        }
-
-        const dur = (v.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 2) ? v.duration : 1200;
-
-        // Bắn chuỗi mốc tiến độ từ 25% -> 50% -> 75% -> 95% -> 100%
-        const milestones = [dur * 0.25, dur * 0.5, dur * 0.75, dur * 0.95, Math.max(0, dur - 0.5), dur];
-        for (const t of milestones) {
-          try {
-            if (nativeTime && nativeTime.set) {
-              nativeTime.set.call(v, t);
-            } else {
-              v.currentTime = t;
-            }
-          } catch (e) {
-            v.currentTime = t;
-          }
-          v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-        }
-
-        v.play().catch(() => {});
-        v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-        v.dispatchEvent(new Event('ended', { bubbles: true }));
-        v._forcePlaying = false;
+        playVideoToEnd(v, 75000);
       } catch (e) {
-        console.error('CourseraHelper video progress error:', e);
+        console.error('CourseraHelper video play error:', e);
       }
     }
 
-    // Đồng thời gọi trực tiếp API Coursera ghi nhận 100% hoàn thành
+    // 3. Gọi API Coursera để ghi nhận 100% hoàn thành
     completeVideoViaAPI().catch(() => {});
     dismissInVideoQuestionIfPresent();
   }
@@ -1302,12 +1330,53 @@
         return true;
       }
 
-      triggerVideoPlaybackProgress(videos);
-      showInPageToast('⏩ Đã tua Video! Đang kiểm tra tick xanh...');
+      const video = videos[0];
+      const dur = (video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 2)
+        ? video.duration : 1200;
+      const estSeconds = Math.ceil((dur * 0.15) / 16);
+      showInPageToast(`⏩ Đang tua đến 85% và phát 16x (~${estSeconds}s để kết thúc)...`);
 
-      waitForLessonTickOrAction(6).then(() => {
+      // Gửi API hoàn thành song song
+      completeVideoViaAPI().catch(() => {});
+      // Bypass seek-lock qua main world
+      try { window.dispatchEvent(new CustomEvent('COURSERA_HELPER_SKIP_VIDEO')); } catch (e) {}
+
+      // Tua đến 85% rồi phát thật ở 16x
+      unlockVideo(video);
+      video._forcePlaying = true;
+      video.muted = true;
+      try {
+        if (nativeTime && nativeTime.set) nativeTime.set.call(video, dur * 0.85);
+        else video.currentTime = dur * 0.85;
+      } catch (e) { video.currentTime = dur * 0.85; }
+      try {
+        if (nativeRate && nativeRate.set) nativeRate.set.call(video, 16);
+        else video.playbackRate = 16;
+      } catch (e) { video.playbackRate = 16; }
+      video.play().catch(() => {});
+
+      const startTime = Date.now();
+      const maxWait = 90000;
+      function onEndedOrTick() {
+        video._forcePlaying = false;
+        clearInterval(checkInt);
+        clearTimeout(fallback);
+        if (isCurrentLessonCompleted()) {
+          showInPageToast('✅ Video hoàn thành! Chuyển bài tiếp...');
+        }
         navigateToNextLesson();
-      });
+      }
+      const checkInt = setInterval(() => {
+        dismissInVideoQuestionIfPresent();
+        if (isCurrentLessonCompleted()) { onEndedOrTick(); return; }
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        if (elapsed > 0 && elapsed % 5 === 0) {
+          completeVideoViaAPI().catch(() => {});
+          showInPageToast(`⏩ Đang phát 16x... (${elapsed}s)`);
+        }
+      }, 500);
+      const fallback = setTimeout(onEndedOrTick, maxWait);
+      video.addEventListener('ended', onEndedOrTick, { once: true });
       return true;
     }
 
@@ -1521,72 +1590,104 @@
     });
   }
 
-  // Xử lý bài Video với cơ chế thích ứng thông minh:
+  // Xử lý bài Video:
   // - Video đã có tick xanh -> skip nhanh ngay lập tức
-  // - Video chưa có tick xanh -> tua tới cuối và kiên nhẫn đợi đúng tick xanh rồi mới đi tiếp
+  // - Video chưa có tick xanh -> tua đến 85% rồi phát thật ở 16x cho đến khi video kết thúc tự nhiên
   async function processVideoLectureStep(retryCount = 0) {
     const videos = findVideos();
     if (videos.length === 0) {
       if (retryCount < 8) {
         showInPageToast(`⏳ [Auto-Skip] Đang tải Video... (${retryCount + 1}/8)`);
-        setTimeout(() => {
-          processVideoLectureStep(retryCount + 1);
-        }, 450);
-        return;
+        await new Promise(r => setTimeout(r, 450));
+        return processVideoLectureStep(retryCount + 1);
       }
       showInPageToast('ℹ️ Không thấy Video, chuyển sang kiểm tra bài đọc...');
       processReadingStep();
       return;
     }
 
-    // 1. NẾU VIDEO ĐÃ CÓ TICK XANH TỪ TRƯỚC:
-    // Skip nhanh ngay lập tức, không tua lại và không chờ đợi!
-    if (isCurrentLessonCompleted()) {
-      showInPageToast('✅ [Auto-Skip] Video này đã có tick xanh từ trước! Chuyển ngay bài tiếp...');
-      navigateToNextLesson();
-      setTimeout(() => {
-        isStepInProgress = false;
-        lastEvaluatedUrl = '';
-      }, 1000);
-      return;
-    }
-
-    // Chờ 400ms rồi kiểm tra lại lần 2 đề phòng sidebar vừa render xong
+    // 1. NẾU VIDEO ĐÃ CÓ TICK XANH TỪ TRƯỚC: Skip ngay
     await new Promise(r => setTimeout(r, 400));
     if (isCurrentLessonCompleted()) {
       showInPageToast('✅ [Auto-Skip] Video này đã có tick xanh từ trước! Chuyển ngay bài tiếp...');
       navigateToNextLesson();
-      setTimeout(() => {
-        isStepInProgress = false;
-        lastEvaluatedUrl = '';
-      }, 1000);
+      setTimeout(() => { isStepInProgress = false; lastEvaluatedUrl = ''; }, 1000);
       return;
     }
 
-    // 2. VIDEO CHƯA CÓ TICK XANH:
-    showInPageToast('⏩ [Auto-Skip] Đang vượt khóa và tua Video...');
-    triggerVideoPlaybackProgress(videos);
+    const video = videos[0];
+    const dur = (video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 2)
+      ? video.duration : 1200;
 
-    // 3. Cơ chế chờ thích ứng:
-    // Đợi tối đa 6s để Coursera ghi nhận nhịp tim phát
-    let gotTick = await waitForLessonTickOrAction(6);
-    if (!gotTick) {
-      showInPageToast('⏳ [Auto-Skip] Đang thử gửi lại tiến độ video...');
-      triggerVideoPlaybackProgress(videos);
-      gotTick = await waitForLessonTickOrAction(3);
-    }
+    // Tính thời gian ước lượng (15% cuối video ở 16x)
+    const remaining = dur * 0.15;
+    const estSeconds = Math.ceil(remaining / 16);
+    showInPageToast(`⏩ [Auto-Skip] Đang tua đến 85% và phát 16x (~${estSeconds}s để kết thúc)...`);
 
-    if (gotTick) {
+    // 2. Gọi API báo hoàn thành sớm (song song)
+    completeVideoViaAPI().catch(() => {});
+    // 3. Dispatch Main-World event để bypass seek-lock
+    try { window.dispatchEvent(new CustomEvent('COURSERA_HELPER_SKIP_VIDEO')); } catch (e) {}
+
+    // 4. Phát video thật từ 85% ở 16x, chờ kết thúc tự nhiên hoặc tick xanh
+    unlockVideo(video);
+    video._forcePlaying = true;
+    video.muted = true;
+    try {
+      if (nativeTime && nativeTime.set) nativeTime.set.call(video, dur * 0.85);
+      else video.currentTime = dur * 0.85;
+    } catch (e) { video.currentTime = dur * 0.85; }
+    try {
+      if (nativeRate && nativeRate.set) nativeRate.set.call(video, 16);
+      else video.playbackRate = 16;
+    } catch (e) { video.playbackRate = 16; }
+    video.play().catch(() => {});
+
+    // 5. Chờ video kết thúc tự nhiên hoặc tick xanh (tối đa 90 giây)
+    const maxWait = 90000;
+    const startTime = Date.now();
+    let gotTick = false;
+    await new Promise(resolve => {
+      function onEnded() {
+        clearInterval(checkInterval);
+        clearTimeout(fallbackTimeout);
+        resolve();
+      }
+      const checkInterval = setInterval(() => {
+        dismissInVideoQuestionIfPresent();
+        if (isCurrentLessonCompleted()) {
+          gotTick = true;
+          video.removeEventListener('ended', onEnded);
+          clearInterval(checkInterval);
+          clearTimeout(fallbackTimeout);
+          resolve();
+          return;
+        }
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        // Mỗi 5 giây gửi thêm API
+        if (elapsed > 0 && elapsed % 5 === 0) {
+          completeVideoViaAPI().catch(() => {});
+          showInPageToast(`⏩ [Auto-Skip] Đang phát 16x... (${elapsed}s/${Math.ceil(maxWait / 1000)}s)`);
+        }
+      }, 500);
+      const fallbackTimeout = setTimeout(() => {
+        video.removeEventListener('ended', onEnded);
+        clearInterval(checkInterval);
+        resolve();
+      }, maxWait);
+      video.addEventListener('ended', onEnded, { once: true });
+    });
+
+    video._forcePlaying = false;
+
+    if (gotTick || isCurrentLessonCompleted()) {
       showInPageToast('🎉 [Auto-Skip] Đã nhận được tick xanh! Chuyển bài tiếp theo...');
     } else {
-      showInPageToast('➡️ [Auto-Skip] Đã hoàn tất đồng bộ video, chuyển sang bài tiếp...');
+      showInPageToast('➡️ [Auto-Skip] Video đã phát xong, chuyển sang bài tiếp...');
     }
 
     navigateToNextLesson();
-    setTimeout(() => {
-      isStepInProgress = false;
-      lastEvaluatedUrl = '';
-    }, 1200);
+    setTimeout(() => { isStepInProgress = false; lastEvaluatedUrl = ''; }, 1200);
   }
 
   // Xử lý bài đọc Reading (Tự động bấm Mark as completed và Go to next item)
