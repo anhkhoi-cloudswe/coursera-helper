@@ -19,7 +19,6 @@
         </div>
         <div>
           <h2>Coursera Helper</h2>
-          <span class="version-badge">Side Panel Cố Định</span>
         </div>
       </div>
 
@@ -67,25 +66,32 @@
       </div>
     </div>
 
-    <!-- Quick Toolbar -->
+    <!-- Hero Quick Action Bar -->
     <div class="quick-bar">
-      <button class="btn btn-ai btn-sm" id="btnAutoScanSolve" title="Tự động quét toàn bộ câu hỏi (kèm hình ảnh) và tự động tick trên Coursera">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px; margin-right: 2px;"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
-        ⚡ Quét & Tự Giải
+      <button class="btn btn-ai btn-sm" id="btnAutoScanSolve" title="Tự động quét toàn bộ câu hỏi (kèm hình ảnh) và tự động tick trên Coursera" style="width: 100%; justify-content: center; padding: 6px 12px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px; margin-right: 4px;"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+        ⚡ Quét & Tự Giải Bài Thi Coursera
       </button>
-      <button class="btn btn-primary btn-sm" id="btnGrabCoursera" title="Lấy câu hỏi đang bôi đen trên Coursera">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px; margin-right: 2px;"><path d="M7 16a4 4 0 0 1-.88-7.903A5 5 0 1 1 15.9 6L16 6a5 5 0 0 1 1 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
-        Lấy chữ
-      </button>
-      <button class="btn btn-default btn-sm" id="btnPaste" title="Dán nội dung từ Clipboard">Dán</button>
-      <button class="btn btn-ghost btn-sm" id="btnClear" title="Xóa toàn bộ văn bản">Xóa</button>
     </div>
 
     <!-- Section 1: Raw Input -->
     <div class="panel-box input-panel">
       <div class="panel-head">
-        <span>1. Văn bản câu hỏi</span>
-        <span class="char-count" id="inputCount">0 ký tự</span>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+          <span>Văn bản Coursera gốc</span>
+        </div>
+        <div class="action-group">
+          <button class="btn btn-primary btn-sm" id="btnGrabCoursera" title="Lấy câu hỏi đang bôi đen trên Coursera">
+            Lấy chữ
+          </button>
+          <button class="btn btn-primary btn-sm" id="btnPaste" title="Dán nội dung từ Clipboard">
+            Dán
+          </button>
+          <button class="btn btn-default btn-sm" id="btnClear" title="Xóa toàn bộ văn bản">
+            Xóa
+          </button>
+        </div>
       </div>
       <textarea id="rawInput" placeholder="Bôi đen câu hỏi trên Coursera rồi bấm 'Lấy chữ', hoặc bấm 'Dán'..."></textarea>
     </div>
@@ -132,8 +138,7 @@
     <!-- Persistent Status Footer -->
     <footer class="side-footer" style="display: flex; justify-content: space-between; align-items: center;">
       <div class="status-indicator">
-        <span class="status-dot"></span>
-        <span id="footerStatus">Auto-clean khi Ctrl+C đang hoạt động</span>
+        <span>Made by <strong style="color: var(--primary); font-weight: 700;">Anh Khoi Nguyen</strong></span>
       </div>
       <a href="https://coursera-helper.vercel.app/policy.html" target="_blank" style="color: #94a3b8; font-size: 10.5px; text-decoration: none; font-weight: 500;" title="Chính sách bảo mật">Privacy Policy ↗</a>
     </footer>
