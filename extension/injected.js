@@ -35,7 +35,7 @@
       const fiberKey = Object.keys(video).find(k => k.startsWith('__reactFiber'));
       let cur = fiberKey ? video[fiberKey] : null;
       let depth = 0;
-      while (cur && depth < 25) {
+      while (cur && depth < 30) {
         if (cur.memoizedProps) {
           if ('maxWatchedTime' in cur.memoizedProps) cur.memoizedProps.maxWatchedTime = 9999999;
           if ('disableSeeking' in cur.memoizedProps) cur.memoizedProps.disableSeeking = false;
@@ -60,7 +60,17 @@
     videos.forEach(unlockMedia);
   }, 1000);
 
-  // 3. Skip Video Handler with progressive stepping
+  // Helper to extract CSRF token in main world
+  function getCSRFToken() {
+    try {
+      const m = document.cookie.match(/CSRF3-Token=([^;]+)/) || document.cookie.match(/csrf-token=([^;]+)/);
+      return m ? decodeURIComponent(m[1]) : '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 3. Skip Video Handler with progressive stepping & React Fiber onEnded trigger
   window.addEventListener('COURSERA_HELPER_SKIP_VIDEO', async (evt) => {
     const videos = Array.from(document.querySelectorAll('video'));
     if (videos.length === 0) {
@@ -83,21 +93,98 @@
       const stepSize = Math.max(1, (dur - curTime) / steps);
 
       for (let i = 1; i <= steps; i++) {
-        await new Promise(r => setTimeout(r, 65));
+        await new Promise(r => setTimeout(r, 60));
         curTime = Math.min(dur, curTime + stepSize);
-        v.currentTime = (i === steps) ? Math.max(0, dur - 0.3) : curTime;
+        v.currentTime = (i === steps) ? Math.max(0, dur - 0.2) : curTime;
         v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
       }
 
       // Finish at exact duration
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, 80));
       v.currentTime = dur;
       v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
       v.dispatchEvent(new Event('ended', { bubbles: true }));
 
+      // Call React Fiber completion handlers directly
+      try {
+        const fiberKey = Object.keys(v).find(k => k.startsWith('__reactFiber'));
+        let cur = fiberKey ? v[fiberKey] : null;
+        let depth = 0;
+        while (cur && depth < 30) {
+          if (cur.memoizedProps) {
+            if (typeof cur.memoizedProps.onEnded === 'function') {
+              try { cur.memoizedProps.onEnded(); } catch (e) {}
+            }
+            if (typeof cur.memoizedProps.onComplete === 'function') {
+              try { cur.memoizedProps.onComplete(); } catch (e) {}
+            }
+            if (typeof cur.memoizedProps.markCompleted === 'function') {
+              try { cur.memoizedProps.markCompleted(); } catch (e) {}
+            }
+          }
+          cur = cur.return;
+          depth++;
+        }
+      } catch (e) {}
+
       // Keep playing state settled
       v._ch_bypass_lock = false;
     }
+
+    // Call onDemandVideoProgresses API directly with COMPLETED state
+    try {
+      const path = window.location.pathname;
+      const m = path.match(/\/learn\/([^/]+)\/lecture\/([^/?#]+)/);
+      if (m) {
+        const slug = m[1];
+        const itemId = m[2];
+        const csrf = getCSRFToken();
+        const headers = {
+          'Content-Type': 'application/json',
+          'x-coursera-application': 'video-player'
+        };
+        if (csrf) {
+          headers['CSRF3-Token'] = csrf;
+          headers['X-CSRF3-Token'] = csrf;
+          headers['x-csrf-token'] = csrf;
+        }
+
+        // Get CourseId from window or preloaded state
+        let courseId = '';
+        if (window.__PRELOADED_STATE__) {
+          const s = JSON.stringify(window.__PRELOADED_STATE__);
+          const cidMatch = s.match(/"courseId"\s*:\s*"([^"]+)"/);
+          if (cidMatch) courseId = cidMatch[1];
+        }
+
+        if (courseId && itemId) {
+          const payload = JSON.stringify({
+            courseId: courseId,
+            itemId: itemId,
+            videoProgress: {
+              timestamp: 999999,
+              playbackRate: 1,
+              state: 'COMPLETED',
+              duration: 999999
+            }
+          });
+
+          fetch('/api/onDemandVideoProgresses.v1', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: payload
+          }).catch(() => {});
+
+          fetch(`/api/onDemandVideoProgresses.v1/${courseId}~${itemId}`, {
+            method: 'PUT',
+            headers: headers,
+            credentials: 'include',
+            body: payload
+          }).catch(() => {});
+        }
+      }
+    } catch (e) {}
 
     window.dispatchEvent(new CustomEvent('COURSERA_HELPER_VIDEO_SKIPPED', { detail: { success: true } }));
   });

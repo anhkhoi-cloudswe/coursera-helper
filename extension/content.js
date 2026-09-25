@@ -914,17 +914,49 @@
       const userId = getCourseraUserId();
 
       const headers = {
-        'Content-Type': 'application/json;charset=UTF-8'
+        'Content-Type': 'application/json;charset=UTF-8',
+        'x-coursera-application': 'video-player'
       };
       if (csrf) {
         headers['CSRF3-Token'] = csrf;
         headers['X-CSRF3-Token'] = csrf;
+        headers['x-csrf-token'] = csrf;
       }
 
       const tasks = [];
 
-      // 1. onDemandLectureViews.v1 - API chính thức đánh dấu hoàn thành bài giảng Video
+      // 1. onDemandVideoProgresses.v1 - API cập nhật tiến độ video chuẩn của Coursera
       if (courseId && itemId) {
+        const vpPayload = JSON.stringify({
+          courseId: courseId,
+          itemId: itemId,
+          videoProgress: {
+            timestamp: 999999,
+            playbackRate: 1,
+            state: 'COMPLETED',
+            duration: 999999
+          }
+        });
+
+        tasks.push(
+          fetch('/api/onDemandVideoProgresses.v1', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'include',
+            body: vpPayload
+          }).catch(() => {})
+        );
+
+        tasks.push(
+          fetch(`/api/onDemandVideoProgresses.v1/${courseId}~${itemId}`, {
+            method: 'PUT',
+            headers: headers,
+            credentials: 'include',
+            body: vpPayload
+          }).catch(() => {})
+        );
+
+        // 2. onDemandLectureViews.v1 - API đánh dấu hoàn thành bài giảng Video
         tasks.push(
           fetch('/api/onDemandLectureViews.v1', {
             method: 'POST',
@@ -941,7 +973,7 @@
           }).catch(() => {})
         );
 
-        // 2. onDemandLearnerMaterials.v1 - Ghi nhận vật liệu học hoàn thành
+        // 3. onDemandLearnerMaterials.v1 - Ghi nhận vật liệu học hoàn thành
         tasks.push(
           fetch('/api/onDemandLearnerMaterials.v1', {
             method: 'POST',
@@ -956,7 +988,7 @@
         );
       }
 
-      // 3. videoEvents API (ViewedUpto)
+      // 4. videoEvents API (ViewedUpto)
       if (userId && slug && itemId) {
         tasks.push(
           fetch(`/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/videoEvents`, {
