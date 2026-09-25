@@ -839,6 +839,10 @@
         gap: 2px !important;
       }
 
+      .kbd {
+        display: none !important;
+      }
+
       /* 5. Modal Dialog Responsive */
       .modal-dialog {
         padding: 16px !important;
@@ -864,11 +868,7 @@
           </svg>
         </div>
         <div class="brand-info">
-          <h1>
-            Coursera Helper
-            <span class="version-tag">PRO v2.0</span>
-          </h1>
-          <p>Tự động lọc prompt injection ẩn, watermark & giải đề bằng Google Gemini</p>
+          <h1>Coursera Helper</h1>
         </div>
       </div>
 
@@ -880,7 +880,7 @@
 
         <button class="btn btn-default" id="btnOpenSettings" title="Cấu hình Google Gemini API Key">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-          <span id="apiKeyStatusLabel">Cấu hình API</span>
+          <span id="apiKeyStatusLabel">Cài đặt API</span>
         </button>
 
         <a href="/policy.html" class="btn btn-default" title="Chính sách quyền riêng tư" style="text-decoration: none;">
@@ -930,10 +930,6 @@
         <div class="editor-body">
           <textarea id="rawInput" placeholder="Nhấn 'Dán nhanh' hoặc bấm Ctrl+V để dán toàn bộ bài kiểm tra Coursera tại đây..."></textarea>
         </div>
-        <div class="card-footer">
-          <span id="inputStatus">Sẵn sàng nhận dữ liệu</span>
-          <span>Hỗ trợ tự động chuẩn hóa dòng trống</span>
-        </div>
       </div>
 
       <!-- Right Panel: Smart Output & AI Solver -->
@@ -979,11 +975,6 @@
               </div>
             </div>
           </div>
-        </div>
-
-        <div class="card-footer">
-          <span id="outputStatus">Đã lọc sạch bẫy injection</span>
-          <span id="aiStatusBadge">Sẵn sàng kết nối Gemini</span>
         </div>
       </div>
     </div>
@@ -1095,13 +1086,17 @@
 
     function updateApiStatusLabel() {
       if (savedApiKey) {
-        apiKeyStatusLabel.innerText = "API Đã kết nối";
-        apiKeyStatusLabel.style.color = "var(--emerald)";
-        aiStatusBadge.innerText = `Gemini (${savedModel}) sẵn sàng`;
+        if (apiKeyStatusLabel) {
+          apiKeyStatusLabel.innerText = "API Đã kết nối";
+          apiKeyStatusLabel.style.color = "var(--emerald)";
+        }
+        if (aiStatusBadge) aiStatusBadge.innerText = `Gemini (${savedModel}) sẵn sàng`;
       } else {
-        apiKeyStatusLabel.innerText = "Cài đặt API";
-        apiKeyStatusLabel.style.color = "var(--text-muted)";
-        aiStatusBadge.innerText = "Chưa kết nối API (Dùng Copy Prompt)";
+        if (apiKeyStatusLabel) {
+          apiKeyStatusLabel.innerText = "Cài đặt API";
+          apiKeyStatusLabel.style.color = "var(--text-muted)";
+        }
+        if (aiStatusBadge) aiStatusBadge.innerText = "Chưa kết nối API (Dùng Copy Prompt)";
       }
     }
 
@@ -1149,12 +1144,14 @@
       statChars.innerText = result.savedChars.toLocaleString();
       statQuestions.innerText = result.questions;
 
-      if (val.length > 0) {
-        inputStatus.innerText = `${val.length.toLocaleString()} ký tự gốc`;
-        outputStatus.innerText = `${result.cleaned.length.toLocaleString()} ký tự sạch`;
-      } else {
-        inputStatus.innerText = 'Sẵn sàng nhận dữ liệu';
-        outputStatus.innerText = 'Đã lọc sạch bẫy injection';
+      if (inputStatus && outputStatus) {
+        if (val.length > 0) {
+          inputStatus.innerText = `${val.length.toLocaleString()} ký tự gốc`;
+          outputStatus.innerText = `${result.cleaned.length.toLocaleString()} ký tự sạch`;
+        } else {
+          inputStatus.innerText = 'Sẵn sàng nhận dữ liệu';
+          outputStatus.innerText = 'Đã lọc sạch bẫy injection';
+        }
       }
     }
 
