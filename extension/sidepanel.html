@@ -41,7 +41,6 @@
       <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px;">
         <div style="font-size: 11px; font-weight: 600; color: #94a3b8; display: flex; justify-content: space-between;">
           <span>Danh sách Gemini API Key (Xoay tua)</span>
-          <span style="color: #10b981; font-weight: normal;">🔄 Tự chuyển key khi hết quota</span>
         </div>
         <input type="password" id="apiKeyInput" placeholder="🔑 API Key 1 (AIzaSy... — Chính)" class="input-text">
         <input type="password" id="apiKeyInput2" placeholder="🔄 API Key 2 (Dự phòng xoay tua 1 — Tùy chọn)" class="input-text">
@@ -56,7 +55,7 @@
         <button class="btn btn-primary" id="btnSaveKey">Lưu</button>
       </div>
       <div class="settings-tip">
-        Các khóa lưu cục bộ. Khi 1 Key bị chạm trần 20 lượt/phút, hệ thống sẽ tự động chuyển sang Key tiếp theo! Lấy miễn phí tại <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio ↗</a>
+        Tự động chuyển Key khi hết 20 lượt/phút. Lấy miễn phí tại <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio ↗</a>
       </div>
       <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
         <input type="checkbox" id="chkAutoFillQuiz" checked style="accent-color: #10b981; width: 14px; height: 14px; cursor: pointer;">

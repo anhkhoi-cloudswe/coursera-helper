@@ -543,21 +543,22 @@ textarea::placeholder {
 }
 
 .btn-primary {
+  background: #242c3d;
+  color: var(--text);
+}
+.btn-primary:hover {
   background: var(--primary);
   color: white;
 }
-.btn-primary:hover {
-  background: var(--primary-hover);
-}
 
 .btn-emerald {
+  background: #242c3d;
+  color: var(--text);
+}
+.btn-emerald:hover {
   background: var(--emerald);
   color: #000000;
   font-weight: 800;
-}
-.btn-emerald:hover {
-  background: #34d399;
-  color: #000000;
 }
 
 .btn-ai {
