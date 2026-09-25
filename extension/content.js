@@ -1012,19 +1012,14 @@
     }
   }
 
-  // Mở khóa toàn bộ hạn chế seeking trên phần tử Video (cho phép tua tự do kể cả khóa học bị khóa)
+  // Mở khóa hạn chế trên phần tử Video (Content Script context)
+  // NOTE: Seek-lock bypass (seeking/seeked capture) được xử lý bởi injected.js trong Main World
+  // vì listeners của Coursera cũng chạy trong Main World, nên phải chặn tại đúng tầng đó.
   function unlockVideo(v) {
     if (!v || hookedVideos.has(v)) return;
     hookedVideos.add(v);
 
-    // Chặn Coursera lắng nghe seeking/seeked để không thể reset currentTime ngược lại
-    ['seeking', 'seeked'].forEach(evt => {
-      v.addEventListener(evt, e => {
-        e.stopImmediatePropagation();
-      }, { capture: true });
-    });
-
-    // Chặn sự kiện tạm dừng do Coursera áp đặt
+    // Chặn sự kiện tạm dừng do Coursera áp đặt (để video tiếp tục phát ở 16x)
     v.addEventListener('pause', e => {
       if (v._forcePlaying) {
         setTimeout(() => {
@@ -1045,87 +1040,38 @@
     videos.forEach(unlockVideo);
   }, 1000);
 
-  // Tua video đến 85% rồi phát thật ở 16x để gửi heartbeat telemetry thực tế lên Coursera backend
-  // Trả về Promise<boolean> resolve khi video ended hoặc timeout
-  function playVideoToEnd(video, timeoutMs = 90000) {
+  // Dispatch event tới injected.js (Main World) để bypass seek-lock và phát video thật ở 16x
+  // injected.js sẽ: 1) add capture listeners, 2) seek 85%, 3) play 16x, 4) chờ ended tự nhiên
+  // Trả về Promise<boolean> khi injected.js báo hoàn thành hoặc timeout
+  function skipVideoViaMainWorld(timeoutMs = 90000) {
     return new Promise(resolve => {
-      if (!video) return resolve(false);
-
-      unlockVideo(video);
-      video._forcePlaying = true;
-      video.muted = true;
-
-      const dur = (video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 2)
-        ? video.duration : 1200;
-
-      // Tua đến 85% để phát phần cuối nhanh hơn
-      const seekTo = Math.max(video.currentTime || 0, dur * 0.85);
-      try {
-        if (nativeTime && nativeTime.set) {
-          nativeTime.set.call(video, seekTo);
-        } else {
-          video.currentTime = seekTo;
-        }
-      } catch (e) {
-        video.currentTime = seekTo;
+      function onSkipped(e) {
+        window.removeEventListener('COURSERA_HELPER_VIDEO_SKIPPED', onSkipped);
+        clearTimeout(timeout);
+        resolve(e.detail && e.detail.success !== false);
       }
 
-      // Đặt tốc độ phát tối đa
-      try {
-        if (nativeRate && nativeRate.set) {
-          nativeRate.set.call(video, 16);
-        } else {
-          video.playbackRate = 16;
-        }
-      } catch (e) {
-        video.playbackRate = 16;
-      }
-
-      // Timeout fallback
       const timeout = setTimeout(() => {
-        cleanup();
-        resolve(false);
+        window.removeEventListener('COURSERA_HELPER_VIDEO_SKIPPED', onSkipped);
+        resolve(false); // timeout - injected.js didn't respond
       }, timeoutMs);
 
-      function onEnded() {
-        cleanup();
-        resolve(true);
-      }
+      window.addEventListener('COURSERA_HELPER_VIDEO_SKIPPED', onSkipped, { once: true });
 
-      function cleanup() {
-        video.removeEventListener('ended', onEnded);
-        video._forcePlaying = false;
+      // Kích hoạt Main-World bypass engine
+      try {
+        window.dispatchEvent(new CustomEvent('COURSERA_HELPER_SKIP_VIDEO'));
+      } catch (e) {
         clearTimeout(timeout);
-      }
-
-      video.addEventListener('ended', onEnded, { once: true });
-      video.play().catch(() => {
-        // Nếu play() bị từ chối, fallback sang API
-        cleanup();
+        window.removeEventListener('COURSERA_HELPER_VIDEO_SKIPPED', onSkipped);
         resolve(false);
-      });
+      }
     });
   }
 
-  // Khởi động phát video và gọi API hoàn thành - kết hợp cả hai cách
+  // Gọi API hoàn thành song song (backup) khi Main-World đang phát video
   async function triggerVideoPlaybackProgress(videos) {
     dismissInVideoQuestionIfPresent();
-
-    // 1. Gọi Main-World event để bypass seek-lock
-    try {
-      window.dispatchEvent(new CustomEvent('COURSERA_HELPER_SKIP_VIDEO'));
-    } catch (e) {}
-
-    // 2. Với mỗi video, tua đến 85% rồi phát thật ở 16x
-    for (const v of videos) {
-      try {
-        playVideoToEnd(v, 75000);
-      } catch (e) {
-        console.error('CourseraHelper video play error:', e);
-      }
-    }
-
-    // 3. Gọi API Coursera để ghi nhận 100% hoàn thành
     completeVideoViaAPI().catch(() => {});
     dismissInVideoQuestionIfPresent();
   }
@@ -1334,29 +1280,15 @@
       const dur = (video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 2)
         ? video.duration : 1200;
       const estSeconds = Math.ceil((dur * 0.15) / 16);
-      showInPageToast(`⏩ Đang tua đến 85% và phát 16x (~${estSeconds}s để kết thúc)...`);
+      showInPageToast(`⏩ Bypass seek-lock và phát 16x (~${estSeconds}s để kết thúc)...`);
 
-      // Gửi API hoàn thành song song
+      // Gửi API hoàn thành song song + kích hoạt Main World bypass
       completeVideoViaAPI().catch(() => {});
-      // Bypass seek-lock qua main world
-      try { window.dispatchEvent(new CustomEvent('COURSERA_HELPER_SKIP_VIDEO')); } catch (e) {}
-
-      // Tua đến 85% rồi phát thật ở 16x
-      unlockVideo(video);
+      unlockVideo(video); // pause resistance trong isolated world
       video._forcePlaying = true;
-      video.muted = true;
-      try {
-        if (nativeTime && nativeTime.set) nativeTime.set.call(video, dur * 0.85);
-        else video.currentTime = dur * 0.85;
-      } catch (e) { video.currentTime = dur * 0.85; }
-      try {
-        if (nativeRate && nativeRate.set) nativeRate.set.call(video, 16);
-        else video.playbackRate = 16;
-      } catch (e) { video.playbackRate = 16; }
-      video.play().catch(() => {});
 
+      // Lắng nghe tick xanh trong khi injected.js phát video ở main world
       const startTime = Date.now();
-      const maxWait = 90000;
       function onEndedOrTick() {
         video._forcePlaying = false;
         clearInterval(checkInt);
@@ -1375,8 +1307,10 @@
           showInPageToast(`⏩ Đang phát 16x... (${elapsed}s)`);
         }
       }, 500);
-      const fallback = setTimeout(onEndedOrTick, maxWait);
-      video.addEventListener('ended', onEndedOrTick, { once: true });
+      const fallback = setTimeout(onEndedOrTick, 95000);
+
+      // Khi injected.js báo video xong -> navigate
+      skipVideoViaMainWorld(95000).then(onEndedOrTick);
       return true;
     }
 
@@ -1446,8 +1380,8 @@
 
       // Nếu bước trước đang trong quá trình thực thi (chưa hết timeout), không ngắt
       if (isStepInProgress) {
-        // Cho quiz solver thời gian đủ lâu (120s), các loại bài khác 30s
-        const lockTimeout = isQuizSolveInProgress ? 120000 : 30000;
+        // Cho quiz solver thời gian đủ lâu (120s), video khóa (100s), các loại bài khác 30s
+        const lockTimeout = isQuizSolveInProgress ? 120000 : 100000;
         if (Date.now() - lastActionTimestamp > lockTimeout) {
           isStepInProgress = false;
           isQuizSolveInProgress = false;
@@ -1592,7 +1526,8 @@
 
   // Xử lý bài Video:
   // - Video đã có tick xanh -> skip nhanh ngay lập tức
-  // - Video chưa có tick xanh -> tua đến 85% rồi phát thật ở 16x cho đến khi video kết thúc tự nhiên
+  // - Video chưa có tick xanh -> kích hoạt injected.js (Main World) để bypass seek-lock,
+  //   seek đến 85% rồi phát thật ở 16x cho đến khi video kết thúc tự nhiên
   async function processVideoLectureStep(retryCount = 0) {
     const videos = findVideos();
     if (videos.length === 0) {
@@ -1618,68 +1553,50 @@
     const video = videos[0];
     const dur = (video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 2)
       ? video.duration : 1200;
+    const estSeconds = Math.ceil((dur * 0.15) / 16);
+    showInPageToast(`⏩ [Auto-Skip] Bypass seek-lock và phát 16x (~${estSeconds}s để kết thúc)...`);
 
-    // Tính thời gian ước lượng (15% cuối video ở 16x)
-    const remaining = dur * 0.15;
-    const estSeconds = Math.ceil(remaining / 16);
-    showInPageToast(`⏩ [Auto-Skip] Đang tua đến 85% và phát 16x (~${estSeconds}s để kết thúc)...`);
-
-    // 2. Gọi API báo hoàn thành sớm (song song)
+    // 2. Gọi API hoàn thành song song (backup)
     completeVideoViaAPI().catch(() => {});
-    // 3. Dispatch Main-World event để bypass seek-lock
-    try { window.dispatchEvent(new CustomEvent('COURSERA_HELPER_SKIP_VIDEO')); } catch (e) {}
-
-    // 4. Phát video thật từ 85% ở 16x, chờ kết thúc tự nhiên hoặc tick xanh
-    unlockVideo(video);
+    unlockVideo(video); // pause resistance trong isolated world
     video._forcePlaying = true;
-    video.muted = true;
-    try {
-      if (nativeTime && nativeTime.set) nativeTime.set.call(video, dur * 0.85);
-      else video.currentTime = dur * 0.85;
-    } catch (e) { video.currentTime = dur * 0.85; }
-    try {
-      if (nativeRate && nativeRate.set) nativeRate.set.call(video, 16);
-      else video.playbackRate = 16;
-    } catch (e) { video.playbackRate = 16; }
-    video.play().catch(() => {});
 
-    // 5. Chờ video kết thúc tự nhiên hoặc tick xanh (tối đa 90 giây)
-    const maxWait = 90000;
+    // 3. Kích hoạt injected.js (Main World) để seek 85% + play 16x + chờ ended thật
+    //    Đồng thời theo dõi tick xanh và tiến độ trong content script
+    const maxWait = 95000;
     const startTime = Date.now();
     let gotTick = false;
+
+    // Lắng nghe kết quả từ injected.js
+    const mainWorldDone = skipVideoViaMainWorld(maxWait);
+
     await new Promise(resolve => {
-      function onEnded() {
-        clearInterval(checkInterval);
-        clearTimeout(fallbackTimeout);
-        resolve();
-      }
       const checkInterval = setInterval(() => {
         dismissInVideoQuestionIfPresent();
         if (isCurrentLessonCompleted()) {
           gotTick = true;
-          video.removeEventListener('ended', onEnded);
           clearInterval(checkInterval);
-          clearTimeout(fallbackTimeout);
           resolve();
           return;
         }
         const elapsed = Math.round((Date.now() - startTime) / 1000);
-        // Mỗi 5 giây gửi thêm API
         if (elapsed > 0 && elapsed % 5 === 0) {
           completeVideoViaAPI().catch(() => {});
-          showInPageToast(`⏩ [Auto-Skip] Đang phát 16x... (${elapsed}s/${Math.ceil(maxWait / 1000)}s)`);
+          showInPageToast(`⏩ [Auto-Skip] Đang phát 16x... (${elapsed}s)`);
         }
       }, 500);
-      const fallbackTimeout = setTimeout(() => {
-        video.removeEventListener('ended', onEnded);
+
+      // Khi injected.js hoàn thành (video ended hoặc timeout), resolve
+      mainWorldDone.then(() => {
         clearInterval(checkInterval);
         resolve();
-      }, maxWait);
-      video.addEventListener('ended', onEnded, { once: true });
+      });
     });
 
     video._forcePlaying = false;
 
+    // Kiểm tra lần cuối
+    await new Promise(r => setTimeout(r, 500));
     if (gotTick || isCurrentLessonCompleted()) {
       showInPageToast('🎉 [Auto-Skip] Đã nhận được tick xanh! Chuyển bài tiếp theo...');
     } else {

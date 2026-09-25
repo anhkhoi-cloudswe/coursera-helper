@@ -1,41 +1,42 @@
 // Coursera Helper - Main World Injection Script
 // Runs in the MAIN world to directly access Coursera's player, DOM, and React Fiber
-// Bypasses locked video restrictions (seek-lock, fast-forward lock) and ensures legitimate completion
+// Key fix: capture listeners + 16x natural playback to satisfy backend heartbeat validation
 
 (function() {
   if (window.__COURSERA_HELPER_INJECTED__) return;
   window.__COURSERA_HELPER_INJECTED__ = true;
 
-  console.log('[CourseraHelper] Main-world video bypass engine initialized.');
+  console.log('[CourseraHelper] Main-world bypass engine v3 initialized.');
 
-  // 1. Intercept HTMLMediaElement addEventListener to disable Coursera's seek-lock reset
-  const origAddEventListener = HTMLMediaElement.prototype.addEventListener;
-  HTMLMediaElement.prototype.addEventListener = function(type, listener, options) {
-    if (type === 'seeking' || type === 'seeked') {
-      const wrapped = function(event) {
-        if (this._ch_bypass_lock) {
-          event.stopImmediatePropagation();
-          return;
-        }
-        return listener.apply(this, arguments);
-      };
-      this._ch_wrapped = this._ch_wrapped || [];
-      this._ch_wrapped.push({ original: listener, wrapped: wrapped, type: type });
-      return origAddEventListener.call(this, type, wrapped, options);
-    }
-    return origAddEventListener.apply(this, arguments);
-  };
+  // Track which videos have been properly unlocked
+  const unlockedSet = new WeakSet();
 
-  // 2. Unlock Coursera React Fiber state and player restrictions
-  function unlockMedia(video) {
-    if (!video) return;
-    video._ch_bypass_lock = true;
+  // === CORE: Add capturing seek-lock bypass listeners to a video element ===
+  // Must run in MAIN WORLD so we intercept Coursera's listeners (not just content script ones)
+  function addSeekBypassListeners(v) {
+    if (unlockedSet.has(v)) return;
+    unlockedSet.add(v);
 
+    // Block all non-capture seeking/seeked listeners BEFORE they can reset currentTime
+    v.addEventListener('seeking', function(e) {
+      if (v._ch_allow_seek) e.stopImmediatePropagation();
+    }, { capture: true, passive: false });
+
+    v.addEventListener('seeked', function(e) {
+      if (v._ch_allow_seek) e.stopImmediatePropagation();
+    }, { capture: true, passive: false });
+
+    // Also patch memoizedProps to allow seeking
+    patchReactFiber(v);
+  }
+
+  // Unlock React Fiber props on the video element
+  function patchReactFiber(video) {
     try {
       const fiberKey = Object.keys(video).find(k => k.startsWith('__reactFiber'));
       let cur = fiberKey ? video[fiberKey] : null;
       let depth = 0;
-      while (cur && depth < 30) {
+      while (cur && depth < 40) {
         if (cur.memoizedProps) {
           if ('maxWatchedTime' in cur.memoizedProps) cur.memoizedProps.maxWatchedTime = 9999999;
           if ('disableSeeking' in cur.memoizedProps) cur.memoizedProps.disableSeeking = false;
@@ -54,137 +55,89 @@
     } catch (e) {}
   }
 
-  // Auto unlock all videos periodically
+  // Auto-unlock all videos periodically
   setInterval(() => {
-    const videos = document.querySelectorAll('video');
-    videos.forEach(unlockMedia);
-  }, 1000);
+    document.querySelectorAll('video').forEach(v => {
+      addSeekBypassListeners(v);
+    });
+  }, 800);
 
-  // Helper to extract CSRF token in main world
-  function getCSRFToken() {
-    try {
-      const m = document.cookie.match(/CSRF3-Token=([^;]+)/) || document.cookie.match(/csrf-token=([^;]+)/);
-      return m ? decodeURIComponent(m[1]) : '';
-    } catch (e) {
-      return '';
-    }
-  }
-
-  // 3. Skip Video Handler with progressive stepping & React Fiber onEnded trigger
-  window.addEventListener('COURSERA_HELPER_SKIP_VIDEO', async (evt) => {
+  // === MAIN SKIP HANDLER ===
+  window.addEventListener('COURSERA_HELPER_SKIP_VIDEO', async () => {
     const videos = Array.from(document.querySelectorAll('video'));
-    if (videos.length === 0) {
-      window.dispatchEvent(new CustomEvent('COURSERA_HELPER_VIDEO_SKIPPED', { detail: { success: false, reason: 'no_video' } }));
+    if (!videos.length) {
+      window.dispatchEvent(new CustomEvent('COURSERA_HELPER_VIDEO_SKIPPED', { detail: { success: false } }));
       return;
     }
 
     for (const v of videos) {
-      unlockMedia(v);
-      v._ch_bypass_lock = true;
+      // 1. Add bypass listeners (capture, main world) BEFORE doing anything
+      addSeekBypassListeners(v);
+      patchReactFiber(v);
+
+      // 2. Allow seeking flag ON
+      v._ch_allow_seek = true;
       v.muted = true;
-      try { v.playbackRate = 16; } catch (e) {}
 
-      const dur = (v.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 2) ? v.duration : 1200;
-      let curTime = v.currentTime || 0;
-      v.play().catch(() => {});
+      const dur = (v.duration && !isNaN(v.duration) && isFinite(v.duration) && v.duration > 2)
+        ? v.duration : 1200;
 
-      // Step forward progressively across 8 frames so Coursera's player logs natural progress
-      const steps = 8;
-      const stepSize = Math.max(1, (dur - curTime) / steps);
-
-      for (let i = 1; i <= steps; i++) {
-        await new Promise(r => setTimeout(r, 60));
-        curTime = Math.min(dur, curTime + stepSize);
-        v.currentTime = (i === steps) ? Math.max(0, dur - 0.2) : curTime;
-        v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-      }
-
-      // Finish at exact duration
-      await new Promise(r => setTimeout(r, 80));
-      v.currentTime = dur;
-      v.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-      v.dispatchEvent(new Event('ended', { bubbles: true }));
-
-      // Call React Fiber completion handlers directly
+      // 3. Seek to 85% of video
+      const seekTarget = dur * 0.85;
       try {
-        const fiberKey = Object.keys(v).find(k => k.startsWith('__reactFiber'));
-        let cur = fiberKey ? v[fiberKey] : null;
-        let depth = 0;
-        while (cur && depth < 30) {
-          if (cur.memoizedProps) {
-            if (typeof cur.memoizedProps.onEnded === 'function') {
-              try { cur.memoizedProps.onEnded(); } catch (e) {}
-            }
-            if (typeof cur.memoizedProps.onComplete === 'function') {
-              try { cur.memoizedProps.onComplete(); } catch (e) {}
-            }
-            if (typeof cur.memoizedProps.markCompleted === 'function') {
-              try { cur.memoizedProps.markCompleted(); } catch (e) {}
-            }
-          }
-          cur = cur.return;
-          depth++;
-        }
+        v.currentTime = seekTarget;
       } catch (e) {}
 
-      // Keep playing state settled
-      v._ch_bypass_lock = false;
-    }
+      // 4. Set 16x speed
+      try { v.playbackRate = 16; } catch (e) {}
 
-    // Call onDemandVideoProgresses API directly with COMPLETED state
-    try {
-      const path = window.location.pathname;
-      const m = path.match(/\/learn\/([^/]+)\/lecture\/([^/?#]+)/);
-      if (m) {
-        const slug = m[1];
-        const itemId = m[2];
-        const csrf = getCSRFToken();
-        const headers = {
-          'Content-Type': 'application/json',
-          'x-coursera-application': 'video-player'
-        };
-        if (csrf) {
-          headers['CSRF3-Token'] = csrf;
-          headers['X-CSRF3-Token'] = csrf;
-          headers['x-csrf-token'] = csrf;
-        }
+      // 5. Start playing (main world, no isolation issues)
+      try { await v.play(); } catch (e) {}
 
-        // Get CourseId from window or preloaded state
-        let courseId = '';
-        if (window.__PRELOADED_STATE__) {
-          const s = JSON.stringify(window.__PRELOADED_STATE__);
-          const cidMatch = s.match(/"courseId"\s*:\s*"([^"]+)"/);
-          if (cidMatch) courseId = cidMatch[1];
-        }
+      console.log('[CourseraHelper] Seeking to 85% =', seekTarget, '/ duration =', dur, '| playbackRate =', v.playbackRate);
 
-        if (courseId && itemId) {
-          const payload = JSON.stringify({
-            courseId: courseId,
-            itemId: itemId,
-            videoProgress: {
-              timestamp: 999999,
-              playbackRate: 1,
-              state: 'COMPLETED',
-              duration: 999999
+      // 6. Wait for natural 'ended' event (up to 90 seconds)
+      await new Promise(resolve => {
+        const timeout = setTimeout(() => {
+          v.removeEventListener('ended', onEnd);
+          resolve();
+        }, 90000);
+
+        function onEnd() {
+          clearTimeout(timeout);
+          console.log('[CourseraHelper] Video ended naturally at:', v.currentTime);
+
+          // Trigger React Fiber completion handlers
+          try {
+            const fk = Object.keys(v).find(k => k.startsWith('__reactFiber'));
+            let cur = fk ? v[fk] : null;
+            let d = 0;
+            while (cur && d < 40) {
+              if (cur.memoizedProps) {
+                if (typeof cur.memoizedProps.onEnded === 'function') {
+                  try { cur.memoizedProps.onEnded(); } catch (e) {}
+                }
+                if (typeof cur.memoizedProps.onComplete === 'function') {
+                  try { cur.memoizedProps.onComplete(); } catch (e) {}
+                }
+                if (typeof cur.memoizedProps.markCompleted === 'function') {
+                  try { cur.memoizedProps.markCompleted(); } catch (e) {}
+                }
+              }
+              cur = cur.return;
+              d++;
             }
-          });
+          } catch (e) {}
 
-          fetch('/api/onDemandVideoProgresses.v1', {
-            method: 'POST',
-            headers: headers,
-            credentials: 'include',
-            body: payload
-          }).catch(() => {});
-
-          fetch(`/api/onDemandVideoProgresses.v1/${courseId}~${itemId}`, {
-            method: 'PUT',
-            headers: headers,
-            credentials: 'include',
-            body: payload
-          }).catch(() => {});
+          resolve();
         }
-      }
-    } catch (e) {}
+
+        v.addEventListener('ended', onEnd, { once: true });
+      });
+
+      // 7. Disable bypass flag
+      v._ch_allow_seek = false;
+    }
 
     window.dispatchEvent(new CustomEvent('COURSERA_HELPER_VIDEO_SKIPPED', { detail: { success: true } }));
   });
