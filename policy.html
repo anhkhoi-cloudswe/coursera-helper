@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Coursera Helper</title>
+  <meta name="description" content="Privacy Policy for Coursera Helper — Quiz Cleaner & AI Solver extension and web application.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2338bdf8'><path d='M12 3L1 9L12 15L21 10.09V17H23V9M5 13.18V17.18C5 19.94 8.13 22 12 22C15.87 22 19 19.94 19 17.18V13.18L12 17L5 13.18Z'/></svg>">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: rgba(22, 27, 38, 0.85);
+      --card-border: rgba(255, 255, 255, 0.1);
+      --primary: #38bdf8;
+      --primary-grad: linear-gradient(135deg, #38bdf8, #60a5fa);
+      --emerald: #10b981;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.12) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
+        radial-gradient(#1e293b 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 24px 24px;
+      color: var(--text);
+      line-height: 1.7;
+      padding: 40px 20px 80px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 880px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 36px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--card-border);
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .brand-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .brand-title {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-title span {
+      color: var(--primary);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 14px;
+    }
+
+    .nav-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+
+    .nav-btn:hover {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: rgba(56, 189, 248, 0.4);
+      color: var(--primary);
+    }
+
+    .hero-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 36px 40px;
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+      margin-bottom: 30px;
+    }
+
+    .badge-updated {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #34d399;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 9999px;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #ffffff 60%, #94a3b8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+
+    .content-box {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 36px 40px;
+      box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+    }
+
+    .section {
+      margin-bottom: 36px;
+    }
+
+    .section:last-child {
+      margin-bottom: 0;
+    }
+
+    h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      letter-spacing: -0.02em;
+    }
+
+    h2 .icon {
+      color: var(--primary);
+    }
+
+    p {
+      color: #cbd5e1;
+      font-size: 14.5px;
+      margin-bottom: 14px;
+    }
+
+    ul {
+      list-style-type: none;
+      padding: 0;
+      margin-bottom: 16px;
+    }
+
+    li {
+      position: relative;
+      padding-left: 24px;
+      margin-bottom: 10px;
+      font-size: 14px;
+      color: #cbd5e1;
+    }
+
+    li::before {
+      content: "•";
+      position: absolute;
+      left: 8px;
+      top: -1px;
+      color: var(--primary);
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .highlight-card {
+      background: rgba(56, 189, 248, 0.06);
+      border-left: 4px solid var(--primary);
+      padding: 16px 20px;
+      border-radius: 8px;
+      margin: 16px 0;
+    }
+
+    .highlight-card p {
+      margin: 0;
+      font-size: 13.5px;
+      color: #e2e8f0;
+    }
+
+    .lang-toggle-box {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 16px;
+      gap: 8px;
+    }
+
+    .lang-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .lang-btn.active {
+      background: var(--primary);
+      color: #090d16;
+      border-color: var(--primary);
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 40px;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+
+    footer a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <a href="/" class="brand">
+        <div class="brand-logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 3L1 9L12 15L21 10.09V17H23V9M5 13.18V17.18C5 19.94 8.13 22 12 22C15.87 22 19 19.94 19 17.18V13.18L12 17L5 13.18Z" fill="#38bdf8"/>
+          </svg>
+        </div>
+        <div class="brand-title">Coursera <span>Helper</span></div>
+      </a>
+      <div class="nav-links">
+        <a href="/" class="nav-btn">🏠 Web App</a>
+        <a href="https://github.com/anhkhoi-cloudswe/coursera-helper" target="_blank" class="nav-btn">⭐ GitHub Repo</a>
+      </div>
+    </header>
+
+    <div class="hero-card">
+      <div class="badge-updated">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        Last Updated: September 25, 2026
+      </div>
+      <h1>Privacy Policy</h1>
+      <p class="subtitle">
+        This Privacy Policy explains how <strong>Coursera Helper — Quiz Cleaner & AI Solver</strong> handles, processes, and protects user information in compliance with Google Chrome Web Store Developer Program Policies.
+      </p>
+    </div>
+
+    <div class="lang-toggle-box">
+      <button class="lang-btn active" id="btnEn" onclick="switchLang('en')">English</button>
+      <button class="lang-btn" id="btnVi" onclick="switchLang('vi')">Tiếng Việt</button>
+    </div>
+
+    <!-- English Content -->
+    <div id="contentEn" class="content-box">
+      <div class="section">
+        <h2><span class="icon">1.</span> Overview & Purpose</h2>
+        <p>
+          <strong>Coursera Helper — Quiz Cleaner & AI Solver</strong> (the "Extension", "Web App", or "Service") is an educational productivity tool designed to help students clean hidden anti-AI prompt injection traps, automate study progress, and solve quiz assessments directly via Google Gemini AI.
+        </p>
+        <p>
+          We are committed to respecting and safeguarding your privacy. Our core architectural philosophy is <strong>100% Client-Side Processing</strong>.
+        </p>
+      </div>
+
+      <div class="section">
+        <h2><span class="icon">2.</span> Data We Process & How It Is Used</h2>
+        
+        <p><strong>A. Local API Keys (Zero Server Transmission)</strong></p>
+        <p>
+          When you enter your Google Gemini API Key, it is stored <strong>strictly locally</strong> in your browser using <code>chrome.storage.local</code> (for the Extension) or browser <code>localStorage</code> (for the Web App). We <strong>never</strong> transfer, store, log, or have access to your API keys on any remote server.
+        </p>
+
+        <p><strong>B. Web Page Content (Assessment DOM Content)</strong></p>
+        <p>
+          During active user requests on Coursera (e.g., clicking "Solve Quiz" or "Auto-Skip"), the extension reads question text and associated problem images directly from the active Coursera assessment tab (<code>*.coursera.org</code>). This data is processed in real time and transmitted directly from your browser to the official <strong>Google Gemini API</strong> endpoint (<code>generativelanguage.googleapis.com</code>) to generate answer suggestions.
+        </p>
+
+        <p><strong>C. What We DO NOT Collect</strong></p>
+        <ul>
+          <li><strong>NO Personally Identifiable Information (PII)</strong>: We do not collect names, email addresses, phone numbers, ages, or physical addresses.</li>
+          <li><strong>NO Authentication Credentials</strong>: We do not collect or record your Coursera password or login tokens.</li>
+          <li><strong>NO Browsing History</strong>: We do not track or monitor your web browsing activity across any websites outside of your active Coursera interaction.</li>
+          <li><strong>NO Financial or Payment Data</strong>: We do not collect credit cards, banking details, or payment transaction records.</li>
+        </ul>
+      </div>
+
+      <div class="section">
+        <h2><span class="icon">3.</span> Third-Party Services (Google Gemini API)</h2>
+        <p>
+          To generate educational quiz answers, the extension communicates directly with Google's Generative AI API (<code>generativelanguage.googleapis.com</code>) using your provided API key. Data sent includes quiz question text and images for multimodal analysis.
+        </p>
+        <p>
+          Please review <a href="https://ai.google.dev/terms" target="_blank" style="color: var(--primary);">Google AI Studio Terms of Service</a> and <a href="https://policies.google.com/privacy" target="_blank" style="color: var(--primary);">Google Privacy Policy</a> for information on how Google handles API data.
+        </p>
+      </div>
+
+      <div class="section">
+        <h2><span class="icon">4.</span> Chrome Extension Permissions Justification</h2>
+        <p>In accordance with Chrome Web Store Minimal Permissions policy, our extension requests only essential permissions:</p>
+        <ul>
+          <li><code>storage</code>: Used strictly to save your Gemini API keys, active model preferences, and floating HUD position locally.</li>
+          <li><code>sidePanel</code>: Used to display the companion side panel interface for manual pasting and settings.</li>
+          <li><code>activeTab</code> & <code>scripting</code>: Used to inspect the current Coursera assessment DOM when you trigger the quiz solver or video skip.</li>
+          <li><code>host_permissions</code> (<code>*://*.coursera.org/*</code>, <code>https://generativelanguage.googleapis.com/*</code>): Required to interact with Coursera quiz pages and communicate with Google Gemini API.</li>
+        </ul>
+      </div>
+
+      <div class="section">
+        <h2><span class="icon">5.</span> Single Purpose & Non-Sale of User Data</h2>
+        <div class="highlight-card">
+          <p>
+            <strong>Compliance Pledge:</strong><br>
+            • We do NOT sell, rent, monetize, or transfer user data to third parties.<br>
+            • We do NOT use or transfer user data for purposes unrelated to the extension's core single purpose (educational quiz assistance).<br>
+            • We do NOT use user data for creditworthiness or lending evaluations.
+          </p>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2><span class="icon">6.</span> Data Retention & User Control</h2>
+        <p>
+          Since no user data is stored on remote servers, you maintain complete control over your data. You can delete all locally stored API keys and preferences at any time by clearing your browser cache, removing the keys in Extension Settings, or uninstalling the extension.
+        </p>
+      </div>
+
+      <div class="section">
+        <h2><span class="icon">7.</span> Contact & Inquiries</h2>
+        <p>If you have any questions or feedback regarding this Privacy Policy, please contact us at:</p>
+        <ul>
+          <li><strong>Author & Developer</strong>: Anh Khoi Nguyen</li>
+          <li><strong>Email</strong>: <a href="mailto:ahkhoinguyen169@gmail.com" style="color: var(--primary);">ahkhoinguyen169@gmail.com</a></li>
+          <li><strong>GitHub Repository</strong>: <a href="https://github.com/anhkhoi-cloudswe/coursera-helper" target="_blank" style="color: var(--primary);">https://github.com/anhkhoi-cloudswe/coursera-helper</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Vietnamese Content -->
+    <div id="contentVi" class="content-box" style="display: none;">
+      <div class="section">
+        <h2><span class="icon">1.</span> Giới thiệu & Mục đích</h2>
+        <p>
+          <strong>Coursera Helper — Quiz Cleaner & AI Solver</strong> (gọi tắt là "Tiện ích", "Ứng dụng web" hoặc "Dịch vụ") là công cụ hỗ trợ học tập giáo dục giúp sinh viên loại bỏ các bẫy prompt injection ẩn, tự động tua tiến độ học tập và gợi ý giải bài trắc nghiệm thông qua Google Gemini AI.
+        </p>
+        <p>
+          Chúng tôi cam kết tôn trọng và bảo vệ tuyệt đối quyền riêng tư của bạn. Triết lý kiến trúc cốt lõi của chúng tôi là <strong>100% Xử lý cục bộ tại máy người dùng (Client-Side)</strong>.
+        </p>
+      </div>
+
+      <div class="section">
+        <h2><span class="icon">2.</span> Dữ liệu được xử lý & Cách sử dụng</h2>
+        
+        <p><strong>A. Khóa API lưu trữ cục bộ (Không truyền về máy chủ)</strong></p>
+        <p>
+          Khi bạn nhập Gemini API Key, khóa này được lưu trữ <strong>hoàn toàn cục bộ</strong> trong trình duyệt của bạn qua <code>chrome.storage.local</code> (với Extension) hoặc <code>localStorage</code> (với Web App). Chúng tôi <strong>không bao giờ</strong> lưu trữ, theo dõi hoặc gửi API Key của bạn về bất kỳ máy chủ trung gian nào.
+        </p>
+
+        <p><strong>B. Nội dung trang web (Nội dung câu hỏi bài tập Coursera)</strong></p>
+        <p>
+          Khi bạn bấm "Giải Quiz" hoặc "Auto-Skip", tiện ích sẽ đọc văn bản câu hỏi và hình ảnh đi kèm trên tab bài tập Coursera (<code>*.coursera.org</code>). Dữ liệu này được gửi trực tiếp từ trình duyệt của bạn đến máy chủ chính thức của <strong>Google Gemini API</strong> (<code>generativelanguage.googleapis.com</code>) để nhận về gợi ý đáp án.
+        </p>
+
+        <p><strong>C. Những dữ liệu chúng tôi KHÔNG thu thập</strong></p>
+        <ul>
+          <li><strong>KHÔNG thu thập thông tin định danh cá nhân (PII)</strong>: Không thu thập họ tên, email, số điện thoại, địa chỉ hay CCCD.</li>
+          <li><strong>KHÔNG thu thập tài khoản/mật khẩu</strong>: Không lưu trữ thông tin đăng nhập tài khoản Coursera của bạn.</li>
+          <li><strong>KHÔNG thu thập lịch sử duyệt web</strong>: Không theo dõi bất kỳ hoạt động nào của bạn ngoài trang bài tập Coursera đang kích hoạt.</li>
+          <li><strong>KHÔNG thu thập dữ liệu thanh toán</strong>: Không xử lý thông tin thẻ ngân hàng hoặc giao dịch tài chính.</li>
+        </ul>
+      </div>
+
+      <div class="section">
+        <h2><span class="icon">3.</span> Dịch vụ bên thứ ba (Google Gemini API)</h2>
+        <p>
+          Để giải đề trắc nghiệm, tiện ích kết nối trực tiếp với Google Gemini API (<code>generativelanguage.googleapis.com</code>) bằng API key của bạn. Dữ liệu gửi đi chỉ bao gồm đề bài và hình ảnh minh họa câu hỏi.
+        </p>
+        <p>
+          Vui lòng tham khảo <a href="https://policies.google.com/privacy" target="_blank" style="color: var(--primary);">Chính sách quyền riêng tư của Google</a> để biết thêm về cách Google xử lý dữ liệu API.
+        </p>
+      </div>
+
+      <div class="section">
+        <h2><span class="icon">4.</span> Quyền hạn trình duyệt yêu cầu</h2>
+        <ul>
+          <li><code>storage</code>: Lưu trữ API Key và cấu hình thanh nổi HUD cục bộ trên máy.</li>
+          <li><code>sidePanel</code>: Hiển thị giao diện thanh bên tiện lợi.</li>
+          <li><code>activeTab</code> & <code>scripting</code>: Đọc đề bài và tick chọn đáp án khi bạn bấm giải bài trên Coursera.</li>
+          <li><code>host_permissions</code> (<code>*.coursera.org</code>, <code>generativelanguage.googleapis.com</code>): Kết nối với trang Coursera và Google Gemini API.</li>
+        </ul>
+      </div>
+
+      <div class="section">
+        <h2><span class="icon">5.</span> Cam kết Không bán dữ liệu người dùng</h2>
+        <div class="highlight-card">
+          <p>
+            <strong>Cam kết tuân thủ chính sách Google Chrome Web Store:</strong><br>
+            • KHÔNG bán, cho thuê hoặc chuyển nhượng dữ liệu người dùng cho bất kỳ bên thứ ba nào.<br>
+            • KHÔNG sử dụng dữ liệu cho các mục đích ngoài tính năng hỗ trợ học tập.<br>
+            • KHÔNG sử dụng dữ liệu người dùng để đánh giá tín dụng hoặc phục vụ mục đích cho vay.
+          </p>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2><span class="icon">6.</span> Liên hệ & Hỗ trợ</h2>
+        <p>Mọi thắc mắc liên quan đến Chính sách quyền riêng tư, vui lòng liên hệ:</p>
+        <ul>
+          <li><strong>Tác giả / Nhà phát triển</strong>: Anh Khoi Nguyen</li>
+          <li><strong>Email</strong>: <a href="mailto:ahkhoinguyen169@gmail.com" style="color: var(--primary);">ahkhoinguyen169@gmail.com</a></li>
+          <li><strong>GitHub</strong>: <a href="https://github.com/anhkhoi-cloudswe/coursera-helper" target="_blank" style="color: var(--primary);">https://github.com/anhkhoi-cloudswe/coursera-helper</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <footer>
+      <p>© 2026 Coursera Helper. Built by <a href="https://github.com/anhkhoi-cloudswe" target="_blank">Anh Khoi Nguyen</a>. Distributed under MIT License.</p>
+      <p style="margin-top: 6px;"><a href="/">Quay lại trang chủ Web App ↗</a></p>
+    </footer>
+  </div>
+
+  <script>
+    function switchLang(lang) {
+      const enBox = document.getElementById('contentEn');
+      const viBox = document.getElementById('contentVi');
+      const btnEn = document.getElementById('btnEn');
+      const btnVi = document.getElementById('btnVi');
+
+      if (lang === 'vi') {
+        enBox.style.display = 'none';
+        viBox.style.display = 'block';
+        btnEn.classList.remove('active');
+        btnVi.classList.add('active');
+      } else {
+        enBox.style.display = 'block';
+        viBox.style.display = 'none';
+        btnEn.classList.add('active');
+        btnVi.classList.remove('active');
+      }
+    }
+  </script>
+</body>
+</html>

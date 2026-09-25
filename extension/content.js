@@ -2918,59 +2918,62 @@
           border: 2.5px solid #000000 !important;
           box-shadow: 4px 4px 0px #000000 !important;
           border-radius: 9999px !important;
-          padding: 5px 8px !important;
+          padding: 6px 8px !important;
           display: flex !important;
           flex-direction: row !important;
           flex-wrap: nowrap !important;
           align-items: center !important;
-          gap: 6px !important;
+          gap: 8px !important;
           user-select: none !important;
           cursor: grab !important;
           transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease !important;
           width: auto !important;
-          height: 50px !important;
+          height: 56px !important;
           max-width: none !important;
           white-space: nowrap !important;
           touch-action: none !important;
         }
 
         #coursera-helper-hud:hover {
-          box-shadow: 5px 5px 0px #000000 !important;
+          box-shadow: 5.5px 5.5px 0px #000000 !important;
         }
 
-        #coursera-helper-hud.is-dragging {
+        #coursera-helper-hud.is-dragging,
+        #coursera-helper-hud.is-dragging #ch-hud-header {
           cursor: grabbing !important;
           box-shadow: 6px 6px 0px #000000 !important;
         }
 
-        /* Header / Logo Trigger */
+        /* Header Pill / Logo Trigger */
         #ch-hud-header {
           display: inline-flex !important;
           flex-direction: row !important;
           flex-wrap: nowrap !important;
           align-items: center !important;
-          gap: 8px !important;
-          padding: 0 10px !important;
-          height: 38px !important;
+          gap: 9px !important;
+          padding: 0 14px !important;
+          height: 42px !important;
           border-radius: 9999px !important;
-          background: transparent !important;
-          border: none !important;
-          box-shadow: none !important;
+          background: #242c3d !important;
+          border: 2px solid #000000 !important;
+          box-shadow: 2.5px 2.5px 0px #000000 !important;
           cursor: grab !important;
-          transition: background 0.12s ease !important;
+          transition: all 0.12s ease !important;
           flex-shrink: 0 !important;
           white-space: nowrap !important;
         }
 
         #ch-hud-header:hover {
-          background: rgba(255, 255, 255, 0.08) !important;
+          background: #2d374d !important;
+          transform: translate(-1px, -1px) !important;
+          box-shadow: 3.5px 3.5px 0px #000000 !important;
         }
 
         .ch-hud-logo-svg {
-          width: 22px !important;
-          height: 22px !important;
-          min-width: 22px !important;
-          min-height: 22px !important;
+          width: 23px !important;
+          height: 23px !important;
+          min-width: 23px !important;
+          min-height: 23px !important;
           display: inline-block !important;
           flex-shrink: 0 !important;
         }
@@ -2981,7 +2984,7 @@
 
         #coursera-helper-hud .ch-hud-brand-text,
         #coursera-helper-hud .ch-hud-brand-text span {
-          font-size: 14px !important;
+          font-size: 14.5px !important;
           font-weight: 800 !important;
           color: #ffffff !important;
           letter-spacing: -0.01em !important;
@@ -3037,17 +3040,17 @@
         /* Divider */
         .ch-hud-divider {
           width: 2px !important;
-          height: 22px !important;
+          height: 24px !important;
           background: #000000 !important;
-          margin: 0 2px !important;
+          margin: 0 3px !important;
           flex-shrink: 0 !important;
           display: block !important;
         }
 
-        /* Collapsed Mode (Image 2 - Perfect Pill) */
+        /* Collapsed Mode */
         #coursera-helper-hud.is-collapsed {
           padding: 0 !important;
-          height: 44px !important;
+          height: 46px !important;
           background: transparent !important;
           border: none !important;
           box-shadow: none !important;
@@ -3058,7 +3061,7 @@
           border: 2.5px solid #000000 !important;
           box-shadow: 4px 4px 0px #000000 !important;
           padding: 0 16px !important;
-          height: 44px !important;
+          height: 46px !important;
         }
 
         #coursera-helper-hud.is-collapsed #ch-hud-header:hover {
@@ -3081,26 +3084,26 @@
           flex-direction: row !important;
           flex-wrap: nowrap !important;
           align-items: center !important;
-          gap: 6px !important;
+          gap: 8px !important;
           flex-shrink: 0 !important;
           white-space: nowrap !important;
         }
 
-        /* Buttons Styling - Clean Neo Brutalist */
+        /* Buttons Styling - Larger & Neo Brutalist */
         .ch-hud-btn {
           border: 2px solid #000000 !important;
-          box-shadow: 2px 2px 0px #000000 !important;
+          box-shadow: 2.5px 2.5px 0px #000000 !important;
           cursor: pointer !important;
           display: inline-flex !important;
           flex-direction: row !important;
           flex-wrap: nowrap !important;
           align-items: center !important;
-          gap: 6px !important;
-          font-size: 13.5px !important;
-          font-weight: 700 !important;
+          gap: 7px !important;
+          font-size: 14.5px !important;
+          font-weight: 800 !important;
           line-height: 1 !important;
-          height: 38px !important;
-          padding: 0 14px !important;
+          height: 42px !important;
+          padding: 0 16px !important;
           border-radius: 9999px !important;
           transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease !important;
           letter-spacing: -0.01em !important;
@@ -3117,16 +3120,16 @@
         }
 
         .ch-hud-btn .ch-btn-icon {
-          font-size: 15px !important;
+          font-size: 16px !important;
         }
 
         .ch-hud-btn:hover {
           transform: translate(-1px, -1px) !important;
-          box-shadow: 3px 3px 0px #000000 !important;
+          box-shadow: 3.5px 3.5px 0px #000000 !important;
         }
 
         .ch-hud-btn:active {
-          transform: translate(1px, 1px) !important;
+          transform: translate(1.5px, 1.5px) !important;
           box-shadow: 1px 1px 0px #000000 !important;
         }
 
@@ -3193,7 +3196,7 @@
 
     floatingHUD.innerHTML = `
       <div id="ch-hud-header" title="Nhấn 1 lần để mở rộng / thu nhỏ • Nhấn giữ để kéo di chuyển">
-        <svg class="ch-hud-logo-svg" width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg class="ch-hud-logo-svg" width="23" height="23" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 3L1 9L12 15L21 10.09V17H23V9M5 13.18V17.18C5 19.94 8.13 22 12 22C15.87 22 19 19.94 19 17.18V13.18L12 17L5 13.18Z" fill="url(#ch-grad-cyan)"/>
           <defs>
             <linearGradient id="ch-grad-cyan" x1="1" y1="3" x2="23" y2="22" gradientUnits="userSpaceOnUse">
@@ -3240,8 +3243,8 @@
 
     // 1. Quản lý tọa độ & Khôi phục vị trí HUD (Pixel-based, hoàn toàn tự do 360°, không lệch trục)
     const setHUDCoordinates = (x, y) => {
-      const hudW = floatingHUD.offsetWidth || (isCollapsed ? 190 : 600);
-      const hudH = floatingHUD.offsetHeight || 50;
+      const hudW = floatingHUD.offsetWidth || (isCollapsed ? 200 : 620);
+      const hudH = floatingHUD.offsetHeight || 56;
       const maxW = Math.max(10, window.innerWidth - hudW - 10);
       const maxH = Math.max(10, window.innerHeight - hudH - 10);
 
