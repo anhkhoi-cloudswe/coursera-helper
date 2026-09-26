@@ -378,6 +378,21 @@
           if (itemProg && (itemProg.progressState === 'Completed' || itemProg.completed === true)) {
             console.log('[CourseraHelper-Main] Server CONFIRMED Completed for:', itemId);
             isConfirmed = true;
+            try {
+              const link = document.querySelector(`a[href*="/${itemId}/"], a[href$="/${itemId}"]`);
+              if (link) {
+                const aria = link.getAttribute('aria-label') || '';
+                if (aria) link.setAttribute('aria-label', aria.replace(/Not submitted|In progress|chưa nộp|đang làm/gi, 'Completed'));
+                const svg = link.querySelector('svg');
+                if (svg) {
+                  svg.setAttribute('data-testid', 'learn-item-success-icon');
+                  svg.innerHTML = `
+                    <rect fill="var(--cds-color-green-700, #00823c)" height="20" rx="10" width="20"></rect>
+                    <path d="M8.333 13.542l-3.542-3.542 1.18-1.18 2.362 2.354 5.9-5.9 1.18 1.18-7.08 7.088z" fill="#ffffff"></path>
+                  `;
+                }
+              }
+            } catch (e) {}
             break;
           }
         }
