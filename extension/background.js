@@ -44,6 +44,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
   }
 
+  if (request.action === "open_guide") {
+    chrome.tabs.create({ url: "https://coursera-helper.vercel.app/guide" });
+    sendResponse({ success: true });
+    return true;
+  }
+
   // Lấy thông tin xác thực Coursera trực tiếp từ Cookie trình duyệt (kể cả HttpOnly)
   if (request.action === "get_coursera_auth") {
     (async () => {

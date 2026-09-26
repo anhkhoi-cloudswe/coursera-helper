@@ -4291,8 +4291,11 @@
     if (btnGuide) {
       btnGuide.addEventListener('click', (e) => {
         e.stopPropagation();
+        window.open('https://coursera-helper.vercel.app/guide', '_blank');
         if (isExtensionContextValid()) {
-          chrome.runtime.sendMessage({ action: 'open_guide' });
+          try {
+            chrome.runtime.sendMessage({ action: 'open_guide' });
+          } catch (err) {}
         }
       });
     }
