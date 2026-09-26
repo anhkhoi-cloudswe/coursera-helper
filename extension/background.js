@@ -3,32 +3,18 @@
 
 const openSidePanelTabs = new Set();
 
-// 1. Khi người dùng click vào icon Extension:
-// Bấm 1 LẦN ăn ngay -> Mở / Đóng Side Panel chỉ riêng cho Tab hiện tại
+// 1. Tự động mở Side Panel khi người dùng click vào icon Extension trên thanh công cụ Chrome
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((err) => {
+  console.warn("setPanelBehavior not supported or failed:", err);
+});
+
+// Fallback listener nếu browser cần mở qua programmatic call
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab || !tab.id) return;
-
-  const tabId = tab.id;
-
-  if (openSidePanelTabs.has(tabId)) {
-    // Nếu đang mở trên tab này -> Bấm lần nữa để đóng Side Panel
-    openSidePanelTabs.delete(tabId);
-    try {
-      await chrome.sidePanel.setOptions({ tabId: tabId, enabled: false });
-    } catch (e) {}
-  } else {
-    // Nhấn 1 LẦN ăn ngay: Kích hoạt & Mở Side Panel riêng cho Tab hiện tại
-    openSidePanelTabs.add(tabId);
-    try {
-      await chrome.sidePanel.setOptions({
-        tabId: tabId,
-        path: 'sidepanel.html',
-        enabled: true
-      });
-      await chrome.sidePanel.open({ tabId: tabId });
-    } catch (err) {
-      console.error("Lỗi mở Side Panel:", err);
-    }
+  try {
+    await chrome.sidePanel.open({ tabId: tab.id });
+  } catch (err) {
+    console.error("Lỗi mở Side Panel:", err);
   }
 });
 
