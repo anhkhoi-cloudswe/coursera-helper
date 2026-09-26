@@ -2656,6 +2656,10 @@
   async function completeHonorCodeAndSubmitQuiz() {
     // 0. BẢO VỆ TUYỆT ĐỐI: Kiểm tra xem còn câu nào chưa trả lời không!
     const containers = getQuestionContainers();
+    if (!containers || containers.length === 0) {
+      showInPageToast("⛔ Không tìm thấy câu hỏi trắc nghiệm nào trên trang! Tuyệt đối không nộp bài.", true, 8000);
+      return false;
+    }
     const unansweredList = [];
     containers.forEach((c, idx) => {
       if (!isQuestionContainerAnswered(c)) {
@@ -2979,7 +2983,7 @@
     const pageText = document.body.innerText || '';
     const hasUnansWarning = pageText.includes("haven't answered this question") || pageText.includes("You haven't answered");
 
-    if (remainingUnanswered.length > 0 || domUnanswered.length > 0 || hasUnansWarning) {
+    if (!questions || questions.length === 0 || remainingUnanswered.length > 0 || domUnanswered.length > 0 || hasUnansWarning) {
       const count = Math.max(remainingUnanswered.length, domUnanswered.length);
       showInPageToast(`⚠️ Vẫn còn ${count} câu chưa làm xong! Tuyệt đối không nộp bài để bảo vệ điểm của bạn!`, true, 8000);
       isStepInProgress = false;
@@ -4387,94 +4391,93 @@
   function getQuestionContainers() {
     // 1. Selector kinh điển của Coursera (nếu còn tồn tại trên các bài quiz cũ)
     let containers = Array.from(document.querySelectorAll(
-      'div[data-testid="part-container"], .rc-FormPartsQuestion, fieldset.rc-FormPartsQuestion, .rc-QuizQuestion, [data-testid*="quiz-question"], [data-testid*="question-container"]'
+      "div[data-testid=\"part-container\"], .rc-FormPartsQuestion, fieldset.rc-FormPartsQuestion, .rc-QuizQuestion, [data-testid*=\"quiz-question\"], [data-testid*=\"question-container\"]"
     ));
     if (containers.length > 0) {
       containers = containers.filter((c, idx, arr) => !arr.some(other => other !== c && c.contains(other)));
       return containers;
     }
 
-    // 2. Thuật toán Smart CDS: Phát hiện câu hỏi theo tiêu đề câu hỏi đánh số (1., 2., 3.,... hoặc Question 1)
-    const allCandidates = Array.from(document.querySelectorAll(
-      'h1, h2, h3, h4, h5, p, span, div, legend'
-    )).filter(el => {
-      if (el.closest('#coursera-helper-hud, header, nav, footer, #agreement-checkbox-base, [class*="HonorCode"]')) return false;
-      const t = (el.innerText || el.textContent || '').trim();
-      return /^(?:\d+\.|\bQuestion\s+\d+\b|\bCâu\s+\d+\b)/i.test(t) && el.children.length <= 2;
-    });
+    // 2. Modern CDS Architecture: Tìm tất cả [role="radiogroup"] hoặc [role="group"] (chứa radio/checkbox)
+    const groupEls = Array.from(document.querySelectorAll(
+      "[role=\"radiogroup\"], [role=\"group\"]"
+    )).filter(g => !g.closest("#coursera-helper-hud, #agreement-checkbox-base, [class*=\"HonorCode\"]"));
 
-    if (allCandidates.length > 0) {
-      const validHeaders = [];
-      const seenNum = new Set();
-      for (const el of allCandidates) {
-        const t = (el.innerText || el.textContent || '').trim();
-        const m = t.match(/^(?:(\d+)\.|\bQuestion\s+(\d+)\b|\bCâu\s+(\d+)\b)/i);
-        if (m) {
-          const num = parseInt(m[1] || m[2] || m[3], 10);
-          if (!seenNum.has(num)) {
-            seenNum.add(num);
-            validHeaders.push({ num, el });
-          }
-        }
-      }
+    if (groupEls.length > 0) {
+      const qContainers = [];
+      const seenContainers = new Set();
 
-      validHeaders.sort((a, b) => a.num - b.num);
+      for (const group of groupEls) {
+        const hasOptions = group.querySelector("label.cds-checkboxAndRadio-label, input[type=\"radio\"], input[type=\"checkbox\"]");
+        if (!hasOptions) continue;
 
-      const cdsContainers = [];
-      for (let i = 0; i < validHeaders.length; i++) {
-        const headerEl = validHeaders[i].el;
-        const nextHeaderEl = validHeaders[i + 1]?.el;
-
-        let cur = headerEl.parentElement;
-        let bestContainer = null;
-
-        while (cur && cur !== document.body && cur.tagName !== 'FORM') {
-          if (nextHeaderEl && cur.contains(nextHeaderEl)) {
-            break;
-          }
-          const hasInputs = cur.querySelector('label.cds-checkboxAndRadio-label, [class*="checkboxAndRadio-label"], input, textarea');
-          if (hasInputs) {
-            bestContainer = cur;
+        let qBox = group.parentElement;
+        let cur = group;
+        for (let d = 0; d < 4 && cur && cur !== document.body && cur.tagName !== "FORM" && !cur.classList.contains("cds-FullscreenDialog-scrollContainer"); d++) {
+          const text = (cur.innerText || "").trim();
+          if (/^(?:\d+\.|\bQuestion\s+\d+\b|\bCâu\s+\d+\b)/im.test(text) || text.includes("1 point") || text.includes("point")) {
+            qBox = cur;
           }
           cur = cur.parentElement;
         }
 
-        if (bestContainer && !cdsContainers.includes(bestContainer)) {
-          cdsContainers.push(bestContainer);
-        } else if (headerEl.parentElement) {
-          cdsContainers.push(headerEl.parentElement);
+        if (qBox && !seenContainers.has(qBox)) {
+          seenContainers.add(qBox);
+          qContainers.push(qBox);
         }
       }
 
-      if (cdsContainers.length > 0) {
-        return cdsContainers;
+      if (qContainers.length > 0) {
+        qContainers.sort((a, b) => {
+          return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
+        });
+        return qContainers;
       }
     }
 
-    // 3. Thuật toán fallback: Nhóm các input/label theo cụm câu hỏi
-    const allLabels = Array.from(document.querySelectorAll(
-      'label.cds-checkboxAndRadio-label, [class*="checkboxAndRadio-label"], input[type="radio"], input[type="checkbox"]'
-    )).filter(l => !l.closest('#coursera-helper-hud, #agreement-checkbox-base, [class*="HonorCode"]'));
+    // 3. Fallback: Nhóm theo input[type="radio"], input[type="checkbox"] (theo input.name hoặc ancestor)
+    const allInputs = Array.from(document.querySelectorAll(
+      "input[type=\"radio\"], input[type=\"checkbox\"]"
+    )).filter(inp => !inp.closest("#coursera-helper-hud, #agreement-checkbox-base, [class*=\"HonorCode\"]"));
 
-    const parentSet = new Set();
-    allLabels.forEach(l => {
-      let cur = l.parentElement;
-      while (cur && cur !== document.body && cur.tagName !== 'FORM') {
-        const count = cur.querySelectorAll('label.cds-checkboxAndRadio-label, [class*="checkboxAndRadio-label"]').length;
-        const pCount = cur.parentElement ? cur.parentElement.querySelectorAll('label.cds-checkboxAndRadio-label, [class*="checkboxAndRadio-label"]').length : 0;
-        if (pCount > count) {
-          const questionWrapper = cur.parentElement?.querySelector('p, h1, h2, h3, h4, span') ? cur.parentElement : cur;
-          parentSet.add(questionWrapper);
-          break;
+    if (allInputs.length > 0) {
+      const qContainers = [];
+      const seenContainers = new Set();
+      const nameGroups = new Map();
+
+      allInputs.forEach(inp => {
+        const name = inp.name || "unnamed_" + Math.random();
+        if (!nameGroups.has(name)) nameGroups.set(name, []);
+        nameGroups.get(name).push(inp);
+      });
+
+      nameGroups.forEach(inputs => {
+        let container = inputs[0].closest("[role=\"radiogroup\"], [role=\"group\"]") || 
+                        inputs[0].closest("fieldset") || 
+                        inputs[0].closest("label")?.parentElement?.parentElement;
+        let p = container?.parentElement;
+        if (p && p !== document.body && p.tagName !== "FORM" && !p.classList.contains("cds-FullscreenDialog-scrollContainer")) {
+          const pTxt = (p.innerText || "").trim();
+          if (/(?:\d+\.|\bQuestion\s+\d+\b|\bCâu\s+\d+\b)/im.test(pTxt)) {
+            container = p;
+          }
         }
-        cur = cur.parentElement;
-      }
-    });
+        if (container && !seenContainers.has(container)) {
+          seenContainers.add(container);
+          qContainers.push(container);
+        }
+      });
 
-    return Array.from(parentSet);
+      if (qContainers.length > 0) {
+        qContainers.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1);
+        return qContainers;
+      }
+    }
+
+    return [];
   }
 
-  function calculateOptionMatchScore(el, targetAnswer) {
+    function calculateOptionMatchScore(el, targetAnswer) {
     const rawText = (el.innerText || el.textContent || '').trim();
     if (!rawText || rawText.length > 600) return 0;
 
@@ -5222,7 +5225,7 @@
     const pageText = document.body.innerText || '';
     const hasUnansWarning = pageText.includes("haven't answered this question") || pageText.includes("You haven't answered");
 
-    if (remainingUnanswered.length === 0 && domUnanswered.length === 0 && !hasUnansWarning) {
+    if (questions && questions.length > 0 && remainingUnanswered.length === 0 && domUnanswered.length === 0 && !hasUnansWarning) {
       showInPageToast(`🎉 Đã điền xong tất cả ${questions.length} / ${questions.length} câu hỏi! Đang tự động nộp bài...`, false, 4000);
       await completeHonorCodeAndSubmitQuiz();
     } else {
