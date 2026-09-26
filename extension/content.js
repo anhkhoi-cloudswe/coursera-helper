@@ -4226,33 +4226,93 @@
   }
 
   function getQuestionContainers() {
-    // 1. Data-testid chuẩn của Coursera cho từng câu hỏi
-    let containers = Array.from(document.querySelectorAll('div[data-testid="part-container"]'));
-
-    // 2. Class chuẩn câu hỏi trắc nghiệm Coursera
-    if (containers.length === 0) {
-      containers = Array.from(document.querySelectorAll('.rc-FormPartsQuestion, fieldset.rc-FormPartsQuestion, .rc-QuizQuestion'));
+    // 1. Selector kinh điển của Coursera (nếu còn tồn tại trên các bài quiz cũ)
+    let containers = Array.from(document.querySelectorAll(
+      'div[data-testid="part-container"], .rc-FormPartsQuestion, fieldset.rc-FormPartsQuestion, .rc-QuizQuestion, [data-testid*="quiz-question"], [data-testid*="question-container"]'
+    ));
+    if (containers.length > 0) {
+      containers = containers.filter((c, idx, arr) => !arr.some(other => other !== c && c.contains(other)));
+      return containers;
     }
 
-    // 3. fieldset riêng lẻ
-    if (containers.length === 0) {
-      containers = Array.from(document.querySelectorAll('fieldset'));
+    // 2. Thuật toán Smart CDS: Phát hiện câu hỏi theo tiêu đề câu hỏi đánh số (1., 2., 3.,... hoặc Question 1)
+    const allCandidates = Array.from(document.querySelectorAll(
+      'h1, h2, h3, h4, h5, p, span, div, legend'
+    )).filter(el => {
+      if (el.closest('#coursera-helper-hud, header, nav, footer, #agreement-checkbox-base, [class*="HonorCode"]')) return false;
+      const t = (el.innerText || el.textContent || '').trim();
+      return /^(?:\d+\.|\bQuestion\s+\d+\b|\bCâu\s+\d+\b)/i.test(t) && el.children.length <= 2;
+    });
+
+    if (allCandidates.length > 0) {
+      const validHeaders = [];
+      const seenNum = new Set();
+      for (const el of allCandidates) {
+        const t = (el.innerText || el.textContent || '').trim();
+        const m = t.match(/^(?:(\d+)\.|\bQuestion\s+(\d+)\b|\bCâu\s+(\d+)\b)/i);
+        if (m) {
+          const num = parseInt(m[1] || m[2] || m[3], 10);
+          if (!seenNum.has(num)) {
+            seenNum.add(num);
+            validHeaders.push({ num, el });
+          }
+        }
+      }
+
+      validHeaders.sort((a, b) => a.num - b.num);
+
+      const cdsContainers = [];
+      for (let i = 0; i < validHeaders.length; i++) {
+        const headerEl = validHeaders[i].el;
+        const nextHeaderEl = validHeaders[i + 1]?.el;
+
+        let cur = headerEl.parentElement;
+        let bestContainer = null;
+
+        while (cur && cur !== document.body && cur.tagName !== 'FORM') {
+          if (nextHeaderEl && cur.contains(nextHeaderEl)) {
+            break;
+          }
+          const hasInputs = cur.querySelector('label.cds-checkboxAndRadio-label, [class*="checkboxAndRadio-label"], input, textarea');
+          if (hasInputs) {
+            bestContainer = cur;
+          }
+          cur = cur.parentElement;
+        }
+
+        if (bestContainer && !cdsContainers.includes(bestContainer)) {
+          cdsContainers.push(bestContainer);
+        } else if (headerEl.parentElement) {
+          cdsContainers.push(headerEl.parentElement);
+        }
+      }
+
+      if (cdsContainers.length > 0) {
+        return cdsContainers;
+      }
     }
 
-    // 4. Nhóm theo input radio/checkbox nếu không khớp các class trên
-    if (containers.length === 0) {
-      const allInputs = Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
-      const parentSet = new Set();
-      allInputs.forEach(inp => {
-        const group = inp.closest('fieldset, .rc-FormPartsQuestion, [data-testid="part-container"], div[role="group"]') || inp.parentElement?.parentElement;
-        if (group) parentSet.add(group);
-      });
-      containers = Array.from(parentSet);
-    }
+    // 3. Thuật toán fallback: Nhóm các input/label theo cụm câu hỏi
+    const allLabels = Array.from(document.querySelectorAll(
+      'label.cds-checkboxAndRadio-label, [class*="checkboxAndRadio-label"], input[type="radio"], input[type="checkbox"]'
+    )).filter(l => !l.closest('#coursera-helper-hud, #agreement-checkbox-base, [class*="HonorCode"]'));
 
-    // Lọc bỏ container cha nếu nó bao bọc container con (chỉ giữ container lá của từng câu hỏi riêng biệt)
-    containers = containers.filter((c, idx, arr) => !arr.some(other => other !== c && c.contains(other)));
-    return containers;
+    const parentSet = new Set();
+    allLabels.forEach(l => {
+      let cur = l.parentElement;
+      while (cur && cur !== document.body && cur.tagName !== 'FORM') {
+        const count = cur.querySelectorAll('label.cds-checkboxAndRadio-label, [class*="checkboxAndRadio-label"]').length;
+        const pCount = cur.parentElement ? cur.parentElement.querySelectorAll('label.cds-checkboxAndRadio-label, [class*="checkboxAndRadio-label"]').length : 0;
+        if (pCount > count) {
+          const questionWrapper = cur.parentElement?.querySelector('p, h1, h2, h3, h4, span') ? cur.parentElement : cur;
+          parentSet.add(questionWrapper);
+          break;
+        }
+        cur = cur.parentElement;
+      }
+    });
+
+    return Array.from(parentSet);
   }
 
   function calculateOptionMatchScore(el, targetAnswer) {
@@ -4304,12 +4364,12 @@
   // Kiểm tra xem 1 câu hỏi cụ thể đã được tick chọn phương án nào chưa
   function isQuestionContainerAnswered(container) {
     if (!container) return false;
-    const checkedInput = container.querySelector('input[type="radio"]:checked, input[type="checkbox"]:checked');
+    const checkedInput = container.querySelector('input[type="radio"]:checked, input[type="checkbox"]:not(#agreement-checkbox-base):checked');
     if (checkedInput) return true;
-    const ariaChecked = container.querySelector('[aria-checked="true"]');
-    if (ariaChecked) return true;
+    const ariaChecked = container.querySelector('[aria-checked="true"]:not(#agreement-checkbox-base)');
+    if (ariaChecked && !ariaChecked.closest('#agreement-checkbox-base, [class*="HonorCode"]')) return true;
     const cdsChecked = container.querySelector('.cds-checkboxAndRadio-checked, [class*="checked" i]');
-    if (cdsChecked) return true;
+    if (cdsChecked && !cdsChecked.closest('#agreement-checkbox-base, [class*="HonorCode"]')) return true;
     return false;
   }
 
@@ -4448,7 +4508,8 @@
       const searchRoot = container || document;
       const optElements = Array.from(searchRoot.querySelectorAll(
         'label.cds-checkboxAndRadio-label, label, [role="radio"], [role="checkbox"], li.rc-Option'
-      )).filter((el, idx, arr) => !arr.some(other => other !== el && other.contains(el)));
+      )).filter(el => !el.closest('#agreement-checkbox-base, [class*="HonorCode"]'))
+        .filter((el, idx, arr) => !arr.some(other => other !== el && other.contains(el)));
 
       for (const ansText of targetAnswers) {
         let bestMatch = null;
@@ -4675,9 +4736,11 @@
       let qType = 'radio';
 
       for (const optEl of optEls) {
+        if (optEl.closest('#agreement-checkbox-base, [class*="HonorCode"]')) continue;
         const rawOptText = (optEl.innerText || optEl.textContent || '').trim();
         const cleanOpt = rawOptText.replace(/\s+/g, ' ').trim();
         if (!cleanOpt || cleanOpt.length > 500) continue;
+        if (cleanOpt.includes('understand and agree') || cleanOpt.includes('Honor Code')) continue;
         if (seenTexts.has(cleanOpt.toLowerCase())) continue;
         seenTexts.add(cleanOpt.toLowerCase());
 
