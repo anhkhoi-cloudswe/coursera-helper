@@ -850,6 +850,8 @@
   const hookedVideos = new WeakSet();
   const courseIdCache = {};
 
+  let cachedCourseraUserId = null;
+
   function getCourseraCSRFToken() {
     try {
       const parts = document.cookie.split(';');
@@ -857,7 +859,7 @@
         const [k, v] = parts[i].split('=');
         if (!k || !v) continue;
         const key = k.trim().toLowerCase();
-        if (key === 'csrf3-token' || key === 'csrf' || key === 'csrf-token' || key === '__204u') {
+        if (key === 'csrf3-token' || key === 'csrf2-token' || key === 'csrf' || key === 'csrf-token' || key === '__204u') {
           return decodeURIComponent(v.trim());
         }
       }
@@ -865,43 +867,113 @@
     return '';
   }
 
-  function getCourseraUserId() {
+  function getCourseraHeaders() {
+    const csrf = getCourseraCSRFToken();
+    const headers = {
+      'Content-Type': 'application/json;charset=UTF-8',
+      'Accept': 'application/json, text/plain, */*',
+      'x-coursera-application': 'ondemand',
+      'x-requested-with': 'XMLHttpRequest'
+    };
+    if (csrf) {
+      headers['x-csrf3-token'] = csrf;
+      headers['x-csrf2-token'] = csrf;
+      headers['CSRF3-Token'] = csrf;
+      headers['X-CSRF3-Token'] = csrf;
+    }
+    return headers;
+  }
+
+  async function getCourseraUserId() {
+    if (cachedCourseraUserId) return cachedCourseraUserId;
+
+    // 1. Gọi trực tiếp API Coursera lấy User ID chuẩn nhất
+    try {
+      const res = await fetch('/api/adminUserPermissions.v1?q=my', {
+        headers: getCourseraHeaders(),
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const uid = data?.elements?.[0]?.id;
+        if (uid) {
+          cachedCourseraUserId = String(uid);
+          return cachedCourseraUserId;
+        }
+      }
+    } catch (e) {}
+
+    // 2. Tìm trong window.__PRELOADED_STATE__
     try {
       if (window.__PRELOADED_STATE__) {
         const s = JSON.stringify(window.__PRELOADED_STATE__);
         const m = s.match(/"userId"\s*:\s*"?(\d+)"?/i) || s.match(/"id"\s*:\s*(\d{5,})/);
-        if (m) return m[1];
+        if (m) {
+          cachedCourseraUserId = m[1];
+          return cachedCourseraUserId;
+        }
       }
+    } catch (e) {}
+
+    // 3. Tìm trong cookie CAUTH
+    try {
       const parts = document.cookie.split(';');
       for (const p of parts) {
         const [k, v] = p.split('=');
         if (k && k.trim() === 'CAUTH') {
           const m = decodeURIComponent(v || '').match(/"id":\s*(\d+)/);
-          if (m) return m[1];
+          if (m) {
+            cachedCourseraUserId = m[1];
+            return cachedCourseraUserId;
+          }
         }
       }
     } catch (e) {}
+
     return '';
   }
 
   async function getCourseraCourseId(slug) {
     if (!slug) return '';
     if (courseIdCache[slug]) return courseIdCache[slug];
+
+    // 1. Thử lấy courseId từ onDemandCourseMaterials.v2 chuẩn
     try {
-      const res = await fetch(`/api/courses.v1?q=slug&slug=${encodeURIComponent(slug)}&fields=id`, {
+      const res = await fetch(`/api/onDemandCourseMaterials.v2/?q=slug&slug=${encodeURIComponent(slug)}&fields=id`, {
+        headers: getCourseraHeaders(),
         credentials: 'include'
       });
-      const data = await res.json();
-      const cid = data?.elements?.[0]?.id || '';
-      if (cid) courseIdCache[slug] = cid;
-      return cid;
-    } catch (e) {
-      return '';
-    }
+      if (res.ok) {
+        const data = await res.json();
+        const cid = data?.elements?.[0]?.id;
+        if (cid) {
+          courseIdCache[slug] = cid;
+          return cid;
+        }
+      }
+    } catch (e) {}
+
+    // 2. Fallback sang courses.v1
+    try {
+      const res = await fetch(`/api/courses.v1?q=slug&slug=${encodeURIComponent(slug)}&fields=id`, {
+        headers: getCourseraHeaders(),
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const cid = data?.elements?.[0]?.id;
+        if (cid) {
+          courseIdCache[slug] = cid;
+          return cid;
+        }
+      }
+    } catch (e) {}
+
+    return '';
   }
 
-  // Gửi trực tiếp API lên hệ thống Coursera để xác nhận 100% hoàn thành (Kể cả khi video bị khóa)
-  async function completeVideoViaAPI() {
+  // Đánh dấu hoàn thành bài giảng Video trực tiếp lên hệ thống Coursera (Bypass 100% video bị khóa)
+  async function completeVideoViaAPI(targetVideoEl = null) {
     try {
       const path = window.location.pathname;
       const m = path.match(/\/learn\/([^/]+)\/(?:lecture|supplement|item|ungradedLab|gradedLab|exam|quiz)\/([^/?#]+)/);
@@ -909,105 +981,183 @@
 
       const slug = m[1];
       const itemId = m[2];
-      const csrf = getCourseraCSRFToken();
-      const courseId = await getCourseraCourseId(slug);
-      const userId = getCourseraUserId();
 
-      const headers = {
-        'Content-Type': 'application/json;charset=UTF-8',
-        'x-coursera-application': 'video-player'
-      };
-      if (csrf) {
-        headers['CSRF3-Token'] = csrf;
-        headers['X-CSRF3-Token'] = csrf;
-        headers['x-csrf-token'] = csrf;
+      const [userId, courseId] = await Promise.all([
+        getCourseraUserId(),
+        getCourseraCourseId(slug)
+      ]);
+
+      const headers = getCourseraHeaders();
+      console.log('[CourseraHelper] completeVideoViaAPI starting:', { slug, itemId, userId, courseId });
+
+      if (!userId || !courseId) {
+        console.warn('[CourseraHelper] Missing userId or courseId for API completion');
+        return false;
       }
 
-      const tasks = [];
+      // 1. Lấy metadata của bài giảng video (xem video có bị khóa tua không và lấy trackingId, endMs)
+      let canSkip = true;
+      let trackingId = itemId;
+      let durationMs = 1200000;
 
-      // 1. onDemandVideoProgresses.v1 - API cập nhật tiến độ video chuẩn của Coursera
-      if (courseId && itemId) {
-        const vpPayload = JSON.stringify({
-          courseId: courseId,
-          itemId: itemId,
-          videoProgress: {
-            timestamp: 999999,
-            playbackRate: 1,
-            state: 'COMPLETED',
-            duration: 999999
-          }
+      try {
+        const metaRes = await fetch(`/api/onDemandLectureVideos.v1/${courseId}~${itemId}?includes=video&fields=disableSkippingForward,startMs,endMs`, {
+          headers: headers,
+          credentials: 'include'
         });
+        if (metaRes.ok) {
+          const metaData = await metaRes.json();
+          const elem = metaData?.elements?.[0];
+          if (elem && elem.disableSkippingForward === true) {
+            canSkip = false;
+          }
+          const tid = metaData?.linked?.['onDemandVideos.v1']?.[0]?.id;
+          if (tid) trackingId = tid;
+          if (elem?.endMs && elem.endMs > 0) {
+            durationMs = elem.endMs;
+          }
+        }
+      } catch (e) {
+        console.warn('[CourseraHelper] Fetch video metadata warning:', e);
+      }
 
-        tasks.push(
-          fetch('/api/onDemandVideoProgresses.v1', {
+      if (targetVideoEl && targetVideoEl.duration && !isNaN(targetVideoEl.duration) && isFinite(targetVideoEl.duration) && targetVideoEl.duration > 2) {
+        durationMs = Math.ceil(targetVideoEl.duration * 1000);
+      }
+
+      const viewedUpToMs = durationMs + 2000;
+
+      if (canSkip) {
+        // Video cho phép skip bình thường: Gửi sự kiện ended
+        console.log('[CourseraHelper] Video is skippable, triggering ended event');
+        await fetch(`/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`, {
+          method: 'POST',
+          headers: headers,
+          credentials: 'include',
+          body: JSON.stringify({ contentRequestBody: {} })
+        }).catch(() => {});
+      } else {
+        // Video BỊ KHÓA (disableSkippingForward = true):
+        // Thực thi quy trình chuẩn: 1) play -> 2) PUT onDemandVideoProgresses -> 3) ended
+        console.log('[CourseraHelper] Video is LOCKED. Executing 3-step completion flow:', { trackingId, viewedUpToMs });
+
+        // Bước 1: Sự kiện play
+        try {
+          await fetch(`/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/play?autoEnroll=false`, {
             method: 'POST',
             headers: headers,
             credentials: 'include',
-            body: vpPayload
-          }).catch(() => {})
-        );
+            body: JSON.stringify({ contentRequestBody: {} })
+          });
+        } catch (e) {}
 
-        tasks.push(
-          fetch(`/api/onDemandVideoProgresses.v1/${courseId}~${itemId}`, {
+        // Bước 2: Cập nhật viewedUpTo lên toàn bộ thời lượng video
+        try {
+          const progressRes = await fetch(`/api/onDemandVideoProgresses.v1/${userId}~${courseId}~${trackingId}`, {
             method: 'PUT',
             headers: headers,
             credentials: 'include',
-            body: vpPayload
-          }).catch(() => {})
-        );
+            body: JSON.stringify({
+              videoProgressId: `${userId}~${courseId}~${trackingId}`,
+              viewedUpTo: viewedUpToMs
+            })
+          });
+          console.log('[CourseraHelper] onDemandVideoProgresses status:', progressRes.status);
+        } catch (e) {}
 
-        // 2. onDemandLectureViews.v1 - API đánh dấu hoàn thành bài giảng Video
-        tasks.push(
-          fetch('/api/onDemandLectureViews.v1', {
+        // Bước 3: Sự kiện ended
+        try {
+          const endedRes = await fetch(`/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`, {
             method: 'POST',
             headers: headers,
             credentials: 'include',
-            body: JSON.stringify({
-              courseId: courseId,
-              itemId: itemId,
-              isCompleted: true,
-              watchedUpTo: 999999,
-              videoProgress: 1,
-              percentWatched: 1
-            })
-          }).catch(() => {})
-        );
-
-        // 3. onDemandLearnerMaterials.v1 - Ghi nhận vật liệu học hoàn thành
-        tasks.push(
-          fetch('/api/onDemandLearnerMaterials.v1', {
-            method: 'POST',
-            headers: headers,
-            credentials: 'include',
-            body: JSON.stringify({
-              courseId: courseId,
-              itemId: itemId,
-              isCompleted: true
-            })
-          }).catch(() => {})
-        );
+            body: JSON.stringify({ contentRequestBody: {} })
+          });
+          console.log('[CourseraHelper] videoEvents/ended status:', endedRes.status);
+        } catch (e) {}
       }
 
-      // 4. videoEvents API (ViewedUpto)
-      if (userId && slug && itemId) {
-        tasks.push(
-          fetch(`/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/videoEvents`, {
-            method: 'POST',
-            headers: headers,
-            credentials: 'include',
-            body: JSON.stringify({
-              type: 'ViewedUpto',
-              videoPosition: 999999
-            })
-          }).catch(() => {})
-        );
+      // 4. Đồng thời kích hoạt React Fiber handlers trên phần tử video nếu có
+      if (targetVideoEl) {
+        try {
+          const fk = Object.keys(targetVideoEl).find(k => k.startsWith('__reactFiber'));
+          let cur = fk ? targetVideoEl[fk] : null;
+          let d = 0;
+          while (cur && d < 40) {
+            if (cur.memoizedProps) {
+              if (typeof cur.memoizedProps.onEnded === 'function') {
+                try { cur.memoizedProps.onEnded(); } catch (e) {}
+              }
+              if (typeof cur.memoizedProps.onComplete === 'function') {
+                try { cur.memoizedProps.onComplete(); } catch (e) {}
+              }
+            }
+            cur = cur.return;
+            d++;
+          }
+        } catch (e) {}
       }
 
-      await Promise.allSettled(tasks);
-      console.log('[CourseraHelper] Sent direct completion API for video item:', itemId);
       return true;
     } catch (e) {
       console.warn('[CourseraHelper] completeVideoViaAPI error:', e);
+      return false;
+    }
+  }
+
+  // Kiểm tra trực tiếp với server Coursera xem item đã được đánh dấu Completed chưa
+  async function checkItemCompletedViaServer(slug, itemId) {
+    try {
+      const [userId, courseId] = await Promise.all([
+        getCourseraUserId(),
+        getCourseraCourseId(slug)
+      ]);
+      if (!userId || !courseId || !itemId) return false;
+
+      const res = await fetch(`/api/onDemandCoursesProgress.v1/${userId}~${courseId}?fields=gradedAssignmentGroupProgress`, {
+        headers: getCourseraHeaders(),
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const items = data?.elements?.[0]?.items || {};
+        const p = items[itemId];
+        if (p && (p.progressState === 'Completed' || p.completed === true)) {
+          return true;
+        }
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // Đánh dấu hoàn thành bài đọc Reading / Supplement qua API
+  async function completeSupplementViaAPI() {
+    try {
+      const path = window.location.pathname;
+      const m = path.match(/\/learn\/([^/]+)\/(?:lecture|supplement|item|ungradedLab|gradedLab|exam|quiz)\/([^/?#]+)/);
+      if (!m) return false;
+      const slug = m[1];
+      const itemId = m[2];
+
+      const [userId, courseId] = await Promise.all([
+        getCourseraUserId(),
+        getCourseraCourseId(slug)
+      ]);
+      if (!userId || !courseId || !itemId) return false;
+
+      const res = await fetch('/api/onDemandSupplementCompletions.v1', {
+        method: 'POST',
+        headers: getCourseraHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({
+          courseId: courseId,
+          itemId: itemId,
+          userId: parseInt(userId, 10)
+        })
+      });
+      console.log('[CourseraHelper] onDemandSupplementCompletions status:', res.status);
+      return res.ok;
+    } catch (e) {
       return false;
     }
   }
@@ -1277,40 +1427,44 @@
       }
 
       const video = videos[0];
-      const dur = (video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 2)
-        ? video.duration : 1200;
-      const estSeconds = Math.ceil((dur * 0.15) / 16);
-      showInPageToast(`⏩ Bypass seek-lock và phát 16x (~${estSeconds}s để kết thúc)...`);
+      showInPageToast('⚡ Đang gửi tín hiệu hoàn thành video lên hệ thống Coursera...');
 
-      // Gửi API hoàn thành song song + kích hoạt Main World bypass
-      completeVideoViaAPI().catch(() => {});
-      unlockVideo(video); // pause resistance trong isolated world
-      video._forcePlaying = true;
+      (async () => {
+        // Gửi API hoàn thành chuẩn (tương thích cả video bị khóa tua)
+        await completeVideoViaAPI(video);
 
-      // Lắng nghe tick xanh trong khi injected.js phát video ở main world
-      const startTime = Date.now();
-      function onEndedOrTick() {
-        video._forcePlaying = false;
-        clearInterval(checkInt);
-        clearTimeout(fallback);
-        if (isCurrentLessonCompleted()) {
-          showInPageToast('✅ Video hoàn thành! Chuyển bài tiếp...');
+        // Chờ xác nhận tick xanh từ DOM hoặc trực tiếp từ server Coursera
+        const path = window.location.pathname;
+        const m = path.match(/\/learn\/([^/]+)\/(?:lecture|supplement|item)\/([^/?#]+)/);
+        const slug = m ? m[1] : '';
+        const itemId = m ? m[2] : '';
+
+        let completed = false;
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 300));
+          dismissInVideoQuestionIfPresent();
+          if (isCurrentLessonCompleted()) {
+            completed = true;
+            break;
+          }
+          if (i === 4 && slug && itemId) {
+            const apiDone = await checkItemCompletedViaServer(slug, itemId);
+            if (apiDone) {
+              completed = true;
+              break;
+            }
+          }
         }
-        navigateToNextLesson();
-      }
-      const checkInt = setInterval(() => {
-        dismissInVideoQuestionIfPresent();
-        if (isCurrentLessonCompleted()) { onEndedOrTick(); return; }
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
-        if (elapsed > 0 && elapsed % 5 === 0) {
-          completeVideoViaAPI().catch(() => {});
-          showInPageToast(`⏩ Đang phát 16x... (${elapsed}s)`);
-        }
-      }, 500);
-      const fallback = setTimeout(onEndedOrTick, 95000);
 
-      // Khi injected.js báo video xong -> navigate
-      skipVideoViaMainWorld(95000).then(onEndedOrTick);
+        if (completed || isCurrentLessonCompleted()) {
+          showInPageToast('✅ Video đã hoàn thành (có tick xanh)! Đang chuyển bài tiếp...');
+        } else {
+          showInPageToast('➡️ Đang chuyển sang bài tiếp theo...');
+        }
+
+        setTimeout(() => navigateToNextLesson(), 500);
+      })();
+
       return true;
     }
 
@@ -1551,65 +1705,51 @@
     }
 
     const video = videos[0];
-    const dur = (video.duration && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 2)
-      ? video.duration : 1200;
-    const estSeconds = Math.ceil((dur * 0.15) / 16);
-    showInPageToast(`⏩ [Auto-Skip] Bypass seek-lock và phát 16x (~${estSeconds}s để kết thúc)...`);
+    showInPageToast('⚡ [Auto-Skip] Đang đồng bộ hoàn thành video với hệ thống...');
 
-    // 2. Gọi API hoàn thành song song (backup)
-    completeVideoViaAPI().catch(() => {});
-    unlockVideo(video); // pause resistance trong isolated world
-    video._forcePlaying = true;
+    // 2. Gửi API hoàn thành chuẩn (hỗ trợ cả video bị khóa tua)
+    await completeVideoViaAPI(video);
 
-    // 3. Kích hoạt injected.js (Main World) để seek 85% + play 16x + chờ ended thật
-    //    Đồng thời theo dõi tick xanh và tiến độ trong content script
-    const maxWait = 95000;
-    const startTime = Date.now();
+    // 3. Chờ xác nhận tick xanh từ DOM hoặc trực tiếp từ server Coursera
+    const path = window.location.pathname;
+    const m = path.match(/\/learn\/([^/]+)\/(?:lecture|supplement|item)\/([^/?#]+)/);
+    const slug = m ? m[1] : '';
+    const itemId = m ? m[2] : '';
+
     let gotTick = false;
-
-    // Lắng nghe kết quả từ injected.js
-    const mainWorldDone = skipVideoViaMainWorld(maxWait);
-
-    await new Promise(resolve => {
-      const checkInterval = setInterval(() => {
-        dismissInVideoQuestionIfPresent();
-        if (isCurrentLessonCompleted()) {
+    for (let i = 0; i < 10; i++) {
+      await new Promise(r => setTimeout(r, 300));
+      dismissInVideoQuestionIfPresent();
+      if (isCurrentLessonCompleted()) {
+        gotTick = true;
+        break;
+      }
+      if (i === 4 && slug && itemId) {
+        const apiDone = await checkItemCompletedViaServer(slug, itemId);
+        if (apiDone) {
           gotTick = true;
-          clearInterval(checkInterval);
-          resolve();
-          return;
+          break;
         }
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
-        if (elapsed > 0 && elapsed % 5 === 0) {
-          completeVideoViaAPI().catch(() => {});
-          showInPageToast(`⏩ [Auto-Skip] Đang phát 16x... (${elapsed}s)`);
-        }
-      }, 500);
+      }
+    }
 
-      // Khi injected.js hoàn thành (video ended hoặc timeout), resolve
-      mainWorldDone.then(() => {
-        clearInterval(checkInterval);
-        resolve();
-      });
-    });
-
-    video._forcePlaying = false;
-
-    // Kiểm tra lần cuối
-    await new Promise(r => setTimeout(r, 500));
     if (gotTick || isCurrentLessonCompleted()) {
       showInPageToast('🎉 [Auto-Skip] Đã nhận được tick xanh! Chuyển bài tiếp theo...');
     } else {
-      showInPageToast('➡️ [Auto-Skip] Video đã phát xong, chuyển sang bài tiếp...');
+      showInPageToast('➡️ [Auto-Skip] Chuyển sang bài tiếp...');
     }
 
     navigateToNextLesson();
-    setTimeout(() => { isStepInProgress = false; lastEvaluatedUrl = ''; }, 1200);
+    setTimeout(() => { isStepInProgress = false; lastEvaluatedUrl = ''; }, 1000);
   }
 
   // Xử lý bài đọc Reading (Tự động bấm Mark as completed và Go to next item)
   async function processReadingStep() {
     showInPageToast('📖 [Auto-Skip] Đang xử lý bài đọc Reading / Supplement...');
+
+    // Gửi API hoàn thành reading qua onDemandSupplementCompletions.v1
+    completeSupplementViaAPI().catch(() => {});
+
     // Cuộn xuống cuối trang để load hết nội dung và hiển thị nút Mark as completed
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
     await new Promise(r => setTimeout(r, 600));
