@@ -556,11 +556,13 @@
 
   function isButtonAlreadyCompleted(btn) {
     if (!btn) return false;
-    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return true;
     const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-    // Nếu text có chữ "mark" hoặc "đánh dấu" thì đây là nút CHƯA hoàn thành (cần bấm)
+    // Nếu text có chữ "mark" hoặc "đánh dấu" thì đây là nút CHƯA hoàn thành (kể cả khi đang bị khóa/disabled tạm thời)
     if (txt.includes('mark') || txt.includes('đánh dấu')) return false;
-    return txt === 'completed' || txt === 'completed ✓' || txt.includes('completed ✓') || txt === 'đã hoàn thành';
+    if (txt === 'completed' || txt === 'completed ✓' || txt.includes('completed') || txt === 'đã hoàn thành' || txt.includes('đã hoàn thành')) {
+      return true;
+    }
+    return false;
   }
 
   // B. Tìm nút "Go to next item" hoặc nút chuyển bài ở cuối trang
@@ -1676,25 +1678,17 @@
       return true;
     }
 
-    // 3. Nếu là bài đọc Reading / Supplement có nút "Mark as completed"
+    // 3. Nếu là bài đọc Reading / Supplement (/supplement/, /item/) hoặc có nút "Mark as completed"
+    const isReadingUrl = currentUrl.includes('/supplement/') || currentUrl.includes('/item/');
     const markBtn = findMarkAsCompletedButton();
-    if (markBtn) {
-      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-      showInPageToast('✅ Đã bấm "Mark as completed"! Đang chuyển bài tiếp...');
-      triggerClick(markBtn);
-      setTimeout(() => {
-        navigateToNextLesson();
-      }, 1000);
-      return true;
-    }
-
-    // 4. Nếu là bài đọc Reading nói chung (đã hoàn thành hoặc không có nút mark)
-    if (currentUrl.includes('/supplement/') || currentUrl.includes('/item/')) {
-      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-      showInPageToast('📖 Đang chuyển sang bài tiếp theo...');
-      setTimeout(() => {
-        navigateToNextLesson();
-      }, 600);
+    if (isReadingUrl || markBtn) {
+      (async () => {
+        await unlockAndCompleteReading();
+        showInPageToast('📖 Bài đọc đã hoàn thành! Đang chuyển bài tiếp...');
+        setTimeout(() => {
+          navigateToNextLesson();
+        }, 600);
+      })();
       return true;
     }
 
@@ -1954,29 +1948,135 @@
     }
   }
 
-  // Xử lý bài đọc Reading (Tự động bấm Mark as completed và Go to next item)
-  async function processReadingStep() {
-    showInPageToast('📖 [Auto-Skip] Đang xử lý bài đọc Reading / Supplement...');
+  // === CÁC HÀM MỞ KHÓA AUDIO VÀ HOÀN THÀNH BÀI ĐỌC READING / SUPPLEMENT ===
+
+  // Tua audio và kéo thanh tiến độ (Audio progress slider) lên 100% để mở khóa nút "Mark as completed"
+  async function unlockReadingMediaAndSlider() {
+    // 1. Kích hoạt phần tử <audio>
+    const audios = Array.from(document.querySelectorAll('audio'));
+    for (const a of audios) {
+      try {
+        if (a.duration && !isNaN(a.duration) && isFinite(a.duration) && a.duration > 0) {
+          a.currentTime = a.duration;
+        }
+        a.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+        a.dispatchEvent(new Event('ended', { bubbles: true }));
+        a.dispatchEvent(new Event('pause', { bubbles: true }));
+      } catch (e) {}
+    }
+
+    // 2. Tìm và kích hoạt thanh trượt slider tiến độ âm thanh (Audio progress slider)
+    const sliders = Array.from(document.querySelectorAll(
+      'span[role="slider"][aria-label*="progress" i], span[role="slider"][aria-label*="audio" i], [class*="audio-player-slider-thumb"], span[role="slider"]'
+    )).filter(el => !el.closest('#coursera-helper-hud'));
+
+    for (const slider of sliders) {
+      try {
+        const maxVal = parseFloat(slider.getAttribute('aria-valuemax')) || 100;
+        slider.setAttribute('aria-valuenow', maxVal.toString());
+
+        // Tìm track container bao quanh slider
+        const track = slider.closest('.cds-slider, [class*="slider"], [class*="track"]') || slider.parentElement;
+        if (track) {
+          const rect = track.getBoundingClientRect();
+          if (rect.width > 0) {
+            // Click ở điểm sát cạnh phải của thanh trượt (100% tiến độ)
+            const clientX = rect.left + rect.width - 2;
+            const clientY = rect.top + rect.height / 2;
+            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtType => {
+              track.dispatchEvent(new MouseEvent(evtType, {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                clientX: clientX,
+                clientY: clientY
+              }));
+            });
+          }
+        }
+      } catch (e) {}
+    }
+  }
+
+  // Kiểm tra xem bài đọc đã có trạng thái Completed trên trang hay chưa
+  function isReadingPageCompletedInDOM() {
+    const markBtn = findMarkAsCompletedButton();
+    if (markBtn && isButtonAlreadyCompleted(markBtn)) return true;
+
+    // Tìm chữ Completed hoặc ✓ Completed
+    const completedEls = Array.from(document.querySelectorAll('span, div, p, button')).filter(el => {
+      if (el.closest('#coursera-helper-hud, header, nav')) return false;
+      const t = (el.innerText || el.textContent || '').trim().toLowerCase();
+      return (t === 'completed' || t === '✓ completed' || t.includes('✓ completed') || t === 'đã hoàn thành') && el.children.length <= 1;
+    });
+
+    return completedEls.length > 0;
+  }
+
+  // Quy trình mở khóa audio và hoàn thành bài đọc Reading / Supplement
+  async function unlockAndCompleteReading() {
+    showInPageToast('📖 Đang mở khóa và xử lý bài đọc Reading / Supplement...');
+
+    const path = window.location.pathname;
+    const m = path.match(/\/(?:supplement|item)\/([a-zA-Z0-9_-]+)/);
+    const itemId = m ? m[1] : '';
 
     // Gửi API hoàn thành reading qua onDemandSupplementCompletions.v1
     completeSupplementViaAPI().catch(() => {});
 
-    // Cuộn xuống cuối trang để load hết nội dung và hiển thị nút Mark as completed
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    // Kéo thanh trượt audio lên cuối để kích hoạt mở khóa nút
+    await unlockReadingMediaAndSlider();
     await new Promise(r => setTimeout(r, 600));
 
-    // 1. Tìm và bấm nút "Mark as completed" hoặc "Marked as completed"
-    const markBtn = findMarkAsCompletedButton();
-    if (markBtn) {
-      showInPageToast('✅ [Auto-Skip] Đã bấm "Mark as completed"!');
-      triggerClick(markBtn);
-      await new Promise(r => setTimeout(r, 800));
-    } else {
-      showInPageToast('ℹ️ [Auto-Skip] Bài đọc đã hoàn thành hoặc không có nút Mark.');
+    // Cuộn xuống cuối trang để load hết nội dung và hiển thị nút Mark as completed
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    await new Promise(r => setTimeout(r, 400));
+
+    // Chờ nút "Mark as completed" mở khóa (hết disabled) hoặc bài đọc tự động chuyển sang Completed
+    let completed = isCurrentLessonCompleted() || isReadingPageCompletedInDOM();
+
+    if (!completed) {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        await unlockReadingMediaAndSlider();
+
+        const markBtn = findMarkAsCompletedButton();
+        if (markBtn) {
+          const isDisabled = markBtn.disabled || markBtn.getAttribute('aria-disabled') === 'true' || markBtn.classList.contains('disabled');
+          if (!isDisabled) {
+            showInPageToast('✅ Nút "Mark as completed" đã mở khóa! Đang bấm hoàn thành...');
+            triggerClick(markBtn);
+            await new Promise(r => setTimeout(r, 800));
+            completed = true;
+            break;
+          } else {
+            showInPageToast(`⏳ Đang chờ nút "Mark as completed" mở khóa (${attempt + 1}/20)...`);
+          }
+        } else if (isCurrentLessonCompleted() || isReadingPageCompletedInDOM()) {
+          completed = true;
+          break;
+        }
+
+        await new Promise(r => setTimeout(r, 500));
+      }
     }
+
+    if (itemId) {
+      markSidebarItemAsCompletedInDOM(itemId);
+    }
+
+    return completed;
+  }
+
+  // Xử lý bài đọc Reading (Tự động mở khóa audio, bấm Mark as completed và Go to next item)
+  async function processReadingStep() {
+    showInPageToast('📖 [Auto-Skip] Đang xử lý bài đọc Reading / Supplement...');
+
+    // Hoàn thành bài đọc: kéo thanh audio lên hết, chờ mở khóa nút Mark, cập nhật tick xanh
+    await unlockAndCompleteReading();
 
     // 2. Tìm và bấm ngay nút "Go to next item" hoặc "Next item" để sang bài tiếp
     showInPageToast('➡️ [Auto-Skip] Đang bấm "Go to next item" để chuyển bài tiếp...');
+    await new Promise(r => setTimeout(r, 600));
     const nextBtn = findNextButton() || findQuizNextItemButton();
     if (nextBtn) {
       triggerClick(nextBtn);
@@ -2380,6 +2480,23 @@
       }
     }
 
+    if (visibleDialog) {
+      const modalText = (visibleDialog.innerText || '').toLowerCase();
+      // NẾU MODAL CẢNH BÁO THIẾU CÂU HỎI (MISSING ANSWERS / INCOMPLETE): TUYỆT ĐỐI KHÔNG BẤM NỘP TIẾP!
+      if (modalText.includes('missing or invalid answers') || modalText.includes('incomplete or invalid') || modalText.includes('chưa hoàn thành')) {
+        showInPageToast('⛔ Coursera phát hiện còn câu hỏi chưa làm! Đang hủy nộp để bảo vệ điểm của bạn...', true, 8000);
+        // Bấm nút Cancel để đóng modal
+        const cancelBtn = Array.from(visibleDialog.querySelectorAll('button, [role="button"]')).find(b => {
+          const t = (b.innerText || '').toLowerCase();
+          return t.includes('cancel') || t.includes('hủy') || t.includes('quay lại') || t.includes('back');
+        });
+        if (cancelBtn) {
+          triggerClick(cancelBtn);
+        }
+        return null;
+      }
+    }
+
     // 2. Tìm nút Submit xác nhận bên trong modal
     const searchRoot = visibleDialog || document;
     const allBtns = Array.from(searchRoot.querySelectorAll('button, [role="button"], a.cds-button'));
@@ -2537,6 +2654,33 @@
 
   // Tự động tìm checkbox Coursera Honor Code, tick chọn, sau đó tìm và bấm nút Submit
   async function completeHonorCodeAndSubmitQuiz() {
+    // 0. BẢO VỆ TUYỆT ĐỐI: Kiểm tra xem còn câu nào chưa trả lời không!
+    const containers = getQuestionContainers();
+    const unansweredList = [];
+    containers.forEach((c, idx) => {
+      if (!isQuestionContainerAnswered(c)) {
+        const txt = c.innerText || '';
+        const m = txt.match(/(?:Question\s+(\d+)|\b(\d+)\.|\bCâu\s+(\d+))/i);
+        const qNum = m ? parseInt(m[1] || m[2] || m[3], 10) : (idx + 1);
+        unansweredList.push({ qNum, container: c });
+      }
+    });
+
+    const bodyText = document.body.innerText || '';
+    const hasUnansweredWarning = bodyText.includes("haven't answered this question") || 
+                                 bodyText.includes("You haven't answered") ||
+                                 bodyText.includes("chưa trả lời câu hỏi này");
+
+    if (unansweredList.length > 0 || hasUnansweredWarning) {
+      const qNames = unansweredList.map(u => u.qNum).join(', ');
+      showInPageToast(`⛔ [CHƯA XONG] Còn câu ${qNames || 'chưa chọn đáp án'}! Tuyệt đối không được nộp bài khi chưa làm xong!`, true, 8000);
+      if (unansweredList.length > 0 && unansweredList[0].container) {
+        unansweredList[0].container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        highlightOptionCard(unansweredList[0].container);
+      }
+      return false;
+    }
+
     showInPageToast('✍️ Đang xác nhận Coursera Honor Code...');
 
     // Cuộn xuống cuối trang
@@ -2573,9 +2717,9 @@
 
     if (!submitBtn) {
       // Kiểm tra xem có câu nào chưa làm khiến nút Submit bị disable không
-      const containers = getQuestionContainers();
+      const currentContainers = getQuestionContainers();
       const unansweredIndices = [];
-      containers.forEach((c, idx) => {
+      currentContainers.forEach((c, idx) => {
         if (!isQuestionContainerAnswered(c)) {
           unansweredIndices.push(idx + 1);
         }
@@ -2583,7 +2727,7 @@
 
       if (unansweredIndices.length > 0) {
         showInPageToast(`⚠️ Còn câu ${unansweredIndices.slice(0, 5).join(', ')} chưa chọn đáp án nên Coursera khóa nút Submit! Đang cuộn đến câu ${unansweredIndices[0]}...`, true, 7000);
-        containers[unansweredIndices[0] - 1]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        currentContainers[unansweredIndices[0] - 1]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else {
         showInPageToast('⚠️ Nút Submit chưa mở khóa. Bạn hãy tick vào ô xác nhận Honor Code trên màn hình để nộp nhé!', true, 6000);
         const input = document.getElementById('agreement-checkbox-base') || agreementInput;
@@ -2595,7 +2739,16 @@
       return false;
     }
 
-    // 3. Nút Submit đã sẵn sàng -> Bấm nộp bài
+    // 3. Kiểm tra lại lần cuối trước khi click Submit: Tuyệt đối không nộp nếu có câu chưa làm!
+    const recheckContainers = getQuestionContainers();
+    const stillUnanswered = recheckContainers.some(c => !isQuestionContainerAnswered(c));
+    const finalBodyText = document.body.innerText || '';
+    if (stillUnanswered || finalBodyText.includes("haven't answered this question") || finalBodyText.includes("You haven't answered")) {
+      showInPageToast('⛔ Phát hiện câu hỏi chưa chọn đáp án! Đã hủy lệnh nộp bài để bảo vệ điểm của bạn.', true, 8000);
+      return false;
+    }
+
+    // 4. Nút Submit đã sẵn sàng -> Bấm nộp bài
     submitBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
     await new Promise(r => setTimeout(r, 400));
 
@@ -2821,8 +2974,14 @@
     }
 
     // NẾU VẪN CÒN CÂU CHƯA TICK -> KHÔNG ĐƯỢC PHÉP NỘP!
-    if (remainingUnanswered.length > 0) {
-      showInPageToast(`⚠️ Vẫn còn ${remainingUnanswered.length} câu chưa làm xong (Câu ${remainingUnanswered.map(q => q.q).slice(0, 5).join(', ')}...). Dừng nộp bài để bạn kiểm tra lại!`, true, 8000);
+    const allDomContainers = getQuestionContainers();
+    const domUnanswered = allDomContainers.filter(c => !isQuestionContainerAnswered(c));
+    const pageText = document.body.innerText || '';
+    const hasUnansWarning = pageText.includes("haven't answered this question") || pageText.includes("You haven't answered");
+
+    if (remainingUnanswered.length > 0 || domUnanswered.length > 0 || hasUnansWarning) {
+      const count = Math.max(remainingUnanswered.length, domUnanswered.length);
+      showInPageToast(`⚠️ Vẫn còn ${count} câu chưa làm xong! Tuyệt đối không nộp bài để bảo vệ điểm của bạn!`, true, 8000);
       isStepInProgress = false;
       isQuizSolveInProgress = false;
       return;
@@ -4632,8 +4791,48 @@
     }
   }
 
+  // Cuộn container quiz để tải hết toàn bộ câu hỏi (lazy-loaded / virtualized) từ câu 1 đến câu cuối
+  async function ensureAllQuizQuestionsLoaded() {
+    const sc = document.querySelector('.cds-FullscreenDialog-scrollContainer') || 
+               document.querySelector('[data-testid="fullscreen-dialog-content"]') ||
+               document.scrollingElement || 
+               document.documentElement;
+               
+    if (!sc) return;
+
+    showInPageToast('📜 Đang cuộn tải toàn bộ danh sách câu hỏi trong bài thi...');
+
+    const scrollContainer = document.querySelector('.cds-FullscreenDialog-scrollContainer') || sc;
+    const maxScroll = Math.max(scrollContainer.scrollHeight || 0, document.body.scrollHeight || 0, 25000);
+    
+    // Cuộn từ từ theo từng đoạn 600px xuống tận cùng
+    let cur = 0;
+    while (cur < maxScroll) {
+      cur += 600;
+      scrollContainer.scrollTop = cur;
+      if (typeof scrollContainer.scrollTo === 'function') scrollContainer.scrollTo(0, cur);
+      window.scrollTo(0, cur);
+      await new Promise(r => setTimeout(r, 80));
+      if (scrollContainer.scrollTop + scrollContainer.clientHeight >= (scrollContainer.scrollHeight - 50)) {
+        break;
+      }
+    }
+
+    // Chờ 300ms cho các component React mount xong
+    await new Promise(r => setTimeout(r, 300));
+
+    // Cuộn mượt về đầu trang để sẵn sàng giải
+    scrollContainer.scrollTop = 0;
+    if (typeof scrollContainer.scrollTo === 'function') scrollContainer.scrollTo(0, 0);
+    window.scrollTo(0, 0);
+    await new Promise(r => setTimeout(r, 200));
+  }
+
   // Tự động quét toàn bộ bài trắc nghiệm trên DOM Coursera (kèm trích xuất hình ảnh)
   async function extractAllQuizQuestionsFromDOM() {
+    // Luôn tải hết toàn bộ câu hỏi trên trang (kể cả câu hỏi lazy-loaded ở cuối như câu 25)
+    await ensureAllQuizQuestionsLoaded();
+
     const containers = getQuestionContainers();
     const questions = [];
 
@@ -5018,11 +5217,17 @@
       }, 4000);
     }
 
-    if (remainingUnanswered.length === 0) {
+    const allDomContainers = getQuestionContainers();
+    const domUnanswered = allDomContainers.filter(c => !isQuestionContainerAnswered(c));
+    const pageText = document.body.innerText || '';
+    const hasUnansWarning = pageText.includes("haven't answered this question") || pageText.includes("You haven't answered");
+
+    if (remainingUnanswered.length === 0 && domUnanswered.length === 0 && !hasUnansWarning) {
       showInPageToast(`🎉 Đã điền xong tất cả ${questions.length} / ${questions.length} câu hỏi! Đang tự động nộp bài...`, false, 4000);
       await completeHonorCodeAndSubmitQuiz();
     } else {
-      showInPageToast(`⚠️ Còn ${remainingUnanswered.length} câu chưa chọn được đáp án (Câu ${remainingUnanswered.map(q => q.q).slice(0, 5).join(', ')}...). Không nộp bài để bảo vệ điểm của bạn!`, true, 8000);
+      const count = Math.max(remainingUnanswered.length, domUnanswered.length);
+      showInPageToast(`⚠️ Còn ${count} câu chưa chọn được đáp án. Tuyệt đối không nộp bài để bảo vệ điểm của bạn!`, true, 8000);
     }
   }
 
