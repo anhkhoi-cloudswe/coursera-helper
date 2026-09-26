@@ -1961,11 +1961,10 @@
         }
         a.dispatchEvent(new Event('timeupdate', { bubbles: true }));
         a.dispatchEvent(new Event('ended', { bubbles: true }));
-        a.dispatchEvent(new Event('pause', { bubbles: true }));
       } catch (e) {}
     }
 
-    // 2. Tìm và kích hoạt thanh trượt slider tiến độ âm thanh (Audio progress slider)
+    // 2. Tương tác nhẹ với slider (chỉ gửi 1 click duy nhất, tránh giật giật màn hình)
     const sliders = Array.from(document.querySelectorAll(
       'span[role="slider"][aria-label*="progress" i], span[role="slider"][aria-label*="audio" i], [class*="audio-player-slider-thumb"], span[role="slider"]'
     )).filter(el => !el.closest('#coursera-helper-hud'));
@@ -1975,23 +1974,19 @@
         const maxVal = parseFloat(slider.getAttribute('aria-valuemax')) || 100;
         slider.setAttribute('aria-valuenow', maxVal.toString());
 
-        // Tìm track container bao quanh slider
         const track = slider.closest('.cds-slider, [class*="slider"], [class*="track"]') || slider.parentElement;
         if (track) {
           const rect = track.getBoundingClientRect();
           if (rect.width > 0) {
-            // Click ở điểm sát cạnh phải của thanh trượt (100% tiến độ)
             const clientX = rect.left + rect.width - 2;
             const clientY = rect.top + rect.height / 2;
-            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtType => {
-              track.dispatchEvent(new MouseEvent(evtType, {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                clientX: clientX,
-                clientY: clientY
-              }));
-            });
+            track.dispatchEvent(new MouseEvent('click', {
+              bubbles: true,
+              cancelable: true,
+              view: window,
+              clientX: clientX,
+              clientY: clientY
+            }));
           }
         }
       } catch (e) {}
@@ -2002,6 +1997,9 @@
   function isReadingPageCompletedInDOM() {
     const markBtn = findMarkAsCompletedButton();
     if (markBtn && isButtonAlreadyCompleted(markBtn)) return true;
+
+    const nextBtn = findNextButton() || findQuizNextItemButton();
+    if (nextBtn) return true;
 
     // Tìm chữ Completed hoặc ✓ Completed
     const completedEls = Array.from(document.querySelectorAll('span, div, p, button')).filter(el => {
@@ -2015,48 +2013,80 @@
 
   // Quy trình mở khóa audio và hoàn thành bài đọc Reading / Supplement
   async function unlockAndCompleteReading() {
-    showInPageToast('📖 Đang mở khóa và xử lý bài đọc Reading / Supplement...');
-
     const path = window.location.pathname;
     const m = path.match(/\/(?:supplement|item)\/([a-zA-Z0-9_-]+)/);
     const itemId = m ? m[1] : '';
 
-    // Gửi API hoàn thành reading qua onDemandSupplementCompletions.v1
+    // Gửi API hoàn thành reading ngầm
     completeSupplementViaAPI().catch(() => {});
 
-    // Kéo thanh trượt audio lên cuối để kích hoạt mở khóa nút
+    // FAST-PATH: Nếu nút "Go to next item" hoặc tick xanh đã có sẵn trên trang -> Ngắt ngay lập tức, không lặp, không kéo slider!
+    let quickNext = findNextButton() || findQuizNextItemButton();
+    if (quickNext || isCurrentLessonCompleted() || isReadingPageCompletedInDOM()) {
+      if (itemId) markSidebarItemAsCompletedInDOM(itemId);
+      return true;
+    }
+
+    showInPageToast('📖 Đang mở khóa và xử lý bài đọc Reading / Supplement...');
+
+    // Kích hoạt audio kết thúc nhẹ nhàng
+    const audios = Array.from(document.querySelectorAll('audio'));
+    for (const a of audios) {
+      try {
+        if (a.duration && !isNaN(a.duration) && isFinite(a.duration) && a.duration > 0) {
+          a.currentTime = a.duration;
+        }
+        a.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+        a.dispatchEvent(new Event('ended', { bubbles: true }));
+      } catch (e) {}
+    }
+
+    // Kiểm tra lại lần 2
+    quickNext = findNextButton() || findQuizNextItemButton();
+    if (quickNext || isCurrentLessonCompleted() || isReadingPageCompletedInDOM()) {
+      if (itemId) markSidebarItemAsCompletedInDOM(itemId);
+      return true;
+    }
+
+    // Nếu nút Mark as completed đã mở khóa -> Bấm ngay!
+    const markBtn = findMarkAsCompletedButton();
+    if (markBtn) {
+      const isDisabled = markBtn.disabled || markBtn.getAttribute('aria-disabled') === 'true' || markBtn.classList.contains('disabled');
+      if (!isDisabled) {
+        showInPageToast('✅ Nút "Mark as completed" đã mở khóa! Đang bấm hoàn thành...');
+        triggerClick(markBtn);
+        await new Promise(r => setTimeout(r, 500));
+        if (itemId) markSidebarItemAsCompletedInDOM(itemId);
+        return true;
+      }
+    }
+
+    // Thử kích hoạt nhẹ slider 1 lần
     await unlockReadingMediaAndSlider();
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 300));
 
-    // Cuộn xuống cuối trang để load hết nội dung và hiển thị nút Mark as completed
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-    await new Promise(r => setTimeout(r, 400));
-
-    // Chờ nút "Mark as completed" mở khóa (hết disabled) hoặc bài đọc tự động chuyển sang Completed
-    let completed = isCurrentLessonCompleted() || isReadingPageCompletedInDOM();
+    let completed = isCurrentLessonCompleted() || isReadingPageCompletedInDOM() || Boolean(findNextButton());
 
     if (!completed) {
-      for (let attempt = 0; attempt < 20; attempt++) {
-        await unlockReadingMediaAndSlider();
-
-        const markBtn = findMarkAsCompletedButton();
-        if (markBtn) {
-          const isDisabled = markBtn.disabled || markBtn.getAttribute('aria-disabled') === 'true' || markBtn.classList.contains('disabled');
-          if (!isDisabled) {
-            showInPageToast('✅ Nút "Mark as completed" đã mở khóa! Đang bấm hoàn thành...');
-            triggerClick(markBtn);
-            await new Promise(r => setTimeout(r, 800));
-            completed = true;
-            break;
-          } else {
-            showInPageToast(`⏳ Đang chờ nút "Mark as completed" mở khóa (${attempt + 1}/20)...`);
-          }
-        } else if (isCurrentLessonCompleted() || isReadingPageCompletedInDOM()) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const nextB = findNextButton() || findQuizNextItemButton();
+        if (nextB || isCurrentLessonCompleted() || isReadingPageCompletedInDOM()) {
           completed = true;
           break;
         }
 
-        await new Promise(r => setTimeout(r, 500));
+        const mBtn = findMarkAsCompletedButton();
+        if (mBtn) {
+          const isDisabled = mBtn.disabled || mBtn.getAttribute('aria-disabled') === 'true' || mBtn.classList.contains('disabled');
+          if (!isDisabled) {
+            triggerClick(mBtn);
+            await new Promise(r => setTimeout(r, 500));
+            completed = true;
+            break;
+          }
+        }
+
+        await new Promise(r => setTimeout(r, 300));
       }
     }
 
@@ -2071,24 +2101,40 @@
   async function processReadingStep() {
     showInPageToast('📖 [Auto-Skip] Đang xử lý bài đọc Reading / Supplement...');
 
-    // Hoàn thành bài đọc: kéo thanh audio lên hết, chờ mở khóa nút Mark, cập nhật tick xanh
+    // 0. KHÔNG KÉO SLIDER HAY CHỜ LẶP NẾU NÚT "Go to next item" ĐÃ CÓ SẴN TRÊN TRANG!
+    const immediateNextBtn = findNextButton() || findQuizNextItemButton();
+    if (immediateNextBtn || isCurrentLessonCompleted() || isReadingPageCompletedInDOM()) {
+      showInPageToast('🎉 [Auto-Skip] Nút "Go to next item" đã mở khóa! Bấm chuyển bài ngay...', false, 2500);
+      const targetBtn = immediateNextBtn || findNextButton() || findQuizNextItemButton();
+      if (targetBtn) {
+        triggerClick(targetBtn);
+      } else {
+        navigateToNextLesson();
+      }
+      setTimeout(() => {
+        isStepInProgress = false;
+        lastEvaluatedUrl = '';
+      }, 800);
+      return;
+    }
+
+    // 1. Nếu chưa có nút Next, tiến hành mở khóa bài đọc
     await unlockAndCompleteReading();
 
-    // 2. Tìm và bấm ngay nút "Go to next item" hoặc "Next item" để sang bài tiếp
+    // 2. Tìm và bấm ngay nút "Go to next item" để sang bài tiếp
     showInPageToast('➡️ [Auto-Skip] Đang bấm "Go to next item" để chuyển bài tiếp...');
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 300));
     const nextBtn = findNextButton() || findQuizNextItemButton();
     if (nextBtn) {
       triggerClick(nextBtn);
     } else {
-      // Fallback chuyển tiếp qua menu bài học Sidebar
       navigateToNextLesson();
     }
 
     setTimeout(() => {
       isStepInProgress = false;
       lastEvaluatedUrl = '';
-    }, 1500);
+    }, 1000);
   }
 
   // ==========================================
@@ -2883,7 +2929,7 @@
     const isSupportedModel = (n) => n && !DEPRECATED_MODELS.includes(n);
     const savedModel = storageData?.gemini_model;
     const model = isSupportedModel(savedModel) ? savedModel : 'gemini-3.6-flash';
-    const BATCH_SIZE = 4; // Chia nhỏ đề bài để tránh quá tải tải trọng máy chủ Google
+    const BATCH_SIZE = 15; // 15 câu mỗi đợt giúp xử lý nhanh và tránh Rate Limit
     const totalQuestions = questions.length;
     const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
     let allAnswers = [];
@@ -2893,23 +2939,28 @@
       const endIdx = Math.min(startIdx + BATCH_SIZE, totalQuestions);
       const batchQuestions = questions.slice(startIdx, endIdx);
 
-      // Nếu tất cả câu trong batch này đã có đáp án (người dùng làm trước hoặc lần quét trước đã tick), bỏ qua
+      // Quét từ trên xuống: Skip câu Bot đã giải trước đó; Giữ lại câu chưa làm hoặc do Người dùng chọn để Bot kiểm định lại
       const currentContainers = getQuestionContainers();
-      const unansInBatch = batchQuestions.filter(q => {
+      const needSolvingInBatch = batchQuestions.filter(q => {
         const qNum = q.q;
         const c = currentContainers.find(ct => {
           const txt = ct.innerText || '';
           return new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i').test(txt);
         }) || currentContainers[qNum - 1];
-        return !c || !isQuestionContainerAnswered(c);
+        return needsBotSolving(q, c);
       });
 
-      if (unansInBatch.length === 0) {
+      if (needSolvingInBatch.length === 0) {
         continue;
       }
 
-      showInPageToast(`⏳ [Auto-Skip] Đang giải câu ${startIdx + 1} - ${endIdx} / ${totalQuestions}...`);
-      const parts = buildMultimodalBatchParts(batchQuestions, startIdx + 1, endIdx);
+      const userChosenCount = needSolvingInBatch.filter(q => q.userSelectedAnswer).length;
+      if (userChosenCount > 0) {
+        showInPageToast(`🔍 [Auto-Skip] Đang thẩm định lại ${userChosenCount} câu do bạn chọn & giải các câu còn lại (${startIdx + 1}-${endIdx})...`);
+      } else {
+        showInPageToast(`⏳ [Auto-Skip] Đang giải câu ${startIdx + 1} - ${endIdx} / ${totalQuestions}...`);
+      }
+      const parts = buildMultimodalBatchParts(needSolvingInBatch, needSolvingInBatch[0].q, needSolvingInBatch[needSolvingInBatch.length - 1].q);
 
       let batchSolved = false;
       for (let retry = 0; retry < 3; retry++) {
@@ -4006,6 +4057,10 @@
           <span class="ch-btn-icon">⏩</span>
           <span class="ch-btn-label">Skip Video</span>
         </button>
+
+        <button id="ch-hud-guide" class="ch-hud-btn ch-btn-ghost" title="Mở sổ tay hướng dẫn sử dụng chi tiết">
+          <span class="ch-btn-label">Hướng dẫn</span>
+        </button>
       </div>
     `;
 
@@ -4229,6 +4284,16 @@
       btnSkipOne.addEventListener('click', (e) => {
         e.stopPropagation();
         completeCourseraVideo();
+      });
+    }
+
+    const btnGuide = floatingHUD.querySelector('#ch-hud-guide');
+    if (btnGuide) {
+      btnGuide.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (isExtensionContextValid()) {
+          chrome.runtime.sendMessage({ action: 'open_guide' });
+        }
       });
     }
 
@@ -4477,31 +4542,55 @@
     return [];
   }
 
-    function calculateOptionMatchScore(el, targetAnswer) {
-    const rawText = (el.innerText || el.textContent || '').trim();
-    if (!rawText || rawText.length > 600) return 0;
+  function extractOptionPureText(el) {
+    if (!el) return '';
+    const contentEl = el.querySelector('.cds-checkboxAndRadio-labelContent, [data-testid="option-label"], .rc-Option__inputImageText') || el;
+    let text = (contentEl.innerText || contentEl.textContent || '').trim();
+    text = text
+      .replace(/Do you understand\?\.?\s*I understand\.?/gi, '')
+      .replace(/\b\d+(?:\.\d+)?\s*points?\b/gi, '')
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return text;
+  }
+
+  function calculateOptionMatchScore(el, targetAnswer) {
+    const rawText = extractOptionPureText(el);
+    if (!rawText || rawText.length > 800) return 0;
 
     const opt = normalizeQuizText(rawText);
     const ans = normalizeQuizText(targetAnswer);
     if (!opt || !ans) return 0;
 
-    // 1. Khớp hoàn toàn
+    // 1. Khớp hoàn toàn 100%
     if (opt === ans) return 1.0;
 
-    // 2. Một chuỗi chứa chuỗi kia
-    if (ans.length >= 8 && opt.includes(ans)) return 0.95;
-    if (opt.length >= 8 && ans.includes(opt)) return 0.90;
+    // 2. So khớp từ nguyên vẹn với ranh giới từ (word boundary)
+    const escapedAns = ans.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const wordBoundaryRegex = new RegExp(`(^|\\s)${escapedAns}(\\s|$)`, 'i');
+    if (wordBoundaryRegex.test(opt)) return 0.98;
 
-    // 3. Khớp tỷ lệ từ vựng (Jaccard similarity)
-    const optWords = new Set(opt.split(' ').filter(w => w.length >= 2));
-    const ansWords = new Set(ans.split(' ').filter(w => w.length >= 2));
-    if (ansWords.size >= 2) {
+    const escapedOpt = opt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const optRegex = new RegExp(`(^|\\s)${escapedOpt}(\\s|$)`, 'i');
+    if (optRegex.test(ans)) return 0.95;
+
+    // 3. Chuỗi chứa chuỗi con
+    if (opt.includes(ans)) return 0.92;
+    if (ans.includes(opt)) return 0.90;
+
+    // 4. Token Jaccard overlap
+    const optWords = new Set(opt.split(' ').filter(w => w.length >= 1));
+    const ansWords = new Set(ans.split(' ').filter(w => w.length >= 1));
+    if (ansWords.size > 0) {
       let overlap = 0;
       for (const w of ansWords) {
         if (optWords.has(w)) overlap++;
       }
-      return overlap / ansWords.size;
+      const score = overlap / ansWords.size;
+      if (score >= 0.5) return score;
     }
+
     return 0;
   }
 
@@ -4521,6 +4610,50 @@
       }
     }
     return false;
+  }
+
+  // ==========================================
+  // QUẢN LÝ TRẠNG THÁI BOT-SOLVED VS NGƯỜI DÙNG TỰ CHỌN
+  // ==========================================
+  function getBotSolvedSet() {
+    window._chBotSolvedQuestions = window._chBotSolvedQuestions || new Set();
+    try {
+      const saved = sessionStorage.getItem('ch_bot_solved_' + location.pathname);
+      if (saved) {
+        JSON.parse(saved).forEach(n => window._chBotSolvedQuestions.add(n));
+      }
+    } catch (e) {}
+    return window._chBotSolvedQuestions;
+  }
+
+  function markQuestionBotSolved(container, qNum) {
+    if (container) {
+      container.setAttribute('data-ch-bot-solved', 'true');
+    }
+    const set = getBotSolvedSet();
+    if (qNum) set.add(qNum);
+    try {
+      sessionStorage.setItem('ch_bot_solved_' + location.pathname, JSON.stringify(Array.from(set)));
+    } catch (e) {}
+  }
+
+  function isQuestionBotSolved(container, qNum) {
+    if (!container) return false;
+    if (container.getAttribute('data-ch-bot-solved') === 'true') return true;
+    if (container.querySelector('[data-ch-bot-picked="true"], .ch-bot-badge')) return true;
+    const set = getBotSolvedSet();
+    if (qNum && set.has(qNum)) return true;
+    return false;
+  }
+
+  function needsBotSolving(q, container) {
+    if (!container) return true;
+    // 1. Chưa trả lời câu nào -> Bắt buộc giải
+    if (!isQuestionContainerAnswered(container)) return true;
+    // 2. Đã được bot giải và thẩm định trước đó -> Tự động SKIP!
+    if (isQuestionBotSolved(container, q?.q)) return false;
+    // 3. Có đáp án nhưng DO NGƯỜI DÙNG TỰ CHỌN (chưa có cờ bot) -> BẮT BUỘC CHECK LẠI BẰNG BOT!
+    return true;
   }
 
   // Kiểm tra xem 1 câu hỏi cụ thể đã được tick chọn phương án nào chưa
@@ -4557,13 +4690,20 @@
     return unanswered;
   }
 
-  function highlightOptionCard(el) {
+  function highlightOptionCard(el, isBot = true) {
     const card = el.closest('label, li, .rc-Option, [role="radio"], [role="checkbox"]') || el;
     card.style.transition = 'all 0.3s ease';
     card.style.outline = '2px solid #10b981';
     card.style.background = 'rgba(16, 185, 129, 0.14)';
     card.style.borderRadius = '6px';
     card.style.boxShadow = '0 0 12px rgba(16, 185, 129, 0.45)';
+    if (isBot && !card.querySelector('.ch-bot-badge')) {
+      const badge = document.createElement('span');
+      badge.className = 'ch-bot-badge';
+      badge.innerText = '🤖 Bot Verified';
+      badge.style.cssText = 'display: inline-block; font-size: 11px; font-weight: 600; background: #10b981; color: #ffffff; padding: 1px 7px; border-radius: 4px; margin-left: 8px; vertical-align: middle; box-shadow: 0 1px 3px rgba(0,0,0,0.2);';
+      card.appendChild(badge);
+    }
   }
 
   function tickOptionElement(el) {
@@ -4634,8 +4774,14 @@
         } catch (e) {}
       }
 
-      // Hiệu ứng viền phát sáng xanh lục
-      highlightOptionCard(label);
+      // Gắn cờ bot đã giải và hiệu ứng viền phát sáng
+      label.setAttribute('data-ch-bot-picked', 'true');
+      if (input) input.setAttribute('data-ch-bot-picked', 'true');
+      const container = label.closest('[role="radiogroup"], [role="group"], div[data-testid="part-container"], .rc-FormPartsQuestion, fieldset.rc-FormPartsQuestion');
+      if (container) {
+        container.setAttribute('data-ch-bot-solved', 'true');
+      }
+      highlightOptionCard(label, true);
 
       return isOptionChecked(label, input) || ticked;
     } catch (err) {
@@ -4656,7 +4802,9 @@
       const item = answersList[i];
       const qNum = item.q || (i + 1);
       const targetAnswers = item.answers || [];
-      if (targetAnswers.length === 0) continue;
+      const optionIndices = item.option_indices || [];
+      const letters = item.letters || [];
+      if (targetAnswers.length === 0 && optionIndices.length === 0 && letters.length === 0) continue;
 
       let container = null;
       if (containers.length > 0) {
@@ -4664,7 +4812,7 @@
           const txt = c.innerText || c.textContent || '';
           const regex = new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i');
           return regex.test(txt);
-        }) || containers[qNum - 1] || containers[i];
+        }) || (qNum >= 1 && qNum <= containers.length ? containers[qNum - 1] : containers[i]);
       }
 
       const searchRoot = container || document;
@@ -4673,15 +4821,49 @@
       )).filter(el => !el.closest('#agreement-checkbox-base, [class*="HonorCode"]'))
         .filter((el, idx, arr) => !arr.some(other => other !== el && other.contains(el)));
 
-      for (const ansText of targetAnswers) {
+      const answersToMatch = targetAnswers.length > 0 ? targetAnswers : letters;
+
+      for (let ansIdx = 0; ansIdx < answersToMatch.length; ansIdx++) {
+        const ansText = answersToMatch[ansIdx];
         let bestMatch = null;
         let highestScore = 0;
 
+        // Ưu tiên 1: So khớp nội dung text với từng option element trong container
         for (const el of optElements) {
           const score = calculateOptionMatchScore(el, ansText);
           if (score > highestScore && score >= 0.7) {
             highestScore = score;
             bestMatch = el;
+          }
+        }
+
+        // Ưu tiên 2: Khớp theo chữ cái [A, B, C, D] nếu ansText có định dạng chữ cái
+        if (!bestMatch && optElements.length > 0) {
+          const letterMatch = ansText.match(/^\s*\[?([A-Ha-h])\]?[\.\:\s]/) || ansText.match(/^\s*\[?([A-Ha-h])\]?\s*$/);
+          if (letterMatch) {
+            const letterIdx = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
+            if (letterIdx >= 0 && letterIdx < optElements.length) {
+              bestMatch = optElements[letterIdx];
+            }
+          }
+        }
+
+        // Ưu tiên 3: Khớp theo option_indices từ AI
+        if (!bestMatch && optionIndices.length > 0 && optElements.length > 0) {
+          const idxVal = optionIndices[ansIdx] ?? optionIndices[0];
+          if (typeof idxVal === 'number' && idxVal >= 0 && idxVal < optElements.length) {
+            bestMatch = optElements[idxVal];
+          }
+        }
+
+        // Ưu tiên 4: Khớp theo letters từ AI
+        if (!bestMatch && letters.length > 0 && optElements.length > 0) {
+          const letVal = letters[ansIdx] ?? letters[0];
+          if (typeof letVal === 'string' && letVal.length === 1) {
+            const letIdx = letVal.toUpperCase().charCodeAt(0) - 65;
+            if (letIdx >= 0 && letIdx < optElements.length) {
+              bestMatch = optElements[letIdx];
+            }
           }
         }
 
@@ -4703,11 +4885,30 @@
         if (bestMatch) {
           const ok = tickOptionElement(bestMatch);
           if (ok) tickedCount++;
-
-          // Giãn cách ngắn giữa các lần tick để React kịp cập nhật state
           await new Promise(resolve => setTimeout(resolve, 80));
         } else {
           console.warn(`CourseraHelper: Không khớp được đáp án "${ansText}" cho câu ${qNum}`);
+        }
+      }
+
+      // Đánh dấu container này đã được bot giải và thẩm định
+      if (container) {
+        markQuestionBotSolved(container, qNum);
+      }
+
+      // Đối với câu hỏi checkbox (chọn nhiều): Uncheck các lựa chọn sai do người dùng tick nhầm trước đó
+      if (container && container.querySelector('input[type="checkbox"]:not(#agreement-checkbox-base)')) {
+        const allCheckedBoxes = Array.from(searchRoot.querySelectorAll('input[type="checkbox"]:checked:not(#agreement-checkbox-base)'));
+        for (const chk of allCheckedBoxes) {
+          const parentOpt = chk.closest('label, li.rc-Option') || chk;
+          const isCorrect = answersToMatch.some(ans => calculateOptionMatchScore(parentOpt, ans) >= 0.7);
+          if (!isCorrect) {
+            try { chk.click(); } catch (e) {}
+            parentOpt.style.outline = 'none';
+            parentOpt.style.background = '';
+            const b = parentOpt.querySelector('.ch-bot-badge');
+            if (b) b.remove();
+          }
         }
       }
     }
@@ -4973,11 +5174,17 @@
         prevFeedback = feedbackEl.innerText.trim().replace(/\s+/g, ' ');
       }
 
+      const isBotSolved = isQuestionBotSolved(container, qNum);
+      const userSelectedAnswers = [];
       const checkedInputs = Array.from(container.querySelectorAll('input:checked, [aria-checked="true"]'));
       for (const inp of checkedInputs) {
+        if (inp.id === 'agreement-checkbox-base') continue;
         const parentOpt = inp.closest('label, li.rc-Option, div[data-testid="option-label"]');
         if (parentOpt) {
           const optText = (parentOpt.innerText || '').trim().replace(/\s+/g, ' ');
+          if (!isBotSolved && optText) {
+            userSelectedAnswers.push(optText);
+          }
           if (container.innerText.includes('Try again') || container.innerText.includes('0 / 1') || container.innerText.includes('0/1') || container.innerText.includes('Incorrect')) {
             prevWrongAnswer = optText;
           } else if (container.innerText.includes('Nice work') || container.innerText.includes('1 / 1') || container.innerText.includes('1/1') || container.innerText.includes('Correct')) {
@@ -4993,6 +5200,8 @@
           images: images,
           options: options,
           type: qType,
+          isBotSolved: isBotSolved,
+          userSelectedAnswer: userSelectedAnswers.join(' | '),
           prevFeedback: prevFeedback,
           prevWrongAnswer: prevWrongAnswer,
           prevCorrectAnswer: prevCorrectAnswer
@@ -5098,7 +5307,7 @@
     const DEPRECATED_MODELS_B = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro'];
     const isSupportedModelB = (n) => n && !DEPRECATED_MODELS_B.includes(n);
     const model = isSupportedModelB(savedModel) ? savedModel : 'gemini-3.6-flash';
-    const BATCH_SIZE = 4; // Gửi 4 câu mỗi đợt giúp xử lý nhanh và tránh bị Google từ chối do dung lượng lớn
+    const BATCH_SIZE = 15; // Gửi 15 câu mỗi đợt giúp giải nhanh toàn bộ 25 câu trong tối đa 2 đợt, tránh chạm Rate Limit
     const totalQuestions = questions.length;
     const totalBatches = Math.ceil(totalQuestions / BATCH_SIZE);
     const allAnswers = [];
@@ -5109,26 +5318,34 @@
       const endIdx = Math.min(startIdx + BATCH_SIZE, totalQuestions);
       const batchQuestions = questions.slice(startIdx, endIdx);
 
-      // Nếu tất cả câu trong batch này đã có đáp án sẵn thì bỏ qua
+      // Quét từ trên xuống: Skip câu Bot đã giải trước đó; Giữ lại câu chưa làm hoặc do Người dùng chọn để Bot kiểm định lại
       const currentContainers = getQuestionContainers();
-      const unansInBatch = batchQuestions.filter(q => {
+      const needSolvingInBatch = batchQuestions.filter(q => {
         const qNum = q.q;
         const c = currentContainers.find(ct => {
           const txt = ct.innerText || '';
-          return new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i').test(txt);
+          return new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\s+|\\bCâu\\s+${qNum}\\b)`, 'i').test(txt);
         }) || currentContainers[qNum - 1];
-        return !c || !isQuestionContainerAnswered(c);
+        return needsBotSolving(q, c);
       });
 
-      if (unansInBatch.length === 0) {
+      if (needSolvingInBatch.length === 0) {
+        console.log(`CourseraHelper: Batch ${b + 1} (${startIdx + 1}-${endIdx}) đã được bot giải trước đó, tự động bỏ qua!`);
         continue;
       }
 
-      const statusMsg = `⏳ Đang giải câu ${startIdx + 1} - ${endIdx} / ${totalQuestions}...`;
+      const userChosenCount = needSolvingInBatch.filter(q => q.userSelectedAnswer).length;
+      const newQsCount = needSolvingInBatch.length - userChosenCount;
+      let statusMsg = `⏳ Đang giải câu ${startIdx + 1} - ${endIdx} / ${totalQuestions}...`;
+      if (userChosenCount > 0 && newQsCount > 0) {
+        statusMsg = `⏳ Đang giải ${newQsCount} câu mới & thẩm định lại ${userChosenCount} câu bạn đã chọn (${startIdx + 1}-${endIdx})...`;
+      } else if (userChosenCount > 0) {
+        statusMsg = `🔍 Đang thẩm định lại ${userChosenCount} câu do bạn tự chọn (${startIdx + 1}-${endIdx})...`;
+      }
       showInPageToast(statusMsg);
       if (btnSolve) btnSolve.innerHTML = `⏳ Giải ${startIdx + 1}-${endIdx}...`;
 
-      const parts = buildMultimodalBatchParts(batchQuestions, startIdx + 1, endIdx);
+      const parts = buildMultimodalBatchParts(needSolvingInBatch, needSolvingInBatch[0].q, needSolvingInBatch[needSolvingInBatch.length - 1].q);
 
       let batchSolved = false;
       for (let retry = 0; retry < 3; retry++) {
@@ -5273,12 +5490,19 @@
       } else if (q.prevCorrectAnswer) {
         text += `> ✅ [LƯU Ý TỪ LẦN THI TRƯỚC]: Câu này đã chọn ĐÚNG: "${q.prevCorrectAnswer}". Bắt buộc giữ nguyên đáp án đúng này.\n`;
       }
+      if (q.userSelectedAnswer) {
+        text += `> 👤 [NGƯỜI DÙNG ĐANG CHỌN]: "${q.userSelectedAnswer}". BẠN HÃY THẨM ĐỊNH LẠI: Nếu phương án này ĐÚNG 100% thì xác nhận chọn nó. Nếu SAI thì BẮT BUỘC CHỌN PHƯƠNG ÁN ĐÚNG KHÁC để bảo vệ điểm số!\n`;
+      }
 
       const isMulti = q.type === 'checkbox' ||
         /select (all|two|three|\d)|choose (all|two|three|\d)|which (two|three|\d)|multiple/i.test(q.text);
       text += `Yêu cầu: ${isMulti ? '⚠️ CHỌN NHIỀU ĐÁP ÁN (Select all that apply - PHẢI CHỌN ĐỦ)' : 'CHỌN 1 ĐÁP ÁN DUY NHẤT'}\n`;
       text += `Các phương án lựa chọn:\n`;
-      q.options.forEach(opt => { text += `- ${opt.text}\n`; });
+      const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+      q.options.forEach((opt, oIdx) => { 
+        const letStr = LETTERS[oIdx] || `${oIdx + 1}`;
+        text += `- [${letStr}] ${opt.text}\n`; 
+      });
       text += `\n`;
     }
 
@@ -5449,10 +5673,18 @@
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[1]);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map(item => ({
-            q: Number(item.q || item.question || 0),
-            answers: (Array.isArray(item.answers) ? item.answers : [item.answer || item.text]).filter(Boolean)
-          })).filter(item => item.answers.length > 0);
+          return parsed.map(item => {
+            const rawAns = Array.isArray(item.answers) ? item.answers : [item.answer || item.text];
+            const cleanAns = rawAns.filter(Boolean).map(a => typeof a === 'string' ? a.trim() : String(a));
+            const optIdxs = (Array.isArray(item.option_indices) ? item.option_indices : (typeof item.opt_index === 'number' ? [item.opt_index] : [])).map(Number);
+            const lts = (Array.isArray(item.letters) ? item.letters : (item.letter ? [item.letter] : [])).map(l => String(l).trim());
+            return {
+              q: Number(item.q || item.question || 0),
+              answers: cleanAns,
+              option_indices: optIdxs,
+              letters: lts
+            };
+          }).filter(item => item.answers.length > 0 || item.option_indices.length > 0 || item.letters.length > 0);
         }
       }
     } catch (e) {

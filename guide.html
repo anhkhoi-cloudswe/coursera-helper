@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hướng Dẫn Sử Dụng — Coursera Helper</title>
+  <meta name="description" content="Cẩm nang hướng dẫn sử dụng chi tiết tiện ích Coursera Helper — Giải Quiz tự động bằng Gemini AI, tua Video, xử lý bài Reading và công cụ làm sạch đề thi Web Solver.">
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b26;
+      --card-solid: #161b26;
+      --header-bg: #1e2433;
+      --border: #262f40;
+      --border-neo: 2px solid #000000;
+      --shadow-neo: 3px 3px 0px #000000;
+      --shadow-neo-lg: 5px 5px 0px #000000;
+      --shadow-neo-sm: 2px 2px 0px #000000;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --emerald: #10b981;
+      --emerald-hover: #059669;
+      --purple: #a855f7;
+      --rose: #f43f5e;
+      --amber: #f59e0b;
+      --cyan: #38bdf8;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-full: 9999px;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    ::-webkit-scrollbar {
+      width: 7px;
+      height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #090d16;
+      border-left: 1px solid #000;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #2b3548;
+      border: 1px solid #000;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--primary);
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg);
+      background-image: radial-gradient(#1e293b 1.5px, transparent 1.5px);
+      background-size: 22px 22px;
+      background-attachment: fixed;
+      color: var(--text);
+      line-height: 1.7;
+      padding: 20px 24px 80px;
+      letter-spacing: -0.01em;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+    }
+
+    /* Navigation Bar */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 22px;
+      background: var(--header-bg);
+      border: var(--border-neo);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-neo-lg);
+      margin-bottom: 32px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .brand-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 800;
+      padding: 4px 10px;
+      background: var(--primary);
+      color: #ffffff;
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo-sm);
+      border-radius: var(--radius-sm);
+      letter-spacing: 0.05em;
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-title span {
+      color: var(--cyan);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .nav-btn {
+      font-family: inherit;
+      font-size: 0.82rem;
+      font-weight: 700;
+      height: 36px;
+      padding: 0 16px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo);
+      outline: none;
+      user-select: none;
+      white-space: nowrap;
+      background: #1e2433;
+      color: var(--text);
+    }
+
+    .nav-btn:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 4px 4px 0px #000000;
+      background: #283144;
+    }
+
+    .nav-btn:active {
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px 0px #000000;
+    }
+
+    .nav-btn-primary {
+      background: var(--primary);
+      color: #ffffff;
+    }
+
+    .nav-btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    /* Hero Banner */
+    .hero-banner {
+      background: var(--card-bg);
+      border: var(--border-neo);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-neo-lg);
+      padding: 40px 36px;
+      margin-bottom: 36px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-banner::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 6px;
+      height: 100%;
+      background: var(--primary);
+    }
+
+    .hero-label {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 3px 10px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      color: #a5b4fc;
+      border-radius: var(--radius-sm);
+      margin-bottom: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .hero-title {
+      font-size: 2.2rem;
+      font-weight: 800;
+      line-height: 1.25;
+      letter-spacing: -0.03em;
+      margin-bottom: 14px;
+      color: #ffffff;
+    }
+
+    .hero-desc {
+      font-size: 1.02rem;
+      color: var(--text-muted);
+      max-width: 860px;
+      line-height: 1.7;
+      margin-bottom: 24px;
+    }
+
+    .quick-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding-top: 16px;
+      border-top: 1px dashed #262f40;
+    }
+
+    .chip-link {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      background: #0d1117;
+      border: 1px solid #283144;
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .chip-link:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+      background: rgba(56, 189, 248, 0.08);
+    }
+
+    /* Section Cards */
+    .section-card {
+      background: var(--card-bg);
+      border: var(--border-neo);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-neo-lg);
+      padding: 36px;
+      margin-bottom: 32px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #262f40;
+    }
+
+    .step-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      font-weight: 800;
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-md);
+      background: var(--primary);
+      color: #ffffff;
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-badge-emerald { background: var(--emerald); }
+    .step-badge-amber { background: var(--amber); color: #000; }
+    .step-badge-purple { background: var(--purple); }
+    .step-badge-cyan { background: var(--cyan); color: #000; }
+
+    .section-title-group h2 {
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: #ffffff;
+    }
+
+    .section-title-group p {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Subsections & Component Detail Blocks */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+
+    .feature-box {
+      background: #0d1117;
+      border: 1.5px solid #262f40;
+      border-radius: var(--radius-md);
+      padding: 22px;
+      position: relative;
+    }
+
+    .feature-box-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+
+    .status-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid currentColor;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .tag-blue { color: #60a5fa; border-color: rgba(96, 165, 250, 0.4); background: rgba(96, 165, 250, 0.1); }
+    .tag-emerald { color: #34d399; border-color: rgba(52, 211, 153, 0.4); background: rgba(52, 211, 153, 0.1); }
+    .tag-amber { color: #fbbf24; border-color: rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.1); }
+    .tag-rose { color: #f87171; border-color: rgba(248, 113, 113, 0.4); background: rgba(248, 113, 113, 0.1); }
+
+    .feature-box p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .feature-list {
+      list-style: none;
+      margin-top: 10px;
+    }
+
+    .feature-list li {
+      position: relative;
+      padding-left: 18px;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+
+    .feature-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 9px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--primary);
+    }
+
+    /* Workflow Cards */
+    .workflow-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .workflow-step {
+      display: flex;
+      gap: 18px;
+      background: #0d1117;
+      border: 1.5px solid #262f40;
+      border-radius: var(--radius-md);
+      padding: 18px 22px;
+      align-items: flex-start;
+    }
+
+    .wf-number {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: var(--cyan);
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 4px 10px;
+      border-radius: var(--radius-sm);
+      flex-shrink: 0;
+    }
+
+    .wf-content h4 {
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .wf-content p {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Callout & Alert Boxes (No Icons) */
+    .note-box {
+      background: rgba(99, 102, 241, 0.08);
+      border: 1.5px solid rgba(99, 102, 241, 0.3);
+      border-radius: var(--radius-md);
+      padding: 18px 22px;
+      margin: 20px 0;
+    }
+
+    .note-box-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: #818cf8;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+
+    .note-box p {
+      font-size: 0.88rem;
+      color: #c7d2fe;
+      line-height: 1.6;
+    }
+
+    .warning-box {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1.5px solid rgba(245, 158, 11, 0.3);
+      border-radius: var(--radius-md);
+      padding: 18px 22px;
+      margin: 20px 0;
+    }
+
+    .warning-box-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: #fbbf24;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+
+    .warning-box p {
+      font-size: 0.88rem;
+      color: #fde68a;
+      line-height: 1.6;
+    }
+
+    /* Comparison & State Tables */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 20px 0;
+      border: 1.5px solid #262f40;
+      border-radius: var(--radius-md);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      text-align: left;
+      background: #0d1117;
+    }
+
+    th {
+      background: #1e2433;
+      color: var(--text);
+      font-weight: 700;
+      padding: 12px 18px;
+      border-bottom: 1.5px solid #262f40;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+    }
+
+    td {
+      padding: 14px 18px;
+      border-bottom: 1px solid #1e2433;
+      color: var(--text-muted);
+      vertical-align: top;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      background: #1e2433;
+      color: var(--cyan);
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid #2d3748;
+    }
+
+    /* FAQ Section */
+    .faq-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .faq-item {
+      background: #0d1117;
+      border: 1.5px solid #262f40;
+      border-radius: var(--radius-md);
+      padding: 22px;
+    }
+
+    .faq-question {
+      font-size: 1.02rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 8px;
+    }
+
+    .faq-answer {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.65;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding-top: 40px;
+      border-top: 1px solid #1e2433;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+
+    footer a {
+      color: var(--text-muted);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      color: var(--cyan);
+    }
+
+    @media (max-width: 768px) {
+      body { padding: 14px 14px 60px; }
+      .hero-banner { padding: 28px 22px; }
+      .hero-title { font-size: 1.65rem; }
+      .section-card { padding: 24px 20px; }
+      .workflow-step { flex-direction: column; gap: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Navigation Header -->
+    <header>
+      <a href="/" class="brand">
+        <span class="brand-tag">CH</span>
+        <div class="brand-title">Coursera <span>Helper</span></div>
+      </a>
+      <div class="nav-actions">
+        <a href="/" class="nav-btn">Trang Chủ</a>
+        <a href="/guide.html" class="nav-btn nav-btn-primary">Hướng Dẫn</a>
+        <a href="/policy.html" class="nav-btn">Quyền Riêng Tư</a>
+        <a href="https://github.com/anhkhoi-cloudswe/coursera-helper" target="_blank" class="nav-btn">GitHub</a>
+      </div>
+    </header>
+
+    <!-- Hero Banner -->
+    <div class="hero-banner">
+      <span class="hero-label">DOCUMENTATION & MANUAL</span>
+      <h1 class="hero-title">Cẩm Nang Hướng Dẫn Sử Dụng Coursera Helper</h1>
+      <p class="hero-desc">
+        Tài liệu vận hành chi tiết toàn bộ tính năng của tiện ích Chrome Extension và công cụ Web Solver trực tuyến. Tự động hóa quá trình học tập, bóc tách prompt injection rác, xử lý Video/Reading và tự động giải trắc nghiệm bằng Google Gemini AI.
+      </p>
+      
+      <div class="quick-nav">
+        <a href="#section-hud" class="chip-link">01. HUD Di Động</a>
+        <a href="#section-sidepanel" class="chip-link">02. Side Panel</a>
+        <a href="#section-websolver" class="chip-link">03. Web Solver</a>
+        <a href="#section-smartbot" class="chip-link">04. Cơ Chế Smart Bot</a>
+        <a href="#section-faq" class="chip-link">05. Giải Đáp FAQ</a>
+      </div>
+    </div>
+
+    <!-- Section 01: HUD Di Động -->
+    <div class="section-card" id="section-hud">
+      <div class="section-header">
+        <div class="step-badge">01</div>
+        <div class="section-title-group">
+          <h2>Thanh Công Cụ HUD Di Động (Floating Drag-and-Drop HUD)</h2>
+          <p>Bảng điều khiển nổi hiển thị trực tiếp trên giao diện học tập của Coursera</p>
+        </div>
+      </div>
+
+      <div class="feature-grid">
+        <div class="feature-box">
+          <div class="feature-box-title">
+            <span>Kéo Thả Vị Trí (Drag & Drop)</span>
+            <span class="status-tag tag-blue">UI CONTROL</span>
+          </div>
+          <p>
+            Bạn có thể nhấp giữ chuột vào vùng tiêu đề của thanh HUD và di chuyển tới bất kỳ góc nào trên màn hình. Vị trí mới sẽ được tự động lưu lại trên trình duyệt để không làm che khuất nội dung bài học hoặc nút làm bài thi của Coursera.
+          </p>
+        </div>
+
+        <div class="feature-box">
+          <div class="feature-box-title">
+            <span>Nút "Giải Quiz" / "Quét Đề"</span>
+            <span class="status-tag tag-emerald">ACTION</span>
+          </div>
+          <p>
+            Kích hoạt trình giải bài thi trắc nghiệm tại trang <code>/assignment-submission/</code>. Hệ thống quét toàn bộ danh sách câu hỏi và hình ảnh sơ đồ từ trên xuống dưới, tự động gọi Gemini AI phân tích và tick chọn chính xác 100% các phương án đúng.
+          </p>
+        </div>
+
+        <div class="feature-box">
+          <div class="feature-box-title">
+            <span>Nút "Auto-Skip"</span>
+            <span class="status-tag tag-amber">AUTOMATION</span>
+          </div>
+          <p>
+            Trình tự động hóa đa năng áp dụng cho mọi loại bài học:
+          </p>
+          <ul class="feature-list">
+            <li><strong>Bài Video:</strong> Tự động tua 100% thời lượng và hoàn thành bài.</li>
+            <li><strong>Bài Reading / Audio (/supplement/):</strong> Tự động tua Audio về 1:24/1:24, chờ mở khóa nút <code>Mark as completed</code> và bấm xác nhận có tích xanh.</li>
+            <li><strong>Bài Quiz (/assignment-submission/):</strong> Tự động quét đề, giải trắc nghiệm, tick Honor Code và nộp bài.</li>
+          </ul>
+        </div>
+
+        <div class="feature-box">
+          <div class="feature-box-title">
+            <span>Nút "Setup"</span>
+            <span class="status-tag tag-rose">SETTINGS</span>
+          </div>
+          <p>
+            Bấm nút Setup để mở ngay lập tức bảng quản trị Chrome Side Panel bên phải màn hình. Tại đây bạn có thể cấu hình API Key, chọn mô hình Gemini AI, xem lại toàn bộ lời giải chi tiết hoặc bật/tắt chế độ tự động nộp bài.
+          </p>
+        </div>
+      </div>
+
+      <div class="note-box">
+        <div class="note-box-title">LƯU Ý VỀ GIAO DIỆN HUD</div>
+        <p>
+          Thanh HUD hoạt động độc lập và nhẹ nhàng trên giao diện Coursera. Mọi thông báo tiến độ (ví dụ: <code>Đang bóc tách ảnh...</code>, <code>Đang giải câu 1-15...</code>) đều được hiển thị qua các thẻ Toast thông báo góc màn hình giúp bạn dễ dàng theo dõi.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 02: Side Panel -->
+    <div class="section-card" id="section-sidepanel">
+      <div class="section-header">
+        <div class="step-badge step-badge-emerald">02</div>
+        <div class="section-title-group">
+          <h2>Quản Trị Trên Chrome Side Panel</h2>
+          <p>Bảng điều khiển chuyên sâu nằm ở thanh bên phải của trình duyệt Chrome</p>
+        </div>
+      </div>
+
+      <div class="workflow-list">
+        <div class="workflow-step">
+          <div class="wf-number">STEP 01</div>
+          <div class="wf-content">
+            <h4>Cấu Hình Gemini API Keys & Cơ Chế Xoay Tua (Key Rotation)</h4>
+            <p>
+              Nhập API Key cá nhân từ Google AI Studio (truy cập <code>aistudio.google.com</code> để tạo Key miễn phí). Tiện ích hỗ trợ lưu tới 3 API Key (Key 1, Key 2, Key 3). Khi một Key chạm giới hạn tần suất của Google (Rate Limit 15 requests/phút), hệ thống sẽ tự động chuyển sang Key tiếp theo mà không làm gián đoạn tiến trình giải bài.
+            </p>
+          </div>
+        </div>
+
+        <div class="workflow-step">
+          <div class="wf-number">STEP 02</div>
+          <div class="wf-content">
+            <h4>Lựa Chọn Mô Hình AI (Model Selection)</h4>
+            <p>
+              Hệ thống tích hợp sẵn các mô hình thế hệ mới nhất của Google:
+              <br>• <code>gemini-3.6-flash</code>: Mặc định tối ưu, tốc độ phản hồi cực nhanh dưới 2 giây.
+              <br>• <code>gemini-3.8-flash</code>: Khả năng suy luận logic chuyên sâu, thích hợp cho các bài thi toán học hoặc lập trình phức tạp.
+            </p>
+          </div>
+        </div>
+
+        <div class="workflow-step">
+          <div class="wf-number">STEP 03</div>
+          <div class="wf-content">
+            <h4>Công Cụ Xem & Xuất Lời Giải Chi Tiết (Markdown Viewer)</h4>
+            <p>
+              Toàn bộ đáp án cùng lý do giải thích từ Gemini AI được trình bày dạng văn bản Markdown chuẩn học thuật. Bạn có thể xem lại ngay trong Side Panel, bấm nút <code>Sao chép Lời giải</code> hoặc <code>Tải xuống TXT</code> để lưu trữ tài liệu học tập.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 03: Web Solver -->
+    <div class="section-card" id="section-websolver">
+      <div class="section-header">
+        <div class="step-badge step-badge-purple">03</div>
+        <div class="section-title-group">
+          <h2>Công Cụ Web Solver Trực Tuyến (coursera-helper.vercel.app)</h2>
+          <p>Bộ công cụ bóc tách prompt injection rác và giải đề thủ công trên nền tảng Web</p>
+        </div>
+      </div>
+
+      <div class="feature-grid">
+        <div class="feature-box">
+          <div class="feature-box-title">
+            <span>Bóc Tách Prompt Injection & Watermark</span>
+            <span class="status-tag tag-purple">CLEANER</span>
+          </div>
+          <p>
+            Nhiều bài thi Coursera bị chèn các câu lệnh rác ẩn (ví dụ: <code>"You are a helpful AI assistant... Do you understand?"</code>) nhằm đánh lừa AI khi copy đề bài. Dán văn bản gốc vào ô <code>Văn bản thô (Raw)</code> trên trang chủ Web Solver ➔ Nhấn <code>Làm sạch Prompt</code> ➔ Nhận ngay nội dung câu hỏi nguyên bản 100%.
+          </p>
+        </div>
+
+        <div class="feature-box">
+          <div class="feature-box-title">
+            <span>Giải Đề Thủ Công & Copy Prompt Chuyên Gia</span>
+            <span class="status-tag tag-cyan">SOLVER</span>
+          </div>
+          <p>
+            Sau khi bóc tách văn bản sạch, bạn có thể bấm nút <code>Giải bằng Gemini AI</code> trực tiếp trên web hoặc bấm <code>Copy Prompt Chuyên gia</code> để dán thẳng vào ChatGPT hay Google Gemini.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 04: Smart Bot Workflow -->
+    <div class="section-card" id="section-smartbot">
+      <div class="section-header">
+        <div class="step-badge step-badge-amber">04</div>
+        <div class="section-title-group">
+          <h2>Cơ Chế Phân Định Thông Minh (Smart Bot Verification)</h2>
+          <p>Quy trình quét từ trên xuống, phân biệt giữa đáp án Bot đã giải và câu do Người dùng chọn</p>
+        </div>
+      </div>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Loại Câu Hỏi</th>
+              <th>Dấu Hiệu Nhận Biết Trên Màn Hình</th>
+              <th>Hành Động Của Bot Khi Quét Phía Trên Trở Xuống</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Câu Bot đã giải</strong></td>
+              <td>Thẻ phương án có viền xanh lục & huy hiệu <code>Bot Verified</code></td>
+              <td><strong>TỰ ĐỘNG SKIP:</strong> Bỏ qua không gửi API nữa để tiết kiệm token và giữ nguyên đáp án tối ưu.</td>
+            </tr>
+            <tr>
+              <td><strong>Câu Người dùng tự chọn</strong></td>
+              <td>Có tích chọn đáp án nhưng KHÔNG CÓ huy hiệu <code>Bot Verified</code></td>
+              <td><strong>BẮT BUỘC KHÔNG SKIP:</strong> Bot gửi cho AI thẩm định lại. Nếu bạn chọn đúng -> Xác nhận giữ nguyên. Nếu chọn sai -> Tự sửa sang đáp án đúng.</td>
+            </tr>
+            <tr>
+              <td><strong>Câu chưa trả lời</strong></td>
+              <td>Chưa có bất kỳ phương án nào được tick chọn</td>
+              <td><strong>GIẢI MỚI:</strong> Bot gửi AI giải, tick đáp án chính xác và đóng dấu <code>Bot Verified</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="warning-box">
+        <div class="warning-box-title">AN TOÀN ĐIỂM SỐ TUYỆT ĐỐI</div>
+        <p>
+          Trước khi kích hoạt lệnh nộp bài (Submit Quiz), hệ thống sẽ quét toàn bộ câu hỏi trên trang lần cuối. Nếu còn bất kỳ câu nào chưa được chọn đáp án, hệ thống sẽ ngay lập tức hiện thông báo cảnh báo màu đỏ và CHẶN LỆNH NỘP BÀI để bảo vệ kết quả học tập của bạn.
+        </p>
+      </div>
+    </div>
+
+    <!-- Section 05: FAQ -->
+    <div class="section-card" id="section-faq">
+      <div class="section-header">
+        <div class="step-badge step-badge-cyan">05</div>
+        <div class="section-title-group">
+          <h2>Giải Đáp Thắc Mắc Thường Gặp (FAQ)</h2>
+          <p>Các sự cố phổ biến và hướng xử lý nhanh chóng trong quá trình làm bài</p>
+        </div>
+      </div>
+
+      <div class="faq-grid">
+        <div class="faq-item">
+          <div class="faq-question">Tôi lấy Gemini API Key ở đâu và có tốn phí không?</div>
+          <div class="faq-answer">
+            Bạn có thể lấy API Key hoàn toàn miễn phí tại trang Google AI Studio (<code>aistudio.google.com</code>). Gói miễn phí hỗ trợ 15 lượt giải mỗi phút, hoàn toàn đủ cho nhu cầu hoàn thiện các khóa học Coursera.
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-question">Tại sao hệ thống báo "Còn X câu chưa chọn được đáp án"?</div>
+          <div class="faq-answer">
+            Trường hợp này xảy ra khi kết nối mạng chập chờn hoặc API Key tạm thời chạm Rate Limit của Google. Bạn chỉ cần giữ nguyên trang bài làm, bấm lại nút <code>Giải Quiz</code> trên thanh HUD. Hệ thống sẽ tự động bỏ qua các câu đã có nhãn <code>Bot Verified</code> và tiếp tục giải hoàn thiện các câu còn lại.
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <div class="faq-question">Tiện ích có tự động chuyển bài thi tiếp theo sau khi làm xong không?</div>
+          <div class="faq-answer">
+            Khi bật chế độ <code>Auto-Skip</code>, sau khi làm xong Quiz và nhận kết quả điểm số trên màn hình, tiện ích sẽ tự động phát hiện nút <code>Next Item</code> và chuyển bạn sang bài học kế tiếp.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+      <p>Coursera Helper — Phân phối miễn phí phục vụ mục đích nghiên cứu & học tập cá nhân.</p>
+      <p style="margin-top: 6px;">
+        <a href="/">Trang chủ Web Solver</a> • 
+        <a href="/guide.html">Hướng dẫn sử dụng</a> • 
+        <a href="/policy.html">Chính sách bảo mật</a>
+      </p>
+    </footer>
+  </div>
+
+</body>
+</html>

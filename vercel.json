@@ -2,6 +2,7 @@
   "cleanUrls": true,
   "rewrites": [
     { "source": "/policy", "destination": "/policy.html" },
-    { "source": "/privacy", "destination": "/policy.html" }
+    { "source": "/privacy", "destination": "/policy.html" },
+    { "source": "/guide", "destination": "/guide.html" }
   ]
 }
