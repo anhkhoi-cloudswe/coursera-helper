@@ -98,32 +98,36 @@
     .brand {
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 12px;
       text-decoration: none;
-      color: var(--text);
     }
 
-    .brand-tag {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.85rem;
-      font-weight: 800;
-      padding: 4px 10px;
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
       background: var(--primary);
-      color: #ffffff;
       border: var(--border-neo);
       box-shadow: var(--shadow-neo-sm);
-      border-radius: var(--radius-sm);
-      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
     }
 
-    .brand-title {
-      font-size: 1.15rem;
+    .brand-icon svg {
+      width: 20px;
+      height: 20px;
+      color: white;
+    }
+
+    .brand-info h1 {
+      font-size: 1.05rem;
       font-weight: 800;
-      letter-spacing: -0.02em;
-    }
-
-    .brand-title span {
-      color: var(--cyan);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .nav-actions {
@@ -581,8 +585,15 @@
     <!-- Navigation Header -->
     <header>
       <a href="/" class="brand">
-        <span class="brand-tag">CH</span>
-        <div class="brand-title">Coursera <span>Helper</span></div>
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <h1>Coursera Helper</h1>
+        </div>
       </a>
       <div class="nav-actions">
         <a href="/" class="nav-btn">Trang Chủ</a>
