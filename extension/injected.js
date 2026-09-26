@@ -1,16 +1,16 @@
 // Coursera Helper - Main World Injection Script
 // Runs in the MAIN world to directly access Coursera's player, DOM, and React Fiber
-// Key: Extract userId & courseId, execute 3-step backend completion via Main World fetch, and update React state
+// Key: Extract authentic userId via adminUserPermissions / window.App, resolve true trackingId, and complete video
 
 (function() {
   if (window.__COURSERA_HELPER_INJECTED__) return;
   window.__COURSERA_HELPER_INJECTED__ = true;
 
-  console.log('[CourseraHelper] Main-world engine v4 initialized.');
+  console.log('[CourseraHelper] Main-world engine v4.1 initialized.');
 
   const unlockedSet = new WeakSet();
 
-  // === Helper: Trích xuất CSRF Token từ Cookie trang chính (Main World) ===
+  // === Helper: Trích xuất CSRF Token từ Cookie (Main World) ===
   function getCookieCsrf() {
     try {
       const parts = document.cookie.split(';');
@@ -26,96 +26,109 @@
     return '';
   }
 
-  // === Helper: Trích xuất User ID từ Cookie trang chính (Main World) ===
-  function getCookieUserId() {
+  // === Helper: Trích xuất User ID đích thực từ window.App hoặc API (TUYỆT ĐỐI không dùng cookie __204u) ===
+  async function resolveAuthenticUserId(csrf) {
+    const ds = document.documentElement.dataset;
+    if (ds.chUserId && /^\d+$/.test(ds.chUserId) && ds.chUserId.length < 11) {
+      return ds.chUserId;
+    }
+
+    // 1. Thử lấy từ window.App Flux Stores (chứa đúng userId đang đăng nhập)
     try {
-      const parts = document.cookie.split(';');
-      for (let i = 0; i < parts.length; i++) {
-        const [k, v] = parts[i].split('=');
-        if (!k || !v) continue;
-        const key = k.trim().toLowerCase();
-        if (key === '__204u') {
-          const m = v.trim().match(/^(\d{5,})/);
-          if (m) return m[1];
-        } else if (key === 'cauth') {
-          try {
-            const dec = decodeURIComponent(v.trim());
-            const m = dec.match(/"id"\s*:\s*(\d+)/);
-            if (m) return m[1];
-          } catch (e) {}
+      const stores = window.App?.context?.dispatcher?.stores;
+      if (stores) {
+        const uid = stores.ApplicationStore?.userData?.id ||
+                    stores.UserStore?.currentUserId ||
+                    stores.ApplicationStore?.getUser?.()?.id;
+        if (uid && String(uid).length > 2) {
+          const sUid = String(uid);
+          ds.chUserId = sUid;
+          return sUid;
         }
       }
     } catch (e) {}
-    return '';
+
+    // 2. Thử lấy từ window.__PRELOADED_STATE__
+    try {
+      if (window.__PRELOADED_STATE__) {
+        const s = JSON.stringify(window.__PRELOADED_STATE__);
+        const m = s.match(/"userId"\s*:\s*"?(\d+)"?/i) || s.match(/"currentUserId"\s*:\s*"?(\d+)"?/i);
+        if (m && m[1]) {
+          ds.chUserId = m[1];
+          return m[1];
+        }
+      }
+    } catch (e) {}
+
+    // 3. Gọi endpoint chuẩn Coursera adminUserPermissions.v1?q=my (có session cookies)
+    try {
+      const res = await fetch('/api/adminUserPermissions.v1?q=my', {
+        headers: {
+          'Accept': 'application/json',
+          'x-csrf3-token': csrf,
+          'x-requested-with': 'XMLHttpRequest'
+        },
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const uid = data?.elements?.[0]?.id;
+        if (uid) {
+          const sUid = String(uid);
+          ds.chUserId = sUid;
+          return sUid;
+        }
+      }
+    } catch (e) {}
+
+    return ds.chUserId || '';
   }
 
-  // === Helper: Trích xuất ngữ cảnh Coursera (userId, courseId, trackingId) ===
-  function extractCourseraContext() {
+  // === Helper: Trích xuất Course ID thực tế (e.g. rwRs6Tn9EeWJaxK5AT4frw) ===
+  async function resolveAuthenticCourseId(slug, csrf) {
     const ds = document.documentElement.dataset;
-    let userId = ds.chUserId || '';
-    let courseId = ds.chCourseId || '';
-    let trackingId = ds.chTrackingId || '';
-    let csrf = ds.chCsrf || getCookieCsrf();
-
-    if (!csrf) csrf = getCookieCsrf();
-    if (csrf) ds.chCsrf = csrf;
-
-    // 1. Thử lấy userId từ Cookie (__204u hoặc CAUTH)
-    if (!userId) {
-      userId = getCookieUserId();
+    if (ds.chCourseId && ds.chCourseId.length > 5) {
+      return ds.chCourseId;
     }
 
-    // 2. Thử lấy từ window.App / Flux Stores
-    if (!userId && window.App?.context?.dispatcher?.stores) {
-      const stores = window.App.context.dispatcher.stores;
-      userId = stores.ApplicationStore?.userData?.id || stores.UserStore?.currentUserId || '';
-      if (userId) userId = String(userId);
-    }
+    // 1. Lấy từ window.App stores
+    try {
+      const stores = window.App?.context?.dispatcher?.stores;
+      if (stores) {
+        const cid = stores.CourseStore?.courseId || stores.CourseMaterialsStore?.courseId;
+        if (cid) {
+          ds.chCourseId = cid;
+          return cid;
+        }
+      }
+    } catch (e) {}
 
-    // 3. Thử lấy từ window.__PRELOADED_STATE__
-    if (!userId && window.__PRELOADED_STATE__) {
+    // 2. Gọi onDemandCourseMaterials.v2
+    if (slug) {
       try {
-        const s = JSON.stringify(window.__PRELOADED_STATE__);
-        const m = s.match(/"userId"\s*:\s*"?(\d{5,})"?/) || s.match(/"id"\s*:\s*(\d{6,})/);
-        if (m) userId = m[1];
-      } catch (e) {}
-    }
-
-    // 4. Trích xuất từ React Fiber trên phần tử video
-    const video = document.querySelector('video');
-    if (video) {
-      try {
-        const fk = Object.keys(video).find(k => k.startsWith('__reactFiber'));
-        let cur = fk ? video[fk] : null;
-        let d = 0;
-        while (cur && d < 50) {
-          if (cur.memoizedProps) {
-            const p = cur.memoizedProps;
-            if (!userId && p.userId) userId = String(p.userId);
-            if (!userId && p.user?.id) userId = String(p.user.id);
-            if (!courseId && p.courseId) courseId = String(p.courseId);
-            if (!trackingId && p.trackingId) trackingId = String(p.trackingId);
-            if (!trackingId && p.videoId) trackingId = String(p.videoId);
+        const res = await fetch(`/api/onDemandCourseMaterials.v2/?q=slug&slug=${encodeURIComponent(slug)}&fields=id`, {
+          headers: {
+            'Accept': 'application/json',
+            'x-csrf3-token': csrf,
+            'x-requested-with': 'XMLHttpRequest'
+          },
+          credentials: 'include'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const cid = data?.elements?.[0]?.id;
+          if (cid) {
+            ds.chCourseId = cid;
+            return cid;
           }
-          cur = cur.return;
-          d++;
         }
       } catch (e) {}
     }
 
-    // 5. Lưu vào dataset để Content Script (Isolated World) có thể đọc tức thì
-    if (userId) ds.chUserId = userId;
-    if (courseId) ds.chCourseId = courseId;
-    if (trackingId) ds.chTrackingId = trackingId;
-
-    return { userId, courseId, trackingId, csrf };
+    return ds.chCourseId || '';
   }
 
-  // Định kỳ cập nhật ngữ cảnh Coursera
-  setInterval(extractCourseraContext, 1000);
-  extractCourseraContext();
-
-  // === CORE: Gỡ bỏ khóa tua seek-lock trên phần tử video ===
+  // === Helper: Gỡ bỏ khóa tua seek-lock trên phần tử video ===
   function addSeekBypassListeners(v) {
     if (unlockedSet.has(v)) return;
     unlockedSet.add(v);
@@ -131,7 +144,6 @@
     patchReactFiber(v);
   }
 
-  // Mở khóa React Fiber props
   function patchReactFiber(video) {
     try {
       const fiberKey = Object.keys(video).find(k => k.startsWith('__reactFiber'));
@@ -162,82 +174,33 @@
     });
   }, 800);
 
-  // === QUY TRÌNH HOÀN THÀNH VIDEO QUA API TRỰC TIẾP TRONG MAIN WORLD ===
+  // === QUY TRÌNH HOÀN THÀNH VIDEO TRỰC TIẾP TRONG MAIN WORLD ===
   async function performMainWorldCompletion(slug, itemId) {
-    const ctx = extractCourseraContext();
-    let userId = ctx.userId;
-    let courseId = ctx.courseId;
-    let trackingId = ctx.trackingId || itemId;
-    let csrf = ctx.csrf || getCookieCsrf();
+    const csrf = getCookieCsrf();
+    const [userId, courseId] = await Promise.all([
+      resolveAuthenticUserId(csrf),
+      resolveAuthenticCourseId(slug, csrf)
+    ]);
 
-    console.log('[CourseraHelper-Main] performMainWorldCompletion start:', { slug, itemId, userId, courseId, trackingId, csrf: !!csrf });
-
-    // Fallback 1: Nếu chưa có userId, gọi API người dùng
-    if (!userId) {
-      try {
-        const uRes = await fetch('/api/userPreferences.v1?q=my', {
-          headers: { 'Accept': 'application/json', 'x-csrf3-token': csrf, 'x-requested-with': 'XMLHttpRequest' },
-          credentials: 'include'
-        });
-        if (uRes.ok) {
-          const uData = await uRes.json();
-          userId = uData?.elements?.[0]?.id || '';
-        }
-      } catch (e) {}
-    }
-    if (!userId) {
-      try {
-        const uRes = await fetch('/api/adminUserPermissions.v1?q=my', {
-          headers: { 'Accept': 'application/json', 'x-csrf3-token': csrf, 'x-requested-with': 'XMLHttpRequest' },
-          credentials: 'include'
-        });
-        if (uRes.ok) {
-          const uData = await uRes.json();
-          userId = uData?.elements?.[0]?.id || '';
-        }
-      } catch (e) {}
-    }
-
-    // Fallback 2: Nếu chưa có courseId, gọi API courses hoặc onDemandCourseMaterials
-    if (!courseId && slug) {
-      try {
-        const cRes = await fetch(`/api/onDemandCourseMaterials.v2/?q=slug&slug=${encodeURIComponent(slug)}&fields=id`, {
-          headers: { 'Accept': 'application/json', 'x-csrf3-token': csrf, 'x-requested-with': 'XMLHttpRequest' },
-          credentials: 'include'
-        });
-        if (cRes.ok) {
-          const cData = await cRes.json();
-          courseId = cData?.elements?.[0]?.id || '';
-        }
-      } catch (e) {}
-      if (!courseId) {
-        try {
-          const cRes2 = await fetch(`/api/courses.v1?q=slug&slug=${encodeURIComponent(slug)}&fields=id`, {
-            headers: { 'Accept': 'application/json', 'x-csrf3-token': csrf, 'x-requested-with': 'XMLHttpRequest' },
-            credentials: 'include'
-          });
-          if (cRes2.ok) {
-            const cData2 = await cRes2.json();
-            courseId = cData2?.elements?.[0]?.id || '';
-          }
-        } catch (e) {}
-      }
-    }
-
-    if (userId) document.documentElement.dataset.chUserId = userId;
-    if (courseId) document.documentElement.dataset.chCourseId = courseId;
+    console.log('[CourseraHelper-Main] Auth resolved for completion:', JSON.stringify({ slug, itemId, userId, courseId, hasCsrf: !!csrf }));
 
     if (!userId || !courseId) {
-      console.warn('[CourseraHelper-Main] Cannot resolve userId or courseId:', { userId, courseId });
+      console.warn('[CourseraHelper-Main] ABORT: Missing authentic userId or courseId');
       return false;
     }
 
-    // Lấy metadata bài giảng video (disableSkippingForward, trackingId, endMs)
+    // 1. BẮT BUỘC: Lấy đúng trackingId (videoId thật sự như itVp7CuLEeeWMBKl-1Ol3A) từ onDemandLectureVideos.v1
     let canSkip = true;
-    let durationMs = 1200000;
+    let trackingId = '';
+    let durationMs = 1044000;
+
     try {
       const metaRes = await fetch(`/api/onDemandLectureVideos.v1/${courseId}~${itemId}?includes=video&fields=disableSkippingForward,startMs,endMs`, {
-        headers: { 'Accept': 'application/json', 'x-csrf3-token': csrf, 'x-requested-with': 'XMLHttpRequest' },
+        headers: {
+          'Accept': 'application/json',
+          'x-csrf3-token': csrf,
+          'x-requested-with': 'XMLHttpRequest'
+        },
         credentials: 'include'
       });
       if (metaRes.ok) {
@@ -249,8 +212,38 @@
         const tid = metaData?.linked?.['onDemandVideos.v1']?.[0]?.id;
         if (tid) trackingId = tid;
         if (elem?.endMs && elem.endMs > 0) durationMs = elem.endMs;
+      } else {
+        const err = await metaRes.text();
+        console.warn('[CourseraHelper-Main] onDemandLectureVideos failed:', metaRes.status, err);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[CourseraHelper-Main] onDemandLectureVideos error:', e);
+    }
+
+    // Nếu không lấy được trackingId từ API, cố gắng tìm trong React Fiber của video
+    if (!trackingId) {
+      const videoEl = document.querySelector('video');
+      if (videoEl) {
+        try {
+          const fk = Object.keys(videoEl).find(k => k.startsWith('__reactFiber'));
+          let cur = fk ? videoEl[fk] : null;
+          let d = 0;
+          while (cur && d < 40) {
+            if (cur.memoizedProps?.trackingId) { trackingId = cur.memoizedProps.trackingId; break; }
+            if (cur.memoizedProps?.videoId) { trackingId = cur.memoizedProps.videoId; break; }
+            cur = cur.return;
+            d++;
+          }
+        } catch (e) {}
+      }
+    }
+
+    if (!trackingId) {
+      console.warn('[CourseraHelper-Main] Could not resolve video trackingId, using fallback');
+      trackingId = itemId;
+    }
+
+    document.documentElement.dataset.chTrackingId = trackingId;
 
     const videoEl = document.querySelector('video');
     if (videoEl && videoEl.duration && !isNaN(videoEl.duration) && isFinite(videoEl.duration) && videoEl.duration > 2) {
@@ -258,62 +251,90 @@
     }
     const viewedUpToMs = durationMs + 2000;
 
-    const headers = {
-      'Content-Type': 'application/json;charset=UTF-8',
+    const apiHeaders = {
+      'Content-Type': 'application/json',
       'Accept': 'application/json, text/plain, */*',
       'x-coursera-application': 'ondemand',
       'x-requested-with': 'XMLHttpRequest'
     };
     if (csrf) {
-      headers['x-csrf3-token'] = csrf;
-      headers['x-csrf2-token'] = csrf;
+      apiHeaders['x-csrf3-token'] = csrf;
+      apiHeaders['x-csrf2-token'] = csrf;
     }
 
-    console.log('[CourseraHelper-Main] Executing completion calls:', { canSkip, trackingId, viewedUpToMs });
+    console.log('[CourseraHelper-Main] Sending 3-step completion calls:', JSON.stringify({
+      canSkip,
+      userId,
+      courseId,
+      trackingId,
+      viewedUpToMs
+    }));
 
-    if (canSkip) {
-      await fetch(`/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`, {
+    // BƯỚC 1: Gửi sự kiện play (bắt buộc cho Coursera backend ghi nhận phiên xem)
+    try {
+      const playRes = await fetch(`/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/play?autoEnroll=false`, {
         method: 'POST',
-        headers,
+        headers: apiHeaders,
         credentials: 'include',
         body: JSON.stringify({ contentRequestBody: {} })
-      }).catch(() => {});
-    } else {
-      // 3-step completion flow chuẩn
-      try {
-        await fetch(`/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/play?autoEnroll=false`, {
-          method: 'POST',
-          headers,
-          credentials: 'include',
-          body: JSON.stringify({ contentRequestBody: {} })
-        });
-      } catch (e) {}
+      });
+      console.log('[CourseraHelper-Main] videoEvents/play status:', playRes.status);
+    } catch (e) {}
 
-      try {
-        const progRes = await fetch(`/api/onDemandVideoProgresses.v1/${userId}~${courseId}~${trackingId}`, {
-          method: 'PUT',
-          headers,
-          credentials: 'include',
-          body: JSON.stringify({
-            videoProgressId: `${userId}~${courseId}~${trackingId}`,
-            viewedUpTo: viewedUpToMs
-          })
-        });
-        console.log('[CourseraHelper-Main] onDemandVideoProgresses response status:', progRes.status);
-      } catch (e) {}
-
-      try {
-        const endRes = await fetch(`/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`, {
-          method: 'POST',
-          headers,
-          credentials: 'include',
-          body: JSON.stringify({ contentRequestBody: {} })
-        });
-        console.log('[CourseraHelper-Main] videoEvents/ended response status:', endRes.status);
-      } catch (e) {}
+    // BƯỚC 2: Cập nhật viewedUpTo lên 100% thời lượng video qua onDemandVideoProgresses.v1
+    try {
+      const progUrl = `/api/onDemandVideoProgresses.v1/${userId}~${courseId}~${trackingId}`;
+      const progRes = await fetch(progUrl, {
+        method: 'PUT',
+        headers: apiHeaders,
+        credentials: 'include',
+        body: JSON.stringify({
+          videoProgressId: `${userId}~${courseId}~${trackingId}`,
+          viewedUpTo: viewedUpToMs
+        })
+      });
+      console.log('[CourseraHelper-Main] onDemandVideoProgresses status:', progRes.status);
+      if (progRes.status !== 204 && progRes.status !== 200) {
+        const txt = await progRes.text();
+        console.warn('[CourseraHelper-Main] onDemandVideoProgresses error response:', progRes.status, txt);
+      }
+    } catch (e) {
+      console.warn('[CourseraHelper-Main] onDemandVideoProgresses error:', e);
     }
 
-    // Kích hoạt React Fiber completion handlers
+    // BƯỚC 3: Gửi sự kiện ended để Coursera chốt hoàn thành bài giảng video
+    try {
+      const endUrl = `/api/opencourse.v1/user/${userId}/course/${slug}/item/${itemId}/lecture/videoEvents/ended?autoEnroll=false`;
+      const endRes = await fetch(endUrl, {
+        method: 'POST',
+        headers: apiHeaders,
+        credentials: 'include',
+        body: JSON.stringify({ contentRequestBody: {} })
+      });
+      console.log('[CourseraHelper-Main] videoEvents/ended status:', endRes.status);
+      if (endRes.status !== 200 && endRes.status !== 204) {
+        const txt = await endRes.text();
+        console.warn('[CourseraHelper-Main] videoEvents/ended error response:', endRes.status, txt);
+      }
+    } catch (e) {
+      console.warn('[CourseraHelper-Main] videoEvents/ended error:', e);
+    }
+
+    // BƯỚC 4: Đồng thời gửi tín hiệu hoàn thành item qua onDemandSupplementCompletions.v1
+    try {
+      await fetch('/api/onDemandSupplementCompletions.v1', {
+        method: 'POST',
+        headers: apiHeaders,
+        credentials: 'include',
+        body: JSON.stringify({
+          courseId: courseId,
+          itemId: itemId,
+          userId: parseInt(userId, 10)
+        })
+      }).catch(() => {});
+    } catch (e) {}
+
+    // BƯỚC 5: Kích hoạt React Fiber handlers trên phần tử video
     if (videoEl) {
       try {
         const fk = Object.keys(videoEl).find(k => k.startsWith('__reactFiber'));
@@ -337,11 +358,37 @@
       } catch (e) {}
     }
 
-    return true;
+    // BƯỚC 6: Kiểm tra xác nhận trạng thái hoàn thành trực tiếp từ server Coursera
+    let isConfirmed = false;
+    for (let check = 0; check < 5; check++) {
+      await new Promise(r => setTimeout(r, 400));
+      try {
+        const pRes = await fetch(`/api/onDemandCoursesProgress.v1/${userId}~${courseId}?fields=gradedAssignmentGroupProgress`, {
+          headers: {
+            'Accept': 'application/json',
+            'x-csrf3-token': csrf,
+            'x-requested-with': 'XMLHttpRequest'
+          },
+          credentials: 'include'
+        });
+        if (pRes.ok) {
+          const pData = await pRes.json();
+          const items = pData?.elements?.[0]?.items || {};
+          const itemProg = items[itemId];
+          if (itemProg && (itemProg.progressState === 'Completed' || itemProg.completed === true)) {
+            console.log('[CourseraHelper-Main] Server CONFIRMED Completed for:', itemId);
+            isConfirmed = true;
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    return isConfirmed;
   }
 
   // === LẮNG NGHE SỰ KIỆN TỪ CONTENT SCRIPT ĐỂ TUA VIDEO ===
-  window.addEventListener('COURSERA_HELPER_SKIP_VIDEO', async (event) => {
+  window.addEventListener('COURSERA_HELPER_SKIP_VIDEO', async () => {
     const path = window.location.pathname;
     const m = path.match(/\/learn\/([^/]+)\/(?:lecture|supplement|item)\/([^/?#]+)/);
     const slug = m ? m[1] : '';

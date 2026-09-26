@@ -73,51 +73,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             csrf = c.value;
           } else if (name === 'cauth') {
             cauth = c.value;
-            try {
-              const decoded = decodeURIComponent(c.value);
-              const m = decoded.match(/"id"\s*:\s*(\d+)/);
-              if (m) userId = m[1];
-            } catch (e) {}
-          } else if (name === '__204u' && !userId) {
-            const m = c.value.match(/^(\d{5,})/);
-            if (m) userId = m[1];
           }
         }
 
-        // Nếu chưa có userId, thử gọi API userPreferences hoặc adminUserPermissions
-        if (!userId) {
-          try {
-            const prefRes = await fetch('https://www.coursera.org/api/userPreferences.v1?q=my', {
-              headers: {
-                'Accept': 'application/json',
-                'x-csrf3-token': csrf,
-                'x-requested-with': 'XMLHttpRequest'
-              },
-              credentials: 'include'
-            });
-            if (prefRes.ok) {
-              const prefData = await prefRes.json();
-              userId = prefData?.elements?.[0]?.id || '';
-            }
-          } catch (e) {}
-        }
+        // 1. Gọi trực tiếp endpoint adminUserPermissions.v1?q=my (chuẩn xác 100% của Coursera để lấy numeric user ID)
+        try {
+          const adminRes = await fetch('https://www.coursera.org/api/adminUserPermissions.v1?q=my', {
+            headers: {
+              'Accept': 'application/json',
+              'x-csrf3-token': csrf,
+              'x-requested-with': 'XMLHttpRequest'
+            },
+            credentials: 'include'
+          });
+          if (adminRes.ok) {
+            const adminData = await adminRes.json();
+            const uid = adminData?.elements?.[0]?.id;
+            if (uid) userId = String(uid);
+          }
+        } catch (e) {}
 
-        if (!userId) {
-          try {
-            const adminRes = await fetch('https://www.coursera.org/api/adminUserPermissions.v1?q=my', {
-              headers: {
-                'Accept': 'application/json',
-                'x-csrf3-token': csrf,
-                'x-requested-with': 'XMLHttpRequest'
-              },
-              credentials: 'include'
-            });
-            if (adminRes.ok) {
-              const adminData = await adminRes.json();
-              userId = adminData?.elements?.[0]?.id || '';
-            }
-          } catch (e) {}
-        }
+        console.log('[CourseraHelper-BG] Auth resolved:', { userId, csrf: !!csrf, cauth: !!cauth });
 
         sendResponse({ success: true, userId, csrf, cauth });
       } catch (err) {
@@ -143,7 +119,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         const headers = {
-          'Content-Type': 'application/json;charset=UTF-8',
+          'Content-Type': 'application/json',
           'Accept': 'application/json, text/plain, */*',
           'x-coursera-application': 'ondemand',
           'x-requested-with': 'XMLHttpRequest'

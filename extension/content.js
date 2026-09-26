@@ -880,7 +880,7 @@
       'x-requested-with': 'XMLHttpRequest'
     };
     if (isJsonBody) {
-      headers['Content-Type'] = 'application/json;charset=UTF-8';
+      headers['Content-Type'] = 'application/json';
     }
     if (csrf) {
       headers['x-csrf3-token'] = csrf;
@@ -890,44 +890,47 @@
   }
 
   async function getCourseraUserId() {
-    if (cachedCourseraUserId) return cachedCourseraUserId;
+    if (cachedCourseraUserId && /^\d+$/.test(cachedCourseraUserId)) return cachedCourseraUserId;
 
-    // 0. Lấy từ document.documentElement.dataset (injected.js trích xuất từ Main World)
+    // 0. Lấy từ document.documentElement.dataset (do injected.js trích xuất chuẩn từ window.App / Main World)
     const dsUid = document.documentElement.dataset?.chUserId;
-    if (dsUid) {
+    if (dsUid && /^\d+$/.test(dsUid)) {
       cachedCourseraUserId = String(dsUid);
       return cachedCourseraUserId;
     }
 
-    // 1. Lấy từ cookie __204u (chứa Coursera User ID)
-    try {
-      const parts = document.cookie.split(';');
-      for (const p of parts) {
-        const [k, v] = p.split('=');
-        if (k && k.trim() === '__204u') {
-          const m = (v || '').trim().match(/^(\d{5,})/);
-          if (m) {
-            cachedCourseraUserId = m[1];
-            return cachedCourseraUserId;
-          }
-        }
-      }
-    } catch (e) {}
-
-    // 2. Lấy qua background script (đọc cookie CAUTH & __204u bằng chrome.cookies API)
+    // 1. Lấy qua background script (gọi adminUserPermissions.v1?q=my với session cookies)
     try {
       if (isExtensionContextValid()) {
         const authRes = await new Promise(res => {
           chrome.runtime.sendMessage({ action: 'get_coursera_auth' }, r => res(r || null));
         });
-        if (authRes && authRes.success && authRes.userId) {
+        if (authRes && authRes.success && authRes.userId && /^\d+$/.test(authRes.userId)) {
           cachedCourseraUserId = String(authRes.userId);
+          document.documentElement.dataset.chUserId = cachedCourseraUserId;
           return cachedCourseraUserId;
         }
       }
     } catch (e) {}
 
-    // 3. Tìm trong các thẻ <script> trên trang
+    // 2. Thử gọi API adminUserPermissions.v1?q=my trực tiếp
+    try {
+      const res = await fetch('/api/adminUserPermissions.v1?q=my', {
+        headers: getCourseraHeaders(false),
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const uid = data?.elements?.[0]?.id;
+        if (uid && /^\d+$/.test(String(uid))) {
+          cachedCourseraUserId = String(uid);
+          document.documentElement.dataset.chUserId = cachedCourseraUserId;
+          return cachedCourseraUserId;
+        }
+      }
+    } catch (e) {}
+
+    // 3. Tìm trong các thẻ <script> trên trang (tìm đúng cấu trúc "userId": \d+)
     try {
       const scripts = document.querySelectorAll('script');
       for (const sc of scripts) {
@@ -1132,6 +1135,10 @@
             })
           });
           console.log('[CourseraHelper] Content onDemandVideoProgresses status:', progressRes.status);
+          if (progressRes.status !== 204 && progressRes.status !== 200) {
+            const txt = await progressRes.text();
+            console.warn('[CourseraHelper] Content onDemandVideoProgresses err body:', progressRes.status, txt);
+          }
         } catch (e) {}
 
         try {
@@ -1142,6 +1149,24 @@
             body: JSON.stringify({ contentRequestBody: {} })
           });
           console.log('[CourseraHelper] Content videoEvents/ended status:', endedRes.status);
+          if (endedRes.status !== 200 && endedRes.status !== 204) {
+            const txt = await endedRes.text();
+            console.warn('[CourseraHelper] Content videoEvents/ended err body:', endedRes.status, txt);
+          }
+        } catch (e) {}
+
+        // Gửi thêm tín hiệu hoàn thành item
+        try {
+          await fetch('/api/onDemandSupplementCompletions.v1', {
+            method: 'POST',
+            headers: jsonHeaders,
+            credentials: 'include',
+            body: JSON.stringify({
+              courseId: courseId,
+              itemId: itemId,
+              userId: parseInt(userId, 10)
+            })
+          }).catch(() => {});
         } catch (e) {}
 
         // Đồng thời dự phòng gửi qua background service worker
