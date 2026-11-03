@@ -265,3 +265,4 @@ export function stopAutoSkipLoop() {
   clearInterval(window._chAutoSkipInterval);
   showInPageToast('🛑 Đã dừng Tự Động Skip Module.');
 }
+

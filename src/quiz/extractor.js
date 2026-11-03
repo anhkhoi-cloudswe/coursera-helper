@@ -196,3 +196,4 @@ export async function extractAllQuizQuestionsFromDOM() {
 
   return questions;
 }
+

@@ -748,125 +748,253 @@ ${q.text}
   }
 
   // src/quiz/submit.js
-  function isHonorCodeChecked(checkbox) {
-    if (!checkbox) return false;
-    if (checkbox.checked) return true;
-    if (checkbox.getAttribute("aria-checked") === "true") return true;
-    const parent = checkbox.closest("label") || checkbox.parentElement;
-    if (parent && (parent.classList.contains("cds-checkboxAndRadio-checked") || parent.getAttribute("aria-checked") === "true")) {
-      return true;
+  function isHonorCodeChecked(input) {
+    if (!input) return false;
+    if (input.checked === true) return true;
+    if (input.getAttribute("aria-checked") === "true") return true;
+    if (input.classList.contains("cds-checkboxAndRadio-checked")) return true;
+    const parent = input.closest(".cds-choiceInput-root, .cds-checkboxAndRadio-input, label");
+    if (parent && (parent.getAttribute("aria-checked") === "true" || parent.classList.contains("cds-checkboxAndRadio-checked"))) return true;
+    const label = document.querySelector(`label[for="${input.id}"]`);
+    if (label && (label.getAttribute("aria-checked") === "true" || label.classList.contains("cds-checkboxAndRadio-checked"))) return true;
+    return false;
+  }
+  async function tickHonorCodeAgreement() {
+    const agreementInput = document.getElementById("agreement-checkbox-base") || document.querySelector('input[type="checkbox"][id*="agreement"]') || document.querySelector('input[type="checkbox"][name*="agreement"]') || document.querySelector('[data-testid*="honor-code"] input[type="checkbox"]');
+    if (agreementInput && isHonorCodeChecked(agreementInput)) return true;
+    if (agreementInput) {
+      const parentLabel = agreementInput.closest("label") || document.querySelector(`label[for="${agreementInput.id}"]`) || agreementInput.parentElement;
+      if (parentLabel) {
+        try {
+          parentLabel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        } catch (e) {
+        }
+        triggerClick(parentLabel);
+        try {
+          parentLabel.click();
+        } catch (e) {
+        }
+      }
+      try {
+        agreementInput.click();
+      } catch (e) {
+      }
+      try {
+        if (agreementInput._valueTracker) agreementInput._valueTracker.setValue(!agreementInput.checked);
+        const proto = window.HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, "checked")?.set;
+        if (setter) {
+          setter.call(agreementInput, true);
+        } else {
+          agreementInput.checked = true;
+        }
+        agreementInput.dispatchEvent(new Event("input", { bubbles: true }));
+        agreementInput.dispatchEvent(new Event("change", { bubbles: true }));
+      } catch (e) {
+      }
+      await sleep(150);
+      if (isHonorCodeChecked(agreementInput)) return true;
+    }
+    const allCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+    for (const chk of allCheckboxes) {
+      const parentText = (chk.closest("label, div")?.innerText || "").toLowerCase();
+      if (parentText.includes("understand and agree") || parentText.includes("honor code") || parentText.includes("confirm this work is your own")) {
+        if (isHonorCodeChecked(chk)) return true;
+        const lbl = chk.closest("label") || chk.parentElement;
+        if (lbl) {
+          triggerClick(lbl);
+          try {
+            lbl.click();
+          } catch (e) {
+          }
+        }
+        try {
+          chk.click();
+        } catch (e) {
+        }
+        await sleep(150);
+        if (isHonorCodeChecked(chk)) return true;
+      }
     }
     return false;
   }
-  function tickHonorCodeAgreement() {
-    const checkbox = document.querySelector("#agreement-checkbox-base") || document.querySelector('input[type="checkbox"][id*="agreement"]') || document.querySelector('input[type="checkbox"][name*="agreement"]') || document.querySelector('[data-testid*="honor-code"] input[type="checkbox"]');
-    if (!checkbox) {
-      const allCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
-      for (const chk of allCheckboxes) {
-        const parentText = (chk.closest("label, div")?.innerText || "").toLowerCase();
-        if (parentText.includes("understand and agree") || parentText.includes("honor code") || parentText.includes("confirm this work is your own")) {
-          return tickCheckboxElement(chk);
-        }
-      }
-      return false;
-    }
-    return tickCheckboxElement(checkbox);
-  }
-  function tickCheckboxElement(checkbox) {
-    if (isHonorCodeChecked(checkbox)) return true;
-    const label = checkbox.closest("label") || checkbox.parentElement;
-    try {
-      (label || checkbox).scrollIntoView({ behavior: "smooth", block: "nearest" });
-    } catch (e) {
-    }
-    try {
-      checkbox.click();
-    } catch (e) {
-    }
-    if (label && !isHonorCodeChecked(checkbox)) {
-      try {
-        label.click();
-      } catch (e) {
-      }
-    }
-    if (!isHonorCodeChecked(checkbox)) {
-      triggerClick(checkbox);
-      if (label && !isHonorCodeChecked(checkbox)) triggerClick(label);
-    }
-    if (!isHonorCodeChecked(checkbox)) {
-      try {
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "checked")?.set;
-        if (setter) {
-          setter.call(checkbox, true);
-          checkbox.dispatchEvent(new Event("input", { bubbles: true }));
-          checkbox.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-      } catch (e) {
-      }
-    }
-    return isHonorCodeChecked(checkbox);
-  }
-  function findQuizSubmitButton() {
-    const buttons = Array.from(document.querySelectorAll('button, a[role="button"], input[type="submit"]'));
-    const submitBtn = buttons.find((b) => {
-      const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-      const isSaveDraft = text.includes("draft") || text.includes("l\u01B0u nh\xE1p");
-      const isBack = text.includes("back") || text.includes("quay l\u1EA1i");
-      const isSubmit = text === "submit" || text === "n\u1ED9p b\xE0i" || text.startsWith("submit ") || text.includes("submit assignment");
-      const isVisible = b.offsetWidth > 0 && b.offsetHeight > 0;
-      return isSubmit && !isSaveDraft && !isBack && isVisible && !b.disabled;
+  function findQuizSubmitButton(onlyEnabled = false) {
+    const allButtons = Array.from(document.querySelectorAll('button, a[role="button"], input[type="submit"]'));
+    const submitBtns = allButtons.filter((btn) => {
+      if (btn.closest("#coursera-helper-hud, header, nav")) return false;
+      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+      const isSaveDraft = txt.includes("draft") || txt.includes("nh\xE1p");
+      const isBack = txt.includes("back") || txt.includes("quay l\u1EA1i");
+      const isSubmit = txt === "submit" || txt === "n\u1ED9p b\xE0i" || txt.startsWith("submit ") || txt.includes("submit assignment");
+      if (!isSubmit || isSaveDraft || isBack) return false;
+      if (btn.offsetWidth === 0 || btn.offsetHeight === 0) return false;
+      if (onlyEnabled && (btn.disabled || btn.getAttribute("aria-disabled") === "true")) return false;
+      return true;
     });
-    return submitBtn || null;
+    return submitBtns[submitBtns.length - 1] || null;
   }
-  function findSubmitConfirmButton() {
-    const dialog = document.querySelector('[role="dialog"], [role="alertdialog"], .cds-Modal-container, .rc-ModalDialog, div[data-testid*="modal"]');
-    if (!dialog) return null;
-    const buttons = Array.from(dialog.querySelectorAll('button, a[role="button"]'));
-    const confirmBtn = buttons.find((b) => {
-      const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-      const isCancel = text.includes("cancel") || text.includes("h\u1EE7y") || text.includes("back") || text.includes("quay l\u1EA1i");
-      const isConfirm = text.includes("submit") || text.includes("n\u1ED9p") || text.includes("yes") || text.includes("\u0111\u1ED3ng \xFD") || text.includes("confirm") || text.includes("x\xE1c nh\u1EADn");
-      return isConfirm && !isCancel && b.offsetWidth > 0 && !b.disabled;
+  function findSubmitConfirmButton(originalSubmitBtn = null) {
+    const dialogs = Array.from(document.querySelectorAll(
+      '[role="dialog"], [aria-modal="true"], .rc-Dialog, .cds-Modal, [data-testid*="dialog"], [data-testid*="modal"], div[class*="dialog" i], div[class*="modal" i]'
+    ));
+    let visibleDialog = dialogs.find((d) => {
+      if (d.closest("#coursera-helper-hud")) return false;
+      return d.offsetHeight > 30 && window.getComputedStyle(d).display !== "none";
     });
-    return confirmBtn || null;
+    if (!visibleDialog) {
+      const candidates = Array.from(document.querySelectorAll("*")).filter((el) => {
+        if (el.tagName === "BODY" || el.tagName === "HTML" || el.children.length === 0) return false;
+        if (el.closest("#coursera-helper-hud, header, nav")) return false;
+        const text = (el.innerText || "").toLowerCase();
+        return text.includes("ready to submit") || text.includes("submit review") || text.includes("submit your review") || text.includes("s\u1EB5n s\xE0ng n\u1ED9p b\xE0i") || text.includes("are you sure you want to submit") || text.includes("x\xE1c nh\u1EADn n\u1ED9p");
+      });
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => (a.innerText || "").length - (b.innerText || "").length);
+        visibleDialog = candidates[0].closest('div[class*="dialog" i], div[class*="modal" i], [role="dialog"], [aria-modal="true"]') || candidates[0];
+      }
+    }
+    if (visibleDialog) {
+      const modalText = (visibleDialog.innerText || "").toLowerCase();
+      if (modalText.includes("missing or invalid answers") || modalText.includes("incomplete or invalid") || modalText.includes("ch\u01B0a ho\xE0n th\xE0nh")) {
+        showInPageToast("\u26D4 Coursera ph\xE1t hi\u1EC7n c\xF2n c\xE2u h\u1ECFi ch\u01B0a l\xE0m! \u0110ang h\u1EE7y n\u1ED9p \u0111\u1EC3 b\u1EA3o v\u1EC7 \u0111i\u1EC3m c\u1EE7a b\u1EA1n...", true, 8e3);
+        const cancelBtn = Array.from(visibleDialog.querySelectorAll('button, [role="button"]')).find((b) => {
+          const t = (b.innerText || "").toLowerCase();
+          return t.includes("cancel") || t.includes("h\u1EE7y") || t.includes("quay l\u1EA1i") || t.includes("back");
+        });
+        if (cancelBtn) {
+          triggerClick(cancelBtn);
+        }
+        return null;
+      }
+    }
+    const searchRoot = visibleDialog || document;
+    const allBtns = Array.from(searchRoot.querySelectorAll('button, [role="button"], a.cds-button, [data-testid*="submit"], [data-testid*="confirm"]'));
+    for (const btn of allBtns) {
+      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
+      if (originalSubmitBtn && (btn === originalSubmitBtn || originalSubmitBtn.contains(btn))) continue;
+      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") continue;
+      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+      if (txt.includes("cancel") || txt.includes("h\u1EE7y") || txt.includes("close") || txt === "back" || txt.includes("quay l\u1EA1i")) continue;
+      if (txt === "submit" || txt === "submit quiz" || txt === "submit assignment" || txt === "submit review" || txt === "yes, submit" || txt === "n\u1ED9p b\xE0i" || txt === "confirm" || txt === "x\xE1c nh\u1EADn" || txt.includes("submit") || txt.includes("n\u1ED9p")) {
+        return btn;
+      }
+    }
+    if (visibleDialog) {
+      const modalBtns = Array.from(visibleDialog.querySelectorAll('button, [role="button"]'));
+      const primaryBtn = modalBtns.find((b) => {
+        if (b.closest("#coursera-helper-hud")) return false;
+        if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
+        if (b.disabled || b.getAttribute("aria-disabled") === "true") return false;
+        const t = (b.innerText || "").toLowerCase().trim();
+        if (t.includes("cancel") || t.includes("h\u1EE7y") || t.includes("close")) return false;
+        const cls = (b.className || "").toLowerCase();
+        return cls.includes("primary") || b.getAttribute("data-testid")?.includes("submit") || b.getAttribute("data-testid")?.includes("confirm");
+      });
+      if (primaryBtn) return primaryBtn;
+      const nonCancel = modalBtns.find((b) => {
+        if (b.closest("#coursera-helper-hud")) return false;
+        if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
+        if (b.disabled || b.getAttribute("aria-disabled") === "true") return false;
+        const t = (b.innerText || "").toLowerCase().trim();
+        return t && !t.includes("cancel") && !t.includes("h\u1EE7y") && !t.includes("close") && b.offsetHeight > 20;
+      });
+      if (nonCancel) return nonCancel;
+    }
+    return null;
   }
   async function completeHonorCodeAndSubmitQuiz() {
     const containers = getQuestionContainers();
-    const unansweredContainers = containers.filter((c) => !isQuestionContainerAnswered(c));
-    if (unansweredContainers.length > 0) {
-      showInPageToast(`\u26D4 D\u1EEBng n\u1ED9p b\xE0i: C\xF2n ${unansweredContainers.length} c\xE2u ch\u01B0a c\xF3 \u0111\xE1p \xE1n!`, true, 6e3);
+    if (!containers || containers.length === 0) {
+      showInPageToast("\u274C Kh\xF4ng t\xECm th\u1EA5y c\xE2u h\u1ECFi tr\u1EAFc nghi\u1EC7m n\xE0o tr\xEAn trang! Tuy\u1EC7t \u0111\u1ED1i kh\xF4ng n\u1ED9p b\xE0i.", true, 8e3);
       return false;
     }
-    const agreed = tickHonorCodeAgreement();
-    if (agreed) {
-      showInPageToast("\u2705 \u0110\xE3 t\u1EF1 \u0111\u1ED9ng cam k\u1EBFt Coursera Honor Code!");
-      await sleep(400);
+    const unansweredList = [];
+    containers.forEach((c, idx) => {
+      if (!isQuestionContainerAnswered(c)) {
+        const txt = c.innerText || "";
+        const m = txt.match(/(?:Question\s+(\d+)|\b(\d+)\.|\bCâu\s+(\d+))/i);
+        const qNum = m ? parseInt(m[1] || m[2] || m[3], 10) : idx + 1;
+        unansweredList.push({ qNum, container: c });
+      }
+    });
+    const bodyText = document.body.innerText || "";
+    const hasUnansweredWarning = bodyText.includes("haven't answered this question") || bodyText.includes("You haven't answered") || bodyText.includes("ch\u01B0a tr\u1EA3 l\u1EDDi c\xE2u h\u1ECFi n\xE0y");
+    if (unansweredList.length > 0 || hasUnansweredWarning) {
+      const qNames = unansweredList.map((u) => u.qNum).join(", ");
+      showInPageToast(`\u26D4 [CH\u01AFA XONG] C\xF2n c\xE2u ${qNames || "ch\u01B0a ch\u1ECDn \u0111\xE1p \xE1n"}! Tuy\u1EC7t \u0111\u1ED1i kh\xF4ng \u0111\u01B0\u1EE3c n\u1ED9p b\xE0i khi ch\u01B0a l\xE0m xong!`, true, 8e3);
+      if (unansweredList.length > 0 && unansweredList[0].container) {
+        unansweredList[0].container.scrollIntoView({ behavior: "smooth", block: "center" });
+        unansweredList[0].container.style.outline = "3px solid #ef4444";
+      }
+      return false;
     }
-    const submitBtn = findQuizSubmitButton();
+    showInPageToast("\u{1F4DD} \u0110ang x\xE1c nh\u1EADn Coursera Honor Code...");
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    await sleep(600);
+    let isTicked = await tickHonorCodeAgreement();
+    if (isTicked) {
+      showInPageToast("\u2705 \u0110\xE3 t\xEDch ch\u1ECDn Coursera Honor Code!");
+    } else {
+      showInPageToast("\u23F3 \u0110ang m\u1EDF kh\xF3a Honor Code...", false, 2e3);
+    }
+    showInPageToast("\u{1F50D} \u0110ang ki\u1EC3m tra n\xFAt Submit...");
+    let submitBtn = null;
+    for (let attempts = 0; attempts < 25; attempts++) {
+      submitBtn = findQuizSubmitButton(true);
+      if (submitBtn) break;
+      if (attempts === 5 || attempts === 12 || attempts === 18) {
+        await tickHonorCodeAgreement();
+      }
+      await sleep(300);
+    }
     if (!submitBtn) {
-      showInPageToast("\u26A0\uFE0F Kh\xF4ng t\xECm th\u1EA5y n\xFAt N\u1ED9p b\xE0i tr\xEAn trang Quiz!", true);
+      submitBtn = findQuizSubmitButton(false);
+    }
+    if (!submitBtn) {
+      showInPageToast("\u26A0\uFE0F Kh\xF4ng t\xECm th\u1EA5y n\xFAt N\u1ED9p b\xE0i tr\xEAn trang Quiz! Vui l\xF2ng n\u1ED9p b\u1EB1ng tay.", true, 6e3);
       return false;
     }
     submitBtn.scrollIntoView({ behavior: "smooth", block: "center" });
-    await sleep(300);
+    await sleep(400);
+    submitBtn.style.outline = "3px solid #22c55e";
+    submitBtn.style.boxShadow = "0 0 16px rgba(34, 197, 94, 0.6)";
     triggerClick(submitBtn);
     try {
       submitBtn.click();
     } catch (e) {
     }
-    showInPageToast("\u{1F680} \u0110\xE3 b\u1EA5m N\u1ED9p b\xE0i! \u0110ang ki\u1EC3m tra h\u1ED9p tho\u1EA1i x\xE1c nh\u1EADn...");
-    for (let wait = 0; wait < 15; wait++) {
-      await sleep(400);
-      const modalConfirmBtn = findSubmitConfirmButton();
-      if (modalConfirmBtn) {
-        modalConfirmBtn.scrollIntoView({ behavior: "smooth", block: "center" });
-        await sleep(200);
-        triggerClick(modalConfirmBtn);
+    showInPageToast("\u{1F680} \u0110\xE3 b\u1EA5m n\xFAt Submit! \u0110ang ch\u1EDD popup x\xE1c nh\u1EADn...", false, 3e3);
+    showInPageToast('\u23F3 \u0110ang ch\u1EDD x\xE1c nh\u1EADn "Ready to submit?"...', false, 4e3);
+    let confirmBtn = null;
+    for (let i = 0; i < 80; i++) {
+      await sleep(300);
+      confirmBtn = findSubmitConfirmButton(submitBtn);
+      if (confirmBtn) break;
+    }
+    if (confirmBtn) {
+      confirmBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+      await sleep(200);
+      confirmBtn.style.outline = "3px solid #3b82f6";
+      confirmBtn.style.boxShadow = "0 0 16px rgba(59, 130, 246, 0.85)";
+      ["pointerdown", "mousedown", "pointerup", "mouseup", "click"].forEach((evt) => {
+        confirmBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+      });
+      try {
+        confirmBtn.click();
+      } catch (e) {
+      }
+      showInPageToast("\u{1F389} \u0110\xC3 B\u1EA4M X\xC1C NH\u1EACN SUBMIT MODAL TH\xC0NH C\xD4NG! B\xE0i thi \u0111\xE3 \u0111\u01B0\u1EE3c n\u1ED9p ho\xE0n t\u1EA5t!");
+      return true;
+    } else {
+      await sleep(600);
+      confirmBtn = findSubmitConfirmButton(submitBtn);
+      if (confirmBtn) {
+        triggerClick(confirmBtn);
         try {
-          modalConfirmBtn.click();
+          confirmBtn.click();
         } catch (e) {
         }
-        showInPageToast("\u{1F389} \u0110\xE3 x\xE1c nh\u1EADn n\u1ED9p b\xE0i trong h\u1ED9p tho\u1EA1i th\xE0nh c\xF4ng!");
+        showInPageToast("\u{1F389} \u0110\xE3 b\u1EA5m x\xE1c nh\u1EADn Submit modal th\xE0nh c\xF4ng!");
         return true;
       }
     }
@@ -1270,7 +1398,7 @@ ${q.text}
     const missingCount = Math.max(finalUnanswered.length, finalDomUnanswered.length);
     if (btnSolve) {
       if (missingCount === 0) {
-        btnSolve.innerHTML = "\u2705 \u0110\xE3 Gi\u1EA3i Xong!";
+        btnSolve.innerHTML = '<span class="ch-btn-icon">\u2705</span><span class="ch-btn-label">\u0110\xE3 Gi\u1EA3i Xong!</span>';
         btnSolve.style.background = "#10b981";
         btnSolve.style.opacity = "1";
         setTimeout(() => {
@@ -1280,7 +1408,7 @@ ${q.text}
           }
         }, 5e3);
       } else {
-        btnSolve.innerHTML = `\u26A0\uFE0F Gi\u1EA3i l\u1EA1i ${missingCount} c\xE2u thi\u1EBFu`;
+        btnSolve.innerHTML = `<span class="ch-btn-icon">\u26A0\uFE0F</span><span class="ch-btn-label">Gi\u1EA3i l\u1EA1i ${missingCount} c\xE2u thi\u1EBFu</span>`;
         btnSolve.style.background = "#f59e0b";
         btnSolve.style.opacity = "1";
         btnSolve.title = `Nh\u1EA5n v\xE0o \u0111\xE2y \u0111\u1EC3 t\u1EADp trung gi\u1EA3i d\u1EE9t \u0111i\u1EC3m ${missingCount} c\xE2u c\xF2n thi\u1EBFu!`;
@@ -1301,9 +1429,9 @@ ${q.text}
     }
   }
   async function triggerZeroClickQuizWorkflow(btn) {
-    const origText = btn ? btn.innerHTML : "\u26A1 Gi\u1EA3i Quiz";
+    const origText = btn ? btn.innerHTML : '<span class="ch-btn-icon">\u26A1</span><span class="ch-btn-label">Gi\u1EA3i Quiz</span>';
     if (btn) {
-      btn.innerHTML = "\u23F3 \u0110ang qu\xE9t \u0111\u1EC1...";
+      btn.innerHTML = '<span class="ch-btn-icon">\u23F3</span><span class="ch-btn-label">\u0110ang qu\xE9t \u0111\u1EC1...</span>';
       btn.style.opacity = "0.7";
     }
     try {
@@ -1601,160 +1729,455 @@ ${q.text}
   }
 
   // src/hud/hud.js
+  var floatingHUD = null;
+  var isDraggingHUD = false;
+  var hudDragStartX = 0;
+  var hudDragStartY = 0;
+  var hudInitialLeft = 0;
+  var hudInitialTop = 0;
+  var hasMovedHUD = false;
   function createFloatingHUD() {
-    if (document.getElementById("ch-floating-hud")) return;
-    const hud = document.createElement("div");
-    hud.id = "ch-floating-hud";
-    hud.style.cssText = [
-      "position: fixed",
-      "top: 14px",
-      "left: 50%",
-      "transform: translateX(-50%)",
-      "z-index: 2147483640",
-      "background: rgba(15, 23, 42, 0.94)",
-      "border: 1px solid rgba(255, 255, 255, 0.15)",
-      "border-radius: 9999px",
-      "padding: 5px 8px",
-      "display: flex",
-      "align-items: center",
-      "gap: 6px",
-      "box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45)",
-      "backdrop-filter: blur(12px)",
-      "user-select: none",
-      'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      "transition: box-shadow 0.2s ease, opacity 0.2s ease"
-    ].join(";");
-    hud.innerHTML = `
-    <!-- Header Handle -->
-    <div id="ch-hud-drag-handle" style="cursor: grab; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 9999px; background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255, 255, 255, 0.08);">
-      <span style="font-size: 14px;">\u{1F393}</span>
-      <span style="font-size: 12px; font-weight: 700; color: #60a5fa; letter-spacing: 0.3px;">Coursera Helper</span>
-      <span id="ch-hud-collapse-btn" style="cursor: pointer; font-size: 10px; color: #94a3b8; margin-left: 2px;">\u25C0</span>
+    const existingHUD = document.getElementById("coursera-helper-hud");
+    if (existingHUD) existingHUD.remove();
+    if (!document.getElementById("coursera-helper-hud-styles")) {
+      const styleTag = document.createElement("style");
+      styleTag.id = "coursera-helper-hud-styles";
+      styleTag.textContent = `
+      #coursera-helper-hud, #coursera-helper-hud * {
+        box-sizing: border-box !important;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        line-height: 1 !important;
+        color: #ffffff !important;
+      }
+
+      #coursera-helper-hud {
+        position: fixed !important;
+        z-index: 2147483646 !important;
+        background: #161b26 !important;
+        border: 2.5px solid #000000 !important;
+        box-shadow: 4px 4px 0px #000000 !important;
+        border-radius: 9999px !important;
+        padding: 6px 8px !important;
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 8px !important;
+        user-select: none !important;
+        cursor: grab !important;
+        transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease !important;
+        width: auto !important;
+        height: 56px !important;
+        max-width: none !important;
+        white-space: nowrap !important;
+        touch-action: none !important;
+      }
+
+      #coursera-helper-hud:hover {
+        box-shadow: 5.5px 5.5px 0px #000000 !important;
+      }
+
+      #coursera-helper-hud.is-dragging,
+      #coursera-helper-hud.is-dragging #ch-hud-header {
+        cursor: grabbing !important;
+        box-shadow: 6px 6px 0px #000000 !important;
+      }
+
+      /* Header Pill / Logo Trigger */
+      #ch-hud-header {
+        display: inline-flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 9px !important;
+        padding: 0 14px !important;
+        height: 42px !important;
+        border-radius: 9999px !important;
+        background: #242c3d !important;
+        border: 2px solid #000000 !important;
+        box-shadow: 2.5px 2.5px 0px #000000 !important;
+        cursor: pointer !important;
+        transition: all 0.12s ease !important;
+        flex-shrink: 0 !important;
+        white-space: nowrap !important;
+      }
+
+      #ch-hud-header:hover {
+        background: #2d374d !important;
+        transform: translate(-1px, -1px) !important;
+        box-shadow: 3.5px 3.5px 0px #000000 !important;
+      }
+
+      .ch-hud-logo-svg {
+        width: 23px !important;
+        height: 23px !important;
+        min-width: 23px !important;
+        min-height: 23px !important;
+        display: inline-block !important;
+        flex-shrink: 0 !important;
+      }
+
+      #coursera-helper-hud .ch-hud-logo-svg path {
+        fill: url(#ch-grad-cyan) !important;
+      }
+
+      #coursera-helper-hud .ch-hud-brand-text,
+      #coursera-helper-hud .ch-hud-brand-text span {
+        font-size: 14.5px !important;
+        font-weight: 800 !important;
+        color: #ffffff !important;
+        letter-spacing: -0.01em !important;
+        white-space: nowrap !important;
+        display: inline-block !important;
+        vertical-align: middle !important;
+      }
+
+      #coursera-helper-hud .ch-hud-brand-accent {
+        color: #818cf8 !important;
+        font-weight: 800 !important;
+        display: inline !important;
+      }
+
+      /* Status Dot */
+      .ch-hud-status-dot {
+        width: 8px !important;
+        height: 8px !important;
+        min-width: 8px !important;
+        border-radius: 50% !important;
+        background: #10b981 !important;
+        box-shadow: 0 0 8px #10b981 !important;
+        border: 1.5px solid #000000 !important;
+        transition: all 0.2s ease !important;
+        display: inline-block !important;
+        flex-shrink: 0 !important;
+      }
+
+      /* Chevron Icon */
+      .ch-hud-chevron-wrap {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        color: #818cf8 !important;
+        flex-shrink: 0 !important;
+      }
+
+      #ch-hud-expand-indicator {
+        color: #818cf8 !important;
+        transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease !important;
+        display: inline-block !important;
+        flex-shrink: 0 !important;
+      }
+
+      #ch-hud-header:hover #ch-hud-expand-indicator {
+        color: #ffffff !important;
+      }
+
+      /* Divider */
+      .ch-hud-divider {
+        width: 2px !important;
+        height: 24px !important;
+        background: #000000 !important;
+        margin: 0 3px !important;
+        flex-shrink: 0 !important;
+        display: block !important;
+      }
+
+      /* Collapsed Mode */
+      #coursera-helper-hud.is-collapsed {
+        padding: 0 !important;
+        height: 46px !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+      }
+
+      #coursera-helper-hud.is-collapsed #ch-hud-header {
+        background: #161b26 !important;
+        border: 2.5px solid #000000 !important;
+        box-shadow: 4px 4px 0px #000000 !important;
+        padding: 0 16px !important;
+        height: 46px !important;
+      }
+
+      #coursera-helper-hud.is-collapsed #ch-hud-header:hover {
+        background: #1e2433 !important;
+        transform: translate(-1px, -1px) !important;
+        box-shadow: 5px 5px 0px #000000 !important;
+      }
+
+      #coursera-helper-hud.is-collapsed .ch-hud-divider,
+      #coursera-helper-hud.is-collapsed #ch-hud-buttons {
+        display: none !important;
+      }
+
+      #coursera-helper-hud.is-collapsed #ch-hud-expand-indicator {
+        transform: rotate(180deg) !important;
+      }
+
+      /* Expanded Buttons Container */
+      #ch-hud-buttons {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 8px !important;
+        flex-shrink: 0 !important;
+        white-space: nowrap !important;
+      }
+
+      /* Buttons Styling - Neo Brutalist */
+      .ch-hud-btn {
+        border: 2px solid #000000 !important;
+        box-shadow: 2.5px 2.5px 0px #000000 !important;
+        cursor: pointer !important;
+        display: inline-flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 7px !important;
+        font-size: 14.5px !important;
+        font-weight: 800 !important;
+        line-height: 1 !important;
+        height: 42px !important;
+        padding: 0 16px !important;
+        border-radius: 9999px !important;
+        transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease !important;
+        letter-spacing: -0.01em !important;
+        white-space: nowrap !important;
+        text-decoration: none !important;
+        outline: none !important;
+        flex-shrink: 0 !important;
+        color: #ffffff !important;
+      }
+
+      .ch-hud-btn span {
+        white-space: nowrap !important;
+        display: inline-block !important;
+      }
+
+      .ch-hud-btn .ch-btn-icon {
+        font-size: 16px !important;
+      }
+
+      .ch-hud-btn:hover {
+        transform: translate(-1px, -1px) !important;
+        box-shadow: 3.5px 3.5px 0px #000000 !important;
+      }
+
+      .ch-hud-btn:active {
+        transform: translate(1.5px, 1.5px) !important;
+        box-shadow: 1px 1px 0px #000000 !important;
+      }
+
+      .ch-btn-primary {
+        background: #6366f1 !important;
+        color: #ffffff !important;
+      }
+
+      .ch-btn-primary:hover {
+        background: #4f46e5 !important;
+      }
+
+      .ch-btn-purple {
+        background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%) !important;
+        color: #ffffff !important;
+      }
+
+      .ch-btn-purple:hover {
+        background: linear-gradient(135deg, #9333ea 0%, #db2777 100%) !important;
+      }
+
+      .ch-btn-green {
+        background: #10b981 !important;
+        color: #000000 !important;
+        font-weight: 800 !important;
+      }
+
+      .ch-btn-green span {
+        color: #000000 !important;
+      }
+
+      .ch-btn-green:hover {
+        background: #34d399 !important;
+        color: #000000 !important;
+      }
+
+      .ch-btn-ghost {
+        background: #242c3d !important;
+        color: #ffffff !important;
+      }
+
+      .ch-btn-ghost:hover {
+        background: #2d374d !important;
+      }
+    `;
+      document.head.appendChild(styleTag);
+    }
+    floatingHUD = document.createElement("div");
+    floatingHUD.id = "coursera-helper-hud";
+    floatingHUD.innerHTML = `
+    <div id="ch-hud-header" title="Nh\u1EA5n 1 l\u1EA7n \u0111\u1EC3 thu nh\u1ECF / m\u1EDF r\u1ED9ng \u2022 K\xE9o gi\u1EEF \u0111\u1EC3 di chuy\u1EC3n t\u1EF1 do">
+      <svg class="ch-hud-logo-svg" width="23" height="23" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 3L1 9L12 15L21 10.09V17H23V9M5 13.18V17.18C5 19.94 8.13 22 12 22C15.87 22 19 19.94 19 17.18V13.18L12 17L5 13.18Z" fill="url(#ch-grad-cyan)"/>
+        <defs>
+          <linearGradient id="ch-grad-cyan" x1="1" y1="3" x2="23" y2="22" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#818cf8"/>
+            <stop offset="1" stop-color="#38bdf8"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span class="ch-hud-brand-text">Coursera <span class="ch-hud-brand-accent">Helper</span></span>
+      <span id="ch-hud-status-dot" class="ch-hud-status-dot" title="Tr\u1EA1ng th\xE1i ti\u1EC7n \xEDch"></span>
+      <span class="ch-hud-chevron-wrap">
+        <svg id="ch-hud-expand-indicator" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
+      </span>
     </div>
 
-    <!-- Actions Container -->
-    <div id="ch-hud-actions" style="display: flex; align-items: center; gap: 6px;">
-      <!-- Quiz Solver Button -->
-      <button id="ch-btn-solve-quiz" title="T\u1EF1 \u0111\u1ED9ng gi\u1EA3i Quiz tr\u1EAFc nghi\u1EC7m b\u1EB1ng Gemini AI (Alt+Q)" style="background: linear-gradient(135deg, #6366f1, #4f46e5); color: #ffffff; border: 0; padding: 6px 14px; border-radius: 9999px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35); transition: all 0.15s ease;">
-        \u26A1 Gi\u1EA3i Quiz
+    <div id="ch-hud-divider" class="ch-hud-divider"></div>
+
+    <div id="ch-hud-buttons">
+      <button id="ch-hud-solvequiz" class="ch-hud-btn ch-btn-primary" title="T\u1EF1 \u0111\u1ED9ng qu\xE9t to\xE0n b\u1ED9 c\xE2u h\u1ECFi (k\xE8m h\xECnh \u1EA3nh), g\u1ECDi Gemini gi\u1EA3i, tick \u0111\xE1p \xE1n v\xE0 t\u1EF1 \u0111\u1ED9ng n\u1ED9p b\xE0i! (Alt+Q)">
+        <span class="ch-btn-icon">\u26A1</span>
+        <span class="ch-btn-label">Gi\u1EA3i Quiz</span>
       </button>
 
-      <!-- Peer Review Button -->
-      <button id="ch-btn-peer-review" title="T\u1EF1 \u0111\u1ED9ng ch\u1EA5m \u0111i\u1EC3m v\xE0 vi\u1EBFt nh\u1EADn x\xE9t b\xE0i \u0111\u1ED3ng c\u1EA5p" style="background: linear-gradient(135deg, #ec4899, #db2777); color: #ffffff; border: 0; padding: 6px 13px; border-radius: 9999px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 8px rgba(236, 72, 153, 0.35); transition: all 0.15s ease;">
-        \u2B50 Ch\u1EA5m \u0110i\u1EC3m Peer
+      <button id="ch-hud-peerreview" class="ch-hud-btn ch-btn-purple" title="T\u1EF1 \u0111\u1ED9ng ch\u1EA5m \u0111i\u1EC3m Peer Review: ch\u1ECDn \u0111i\u1EC3m cao nh\u1EA5t v\xE0 vi\u1EBFt nh\u1EADn x\xE9t chi ti\u1EBFt!">
+        <span class="ch-btn-icon">\u2B50</span>
+        <span class="ch-btn-label">Ch\u1EA5m \u0110i\u1EC3m Peer</span>
       </button>
 
-      <!-- Auto-Skip Module Button -->
-      <button id="ch-btn-auto-skip" title="T\u1EF1 \u0111\u1ED9ng skip video, ho\xE0n th\xE0nh reading v\xE0 chuy\u1EC3n b\xE0i" style="background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; border: 0; padding: 6px 13px; border-radius: 9999px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35); transition: all 0.15s ease;">
-        \u{1F680} Auto-Skip Module
+      <button id="ch-hud-autoskip" class="ch-hud-btn ch-btn-green" title="T\u1EF1 \u0111\u1ED9ng duy\u1EC7t b\xE0i: tua video, \u0111\u1ECDc b\xE0i, t\u1EF1 gi\u1EA3i quiz v\xE0 n\u1ED9p b\xE0i li\xEAn t\u1EE5c">
+        <span class="ch-btn-icon">\u{1F680}</span>
+        <span class="ch-btn-label">Auto-Skip Module</span>
       </button>
 
-      <!-- Skip Video Button -->
-      <button id="ch-btn-skip-video" title="Tua nhanh video hi\u1EC7n t\u1EA1i (Alt+V)" style="background: linear-gradient(135deg, #0ea5e9, #0284c7); color: #ffffff; border: 0; padding: 6px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 8px rgba(14, 165, 233, 0.35); transition: all 0.15s ease;">
-        \u23E9 Skip Video
+      <button id="ch-hud-skipone" class="ch-hud-btn ch-btn-ghost" title="Tua video n\xE0y t\u1EDBi cu\u1ED1i v\xE0 sang b\xE0i ti\u1EBFp (Alt+V)">
+        <span class="ch-btn-icon">\u23E9</span>
+        <span class="ch-btn-label">Skip Video</span>
       </button>
 
-      <!-- Help Button -->
-      <button id="ch-btn-help" title="M\u1EDF Side Panel h\u01B0\u1EDBng d\u1EABn v\xE0 c\xE0i \u0111\u1EB7t API Key" style="background: rgba(30, 41, 59, 0.8); color: #cbd5e1; border: 1px solid rgba(255, 255, 255, 0.12); padding: 6px 11px; border-radius: 9999px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease;">
-        H\u01B0\u1EDBng d\u1EABn
+      <button id="ch-hud-guide" class="ch-hud-btn ch-btn-ghost" title="M\u1EDF s\u1ED5 tay h\u01B0\u1EDBng d\u1EABn s\u1EED d\u1EE5ng v\xE0 c\xE0i \u0111\u1EB7t API Key">
+        <span class="ch-btn-label">H\u01B0\u1EDBng d\u1EABn</span>
       </button>
     </div>
   `;
-    document.body.appendChild(hud);
-    const btnSolve = hud.querySelector("#ch-btn-solve-quiz");
+    document.body.appendChild(floatingHUD);
+    restoreHUDPosition();
+    setupHUDInteractions();
+    setupHUDButtonActions();
+  }
+  function restoreHUDPosition() {
+    if (!floatingHUD) return;
+    try {
+      const saved = sessionStorage.getItem("ch_hud_pos");
+      if (saved) {
+        const pos = JSON.parse(saved);
+        if (typeof pos.left === "number" && typeof pos.top === "number") {
+          const clampLeft = Math.max(10, Math.min(window.innerWidth - 200, pos.left));
+          const clampTop = Math.max(10, Math.min(window.innerHeight - 60, pos.top));
+          floatingHUD.style.left = `${clampLeft}px`;
+          floatingHUD.style.top = `${clampTop}px`;
+          floatingHUD.style.transform = "none";
+          return;
+        }
+      }
+    } catch (e) {
+    }
+    floatingHUD.style.top = "12px";
+    floatingHUD.style.left = "50%";
+    floatingHUD.style.transform = "translateX(-50%)";
+  }
+  function setupHUDInteractions() {
+    const header = document.getElementById("ch-hud-header");
+    if (!header || !floatingHUD) return;
+    const onPointerDown = (e) => {
+      isDraggingHUD = true;
+      hasMovedHUD = false;
+      hudDragStartX = e.clientX;
+      hudDragStartY = e.clientY;
+      const rect = floatingHUD.getBoundingClientRect();
+      hudInitialLeft = rect.left;
+      hudInitialTop = rect.top;
+      floatingHUD.style.transform = "none";
+      floatingHUD.style.left = `${hudInitialLeft}px`;
+      floatingHUD.style.top = `${hudInitialTop}px`;
+      floatingHUD.classList.add("is-dragging");
+    };
+    const onPointerMove = (e) => {
+      if (!isDraggingHUD) return;
+      const dx = e.clientX - hudDragStartX;
+      const dy = e.clientY - hudDragStartY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasMovedHUD = true;
+      }
+      const newLeft = Math.max(8, Math.min(window.innerWidth - floatingHUD.offsetWidth - 8, hudInitialLeft + dx));
+      const newTop = Math.max(8, Math.min(window.innerHeight - floatingHUD.offsetHeight - 8, hudInitialTop + dy));
+      floatingHUD.style.left = `${newLeft}px`;
+      floatingHUD.style.top = `${newTop}px`;
+    };
+    const onPointerUp = () => {
+      if (!isDraggingHUD) return;
+      isDraggingHUD = false;
+      floatingHUD.classList.remove("is-dragging");
+      if (hasMovedHUD) {
+        const rect = floatingHUD.getBoundingClientRect();
+        try {
+          sessionStorage.setItem("ch_hud_pos", JSON.stringify({ left: rect.left, top: rect.top }));
+        } catch (e) {
+        }
+      } else {
+        toggleHUDCollapse();
+      }
+    };
+    header.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("mousemove", onPointerMove);
+    window.addEventListener("mouseup", onPointerUp);
+  }
+  function toggleHUDCollapse() {
+    if (!floatingHUD) return;
+    const isCollapsed = floatingHUD.classList.toggle("is-collapsed");
+    try {
+      sessionStorage.setItem("ch_hud_collapsed", isCollapsed ? "1" : "0");
+    } catch (e) {
+    }
+  }
+  function setupHUDButtonActions() {
+    const btnSolve = document.getElementById("ch-hud-solvequiz");
     btnSolve?.addEventListener("click", () => {
       triggerZeroClickQuizWorkflow(btnSolve);
     });
-    const btnPeer = hud.querySelector("#ch-btn-peer-review");
+    const btnPeer = document.getElementById("ch-hud-peerreview");
     btnPeer?.addEventListener("click", () => {
       runAutoPeerReviewWorkflow(btnPeer);
     });
-    const btnAutoSkip = hud.querySelector("#ch-btn-auto-skip");
+    const btnAutoSkip = document.getElementById("ch-hud-autoskip");
     btnAutoSkip?.addEventListener("click", () => {
       if (window._chAutoSkipActive) {
         stopAutoSkipLoop();
-        btnAutoSkip.innerHTML = "\u{1F680} Auto-Skip Module";
-        btnAutoSkip.style.background = "linear-gradient(135deg, #10b981, #059669)";
+        btnAutoSkip.innerHTML = '<span class="ch-btn-icon">\u{1F680}</span><span class="ch-btn-label">Auto-Skip Module</span>';
+        btnAutoSkip.style.background = "#10b981";
       } else {
         startAutoSkipLoop();
-        btnAutoSkip.innerHTML = "\u{1F6D1} D\u1EEBng Auto-Skip";
-        btnAutoSkip.style.background = "linear-gradient(135deg, #ef4444, #dc2626)";
+        btnAutoSkip.innerHTML = '<span class="ch-btn-icon">\u{1F6D1}</span><span class="ch-btn-label">D\u1EEBng Auto-Skip</span>';
+        btnAutoSkip.style.background = "#ef4444";
       }
     });
-    const btnSkipVideo = hud.querySelector("#ch-btn-skip-video");
-    btnSkipVideo?.addEventListener("click", () => {
+    const btnSkipOne = document.getElementById("ch-hud-skipone");
+    btnSkipOne?.addEventListener("click", () => {
       completeCourseraVideo();
     });
-    const btnHelp = hud.querySelector("#ch-btn-help");
-    btnHelp?.addEventListener("click", () => {
+    const btnGuide = document.getElementById("ch-hud-guide");
+    btnGuide?.addEventListener("click", () => {
       try {
         chrome.runtime.sendMessage({ action: "open_side_panel" });
       } catch (e) {
-        showInPageToast("\u{1F4A1} B\u1EA5m v\xE0o bi\u1EC3u t\u01B0\u1EE3ng extension tr\xEAn thanh ti\u1EC7n \xEDch \u0111\u1EC3 m\u1EDF C\xE0i \u0111\u1EB7t!");
+        showInPageToast("\u{1F4A1} B\u1EA5m v\xE0o bi\u1EC3u t\u01B0\u1EE3ng ti\u1EC7n \xEDch Coursera Helper \u1EDF g\xF3c tr\xECnh duy\u1EC7t \u0111\u1EC3 m\u1EDF Side Panel!");
       }
-    });
-    setupHUDDragging(hud);
-    setupHUDCollapse(hud);
-    updateHUDForCurrentPage();
-  }
-  function setupHUDDragging(hud) {
-    const handle = hud.querySelector("#ch-hud-drag-handle");
-    if (!handle) return;
-    let isDragging = false;
-    let startX, startY, initialLeft, initialTop;
-    handle.addEventListener("mousedown", (e) => {
-      if (e.target.id === "ch-hud-collapse-btn") return;
-      isDragging = true;
-      startX = e.clientX;
-      startY = e.clientY;
-      const rect = hud.getBoundingClientRect();
-      initialLeft = rect.left;
-      initialTop = rect.top;
-      hud.style.transform = "none";
-      hud.style.left = `${initialLeft}px`;
-      hud.style.top = `${initialTop}px`;
-      handle.style.cursor = "grabbing";
-      document.body.style.userSelect = "none";
-    });
-    window.addEventListener("mousemove", (e) => {
-      if (!isDragging) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      const newLeft = Math.max(10, Math.min(window.innerWidth - hud.offsetWidth - 10, initialLeft + dx));
-      const newTop = Math.max(10, Math.min(window.innerHeight - hud.offsetHeight - 10, initialTop + dy));
-      hud.style.left = `${newLeft}px`;
-      hud.style.top = `${newTop}px`;
-    });
-    window.addEventListener("mouseup", () => {
-      if (!isDragging) return;
-      isDragging = false;
-      handle.style.cursor = "grab";
-      document.body.style.userSelect = "";
-    });
-  }
-  function setupHUDCollapse(hud) {
-    const collapseBtn = hud.querySelector("#ch-hud-collapse-btn");
-    const actions = hud.querySelector("#ch-hud-actions");
-    if (!collapseBtn || !actions) return;
-    let isCollapsed = false;
-    collapseBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      isCollapsed = !isCollapsed;
-      actions.style.display = isCollapsed ? "none" : "flex";
-      collapseBtn.innerText = isCollapsed ? "\u25B6" : "\u25C0";
     });
   }
   function updateHUDForCurrentPage() {
-    const path = window.location.pathname;
-    const isQuiz = path.includes("/exam/") || path.includes("/quiz/") || path.includes("/assignment-submission/");
-    const isPeer = path.includes("/peer-review/") || path.includes("/peerReview/");
-    const isVideo = path.includes("/lecture/");
-    const btnSolve = document.getElementById("ch-btn-solve-quiz");
-    const btnPeer = document.getElementById("ch-btn-peer-review");
-    const btnSkipVideo = document.getElementById("ch-btn-skip-video");
-    if (btnSolve) btnSolve.style.display = isQuiz ? "flex" : "none";
-    if (btnPeer) btnPeer.style.display = isPeer ? "flex" : "none";
-    if (btnSkipVideo) btnSkipVideo.style.display = isVideo ? "flex" : "none";
   }
 
   // src/index.js
@@ -1790,7 +2213,7 @@ ${q.text}
     if (isExtensionContextValid()) {
       chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.action === "solve_quiz_now") {
-          const btn = document.getElementById("ch-btn-solve-quiz");
+          const btn = document.getElementById("ch-hud-solvequiz") || document.getElementById("ch-btn-solve-quiz");
           triggerZeroClickQuizWorkflow(btn);
           sendResponse({ success: true });
         } else if (request.action === "skip_video_now") {
@@ -1803,7 +2226,7 @@ ${q.text}
           stopAutoSkipLoop();
           sendResponse({ success: true });
         } else if (request.action === "peer_review_now") {
-          const btn = document.getElementById("ch-btn-peer-review");
+          const btn = document.getElementById("ch-hud-peerreview") || document.getElementById("ch-btn-peer-review");
           runAutoPeerReviewWorkflow(btn);
           sendResponse({ success: true });
         }
@@ -1813,7 +2236,7 @@ ${q.text}
     window.addEventListener("keydown", (e) => {
       if (e.altKey && (e.key === "q" || e.key === "Q")) {
         e.preventDefault();
-        const btn = document.getElementById("ch-btn-solve-quiz");
+        const btn = document.getElementById("ch-hud-solvequiz") || document.getElementById("ch-btn-solve-quiz");
         triggerZeroClickQuizWorkflow(btn);
       }
       if (e.altKey && (e.key === "v" || e.key === "V")) {

@@ -46,7 +46,7 @@ import { isExtensionContextValid } from './utils/dom.js';
   if (isExtensionContextValid()) {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (request.action === 'solve_quiz_now') {
-        const btn = document.getElementById('ch-btn-solve-quiz');
+        const btn = document.getElementById('ch-hud-solvequiz') || document.getElementById('ch-btn-solve-quiz');
         triggerZeroClickQuizWorkflow(btn);
         sendResponse({ success: true });
       } else if (request.action === 'skip_video_now') {
@@ -59,7 +59,7 @@ import { isExtensionContextValid } from './utils/dom.js';
         stopAutoSkipLoop();
         sendResponse({ success: true });
       } else if (request.action === 'peer_review_now') {
-        const btn = document.getElementById('ch-btn-peer-review');
+        const btn = document.getElementById('ch-hud-peerreview') || document.getElementById('ch-btn-peer-review');
         runAutoPeerReviewWorkflow(btn);
         sendResponse({ success: true });
       }
@@ -72,7 +72,7 @@ import { isExtensionContextValid } from './utils/dom.js';
     // Alt + Q: Giải Quiz nhanh
     if (e.altKey && (e.key === 'q' || e.key === 'Q')) {
       e.preventDefault();
-      const btn = document.getElementById('ch-btn-solve-quiz');
+      const btn = document.getElementById('ch-hud-solvequiz') || document.getElementById('ch-btn-solve-quiz');
       triggerZeroClickQuizWorkflow(btn);
     }
     // Alt + V: Tua video nhanh
@@ -82,3 +82,4 @@ import { isExtensionContextValid } from './utils/dom.js';
     }
   });
 })();
+

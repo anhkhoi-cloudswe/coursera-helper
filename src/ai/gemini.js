@@ -155,3 +155,4 @@ export async function callGeminiDirectParts(keys, model, parts) {
   window._chLastGeminiError = lastErrorMessage;
   return '';
 }
+

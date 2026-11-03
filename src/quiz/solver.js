@@ -480,7 +480,7 @@ export async function runInlineBatchSolver(questions, btnSolve, origBtnText) {
 
   if (btnSolve) {
     if (missingCount === 0) {
-      btnSolve.innerHTML = '✅ Đã Giải Xong!';
+      btnSolve.innerHTML = '<span class="ch-btn-icon">✅</span><span class="ch-btn-label">Đã Giải Xong!</span>';
       btnSolve.style.background = '#10b981';
       btnSolve.style.opacity = '1';
       setTimeout(() => {
@@ -491,7 +491,7 @@ export async function runInlineBatchSolver(questions, btnSolve, origBtnText) {
       }, 5000);
     } else {
       // GIỮ NGUYÊN NÚT MÀU CAM KHI CÒN CÂU THIẾU, GẮN HANDLER GIẢI VÉT TRỰC TIẾP
-      btnSolve.innerHTML = `⚠️ Giải lại ${missingCount} câu thiếu`;
+      btnSolve.innerHTML = `<span class="ch-btn-icon">⚠️</span><span class="ch-btn-label">Giải lại ${missingCount} câu thiếu</span>`;
       btnSolve.style.background = '#f59e0b';
       btnSolve.style.opacity = '1';
       btnSolve.title = `Nhấn vào đây để tập trung giải dứt điểm ${missingCount} câu còn thiếu!`;
@@ -518,9 +518,9 @@ export async function runInlineBatchSolver(questions, btnSolve, origBtnText) {
 }
 
 export async function triggerZeroClickQuizWorkflow(btn) {
-  const origText = btn ? btn.innerHTML : '⚡ Giải Quiz';
+  const origText = btn ? btn.innerHTML : '<span class="ch-btn-icon">⚡</span><span class="ch-btn-label">Giải Quiz</span>';
   if (btn) {
-    btn.innerHTML = '⏳ Đang quét đề...';
+    btn.innerHTML = '<span class="ch-btn-icon">⏳</span><span class="ch-btn-label">Đang quét đề...</span>';
     btn.style.opacity = '0.7';
   }
 
@@ -551,3 +551,4 @@ export async function triggerZeroClickQuizWorkflow(btn) {
     }
   }
 }
+

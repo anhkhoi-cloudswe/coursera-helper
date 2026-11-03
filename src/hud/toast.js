@@ -50,3 +50,4 @@ export function showInPageToast(msg, isError = false, duration = 3500) {
     }
   }, duration);
 }
+
