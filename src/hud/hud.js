@@ -463,12 +463,8 @@ function setupHUDButtonActions() {
   btnAutoSkip?.addEventListener('click', () => {
     if (window._chAutoSkipActive) {
       stopAutoSkipLoop();
-      btnAutoSkip.innerHTML = '<span class="ch-btn-icon">🚀</span><span class="ch-btn-label">Auto-Skip Module</span>';
-      btnAutoSkip.style.background = '#10b981';
     } else {
       startAutoSkipLoop();
-      btnAutoSkip.innerHTML = '<span class="ch-btn-icon">🛑</span><span class="ch-btn-label">Dừng Auto-Skip</span>';
-      btnAutoSkip.style.background = '#ef4444';
     }
   });
 

@@ -1583,6 +1583,28 @@ ${q.text}
     });
     return nextBtn || null;
   }
+  function isItemNeedsWork(el) {
+    if (!el) return false;
+    const text = (el.innerText || el.textContent || "").toLowerCase();
+    const html = el.innerHTML || "";
+    const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+    if (html.includes("-8.097c") || html.includes("8.097") || html.includes('data-testid="error"') || html.includes('data-testid="warning"')) {
+      return true;
+    }
+    const gradeMatch = text.match(/grade:\s*(\d{1,3})%/i) || ariaLabel.match(/grade:\s*(\d{1,3})%/i);
+    if (gradeMatch) {
+      const score = parseInt(gradeMatch[1], 10);
+      if (score < 80) return true;
+    }
+    const hasSuccessIcon = !!el.querySelector('[data-testid="learn-item-success-icon"]');
+    if (hasSuccessIcon && (ariaLabel.includes("completed") || text.includes("completed") || text.includes("ho\xE0n th\xE0nh"))) {
+      return false;
+    }
+    if (ariaLabel.includes("not submitted") || ariaLabel.includes("ch\u01B0a n\u1ED9p") || ariaLabel.includes("ch\u01B0a ho\xE0n th\xE0nh")) {
+      return true;
+    }
+    return !hasSuccessIcon;
+  }
   function expandAllLeftNavModules() {
     const leftNav = document.querySelector('div[data-testid="left-nav"]');
     if (!leftNav) return;
@@ -1608,28 +1630,81 @@ ${q.text}
     });
     const currentPath = window.location.pathname;
     return allLinks.map((link) => {
-      const ariaLabel = (link.getAttribute("aria-label") || "").toLowerCase();
       const titleEl = link.querySelector(".css-u7fh1q, .css-1n1j66c, .outline-single-item-content-wrapper") || link;
       const title = (titleEl.innerText || titleEl.textContent || "").trim();
-      const hasSuccessIcon = !!link.querySelector('[data-testid="learn-item-success-icon"]');
-      const isCompleted = hasSuccessIcon || ariaLabel.includes("completed") || ariaLabel.includes("\u0111\xE3 ho\xE0n th\xE0nh");
+      const needsWork = isItemNeedsWork(link);
       const isCurrent = link.closest('li[data-current-item="true"]') !== null || link.classList.contains("css-jxphqf") || link.pathname === currentPath || link.href.includes(currentPath);
       return {
         element: link,
         href: link.getAttribute("href"),
         title,
-        isCompleted,
+        needsWork,
+        isCompleted: !needsWork,
         isCurrent
       };
     });
   }
+  function findFirstItemNeedingWork() {
+    const currentPath = window.location.pathname;
+    const currentCourseId = getCourseraCourseId();
+    const sidebarItems = getAllCourseItemsFromLeftNav();
+    if (sidebarItems.length > 0) {
+      const currentIdx = sidebarItems.findIndex((it) => it.isCurrent);
+      if (currentIdx !== -1) {
+        const nextPending = sidebarItems.slice(currentIdx + 1).find((it) => it.needsWork);
+        if (nextPending) return nextPending;
+      }
+      const anyPending = sidebarItems.find((it) => it.needsWork);
+      if (anyPending) return anyPending;
+    }
+    const overviewLinks = Array.from(document.querySelectorAll(
+      'a[href*="/lecture/"], a[href*="/supplement/"], a[href*="/assignment-submission/"], a[href*="/quiz/"], a[href*="/exam/"], a[href*="/ungradedWidget/"]'
+    )).filter((a) => {
+      if (a.closest("#coursera-helper-hud, header, nav")) return false;
+      const href = a.getAttribute("href") || "";
+      if (currentCourseId && !href.includes(`/learn/${currentCourseId}/`)) return false;
+      return true;
+    });
+    for (const link of overviewLinks) {
+      const rowContainer = link.closest('li, tr, [data-testid*="item"], div[class*="item" i]') || link;
+      if (isItemNeedsWork(rowContainer) || isItemNeedsWork(link)) {
+        const title = (link.innerText || link.textContent || "").trim();
+        return {
+          element: link,
+          href: link.getAttribute("href"),
+          title: title || "B\xE0i h\u1ECDc c\u1EA7n ho\xE0n th\xE0nh",
+          needsWork: true,
+          isCompleted: false,
+          isCurrent: false
+        };
+      }
+    }
+    const nextModuleLink = Array.from(document.querySelectorAll('a[href*="/home/week/"], a[href*="/home/module/"]')).find((a) => {
+      const text = (a.innerText || "").toLowerCase();
+      const isCompleted = a.querySelector('[data-testid="learn-item-success-icon"]') || text.includes("completed");
+      return !isCompleted && !a.href.includes(currentPath);
+    });
+    if (nextModuleLink) {
+      return {
+        element: nextModuleLink,
+        href: nextModuleLink.getAttribute("href"),
+        title: (nextModuleLink.innerText || "Module ti\u1EBFp theo").trim(),
+        needsWork: true,
+        isCompleted: false,
+        isCurrent: false
+      };
+    }
+    return null;
+  }
   function isCourseFullyCompleted() {
     const bodyText = (document.body.innerText || "").toLowerCase();
     const hasCourseEndGreeting = bodyText.includes("now that you have completed this course") || bodyText.includes("congratulations on completing course") || bodyText.includes("ch\xFAc m\u1EEBng b\u1EA1n \u0111\xE3 ho\xE0n th\xE0nh kh\xF3a h\u1ECDc") || bodyText.includes("ready to move on to the next course");
+    const pendingItem = findFirstItemNeedingWork();
+    if (pendingItem) {
+      return false;
+    }
     const items = getAllCourseItemsFromLeftNav();
     if (items.length > 0) {
-      const uncompleted = items.filter((it) => !it.isCompleted);
-      if (uncompleted.length === 0) return true;
       const lastItem = items[items.length - 1];
       if (lastItem.isCurrent && lastItem.isCompleted && hasCourseEndGreeting) {
         return true;
@@ -1642,32 +1717,22 @@ ${q.text}
   }
   async function navigateToNextUncompletedItem() {
     if (isCourseFullyCompleted()) {
-      showInPageToast("\u{1F389} CH\xDAC M\u1EEANG B\u1EA0N \u0110\xC3 HO\xC0N TH\xC0NH 100% KH\xD3A H\u1ECCC! T\u1EF1 \u0111\u1ED9ng d\u1EEBng Auto-Skip.", false, 8e3);
+      showInPageToast("\u{1F389} CH\xDAC M\u1EEANG B\u1EA0N \u0110\xC3 HO\xC0N TH\xC0NH 100% TO\xC0N B\u1ED8 KH\xD3A H\u1ECCC! T\u1EF1 \u0111\u1ED9ng d\u1EEBng Auto-Skip.", false, 8e3);
       stopAutoSkipLoop();
       return true;
     }
-    const items = getAllCourseItemsFromLeftNav();
-    if (items.length > 0) {
-      const currentIdx = items.findIndex((it) => it.isCurrent);
-      let nextUncompleted = null;
-      if (currentIdx !== -1) {
-        nextUncompleted = items.slice(currentIdx + 1).find((it) => !it.isCompleted);
+    const targetItem = findFirstItemNeedingWork();
+    if (targetItem && targetItem.element) {
+      showInPageToast(`\u{1F4CC} [R\xE0 so\xE1t B\xE0i H\u1ECDc] Ph\xE1t hi\u1EC7n b\xE0i c\u1EA7n l\xE0m: "${targetItem.title}". \u0110ang chuy\u1EC3n \u0111\u1EBFn...`, false, 3500);
+      targetItem.element.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      await sleep(300);
+      triggerClick(targetItem.element);
+      try {
+        targetItem.element.click();
+      } catch (e) {
       }
-      if (!nextUncompleted) {
-        nextUncompleted = items.find((it) => !it.isCompleted);
-      }
-      if (nextUncompleted && nextUncompleted.element) {
-        showInPageToast(`\u{1F4CC} [R\xE0 so\xE1t Left-Nav] Ph\xE1t hi\u1EC7n b\xE0i ch\u01B0a xong: "${nextUncompleted.title}". \u0110ang chuy\u1EC3n \u0111\u1EBFn...`, false, 3500);
-        nextUncompleted.element.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        await sleep(300);
-        triggerClick(nextUncompleted.element);
-        try {
-          nextUncompleted.element.click();
-        } catch (e) {
-        }
-        await sleep(2500);
-        return true;
-      }
+      await sleep(2500);
+      return true;
     }
     const nextBtn = findNextButton();
     if (nextBtn) {
@@ -1680,8 +1745,6 @@ ${q.text}
       await sleep(2e3);
       return true;
     }
-    showInPageToast("\u{1F3C1} Kh\xF4ng c\xF2n b\xE0i h\u1ECDc n\xE0o c\u1EA7n l\xE0m ti\u1EBFp. T\u1EF1 \u0111\u1ED9ng d\u1EEBng Auto-Skip!", false, 5e3);
-    stopAutoSkipLoop();
     return false;
   }
   function unlockVideo(video) {
@@ -1914,7 +1977,13 @@ ${q.text}
   }
   function startAutoSkipLoop() {
     window._chAutoSkipActive = true;
-    showInPageToast("\u{1F680} \u0110\xE3 b\u1EADt T\u1EF1 \u0110\u1ED9ng Skip Module (K\xE8m R\xE0 So\xE1t Left-Nav To\xE0n Di\u1EC7n)!");
+    const btnAutoSkip = document.getElementById("ch-hud-autoskip");
+    if (btnAutoSkip) {
+      btnAutoSkip.innerHTML = '<span class="ch-btn-icon">\u{1F6D1}</span><span class="ch-btn-label">D\u1EEBng Auto-Skip</span>';
+      btnAutoSkip.style.setProperty("background", "#ef4444", "important");
+      btnAutoSkip.style.setProperty("color", "#ffffff", "important");
+    }
+    showInPageToast("\u{1F680} \u0110\xE3 b\u1EADt T\u1EF1 \u0110\u1ED9ng Skip Module (K\xE8m R\xE0 So\xE1t To\xE0n B\u1ED9 Kh\xF3a H\u1ECDc)!");
     executeAutoSkipStep();
     clearInterval(window._chAutoSkipInterval);
     window._chAutoSkipInterval = setInterval(() => {
@@ -1931,7 +2000,8 @@ ${q.text}
     const btnAutoSkip = document.getElementById("ch-hud-autoskip");
     if (btnAutoSkip) {
       btnAutoSkip.innerHTML = '<span class="ch-btn-icon">\u{1F680}</span><span class="ch-btn-label">Auto-Skip Module</span>';
-      btnAutoSkip.style.background = "#10b981";
+      btnAutoSkip.style.setProperty("background", "#10b981", "important");
+      btnAutoSkip.style.setProperty("color", "#000000", "important");
     }
     showInPageToast("\u{1F6D1} \u0110\xE3 d\u1EEBng T\u1EF1 \u0110\u1ED9ng Skip Module.");
   }
@@ -2364,12 +2434,8 @@ ${q.text}
     btnAutoSkip?.addEventListener("click", () => {
       if (window._chAutoSkipActive) {
         stopAutoSkipLoop();
-        btnAutoSkip.innerHTML = '<span class="ch-btn-icon">\u{1F680}</span><span class="ch-btn-label">Auto-Skip Module</span>';
-        btnAutoSkip.style.background = "#10b981";
       } else {
         startAutoSkipLoop();
-        btnAutoSkip.innerHTML = '<span class="ch-btn-icon">\u{1F6D1}</span><span class="ch-btn-label">D\u1EEBng Auto-Skip</span>';
-        btnAutoSkip.style.background = "#ef4444";
       }
     });
     const btnSkipOne = document.getElementById("ch-hud-skipone");
