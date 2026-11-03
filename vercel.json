@@ -1,5 +1,6 @@
 {
   "cleanUrls": true,
+  "outputDirectory": ".",
   "rewrites": [
     { "source": "/policy", "destination": "/policy.html" },
     { "source": "/privacy", "destination": "/policy.html" },
