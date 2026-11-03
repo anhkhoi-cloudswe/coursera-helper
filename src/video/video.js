@@ -726,19 +726,24 @@ export async function executeAutoSkipStep() {
       return;
     }
 
+    const currentUrlLower = window.location.href.toLowerCase();
     const path = window.location.pathname;
 
-    // 1. Kiểm tra màn hình Quiz / Assignment / Exam hoặc landing page /assignment-submission/
-    const isExplicitQuizUrl = path.includes('/assignment-submission/') ||
-                             path.includes('/exam/') ||
-                             path.includes('/quiz/');
+    // 1. Kiểm tra màn hình Quiz / Graded Assignment / Practice Assignment / Exam
+    const isQuizUrl = (
+      currentUrlLower.includes('/quiz/') ||
+      currentUrlLower.includes('/exam/') ||
+      currentUrlLower.includes('/assignment/') ||
+      currentUrlLower.includes('/assignment-submission/') ||
+      currentUrlLower.includes('/ungradedlti/')
+    );
 
     const hasQuizDOM = getQuestionContainers().length > 0 ||
                        findStartAssignmentButton() !== null ||
                        isQuizResultScreen();
 
-    // Nếu không phải URL quiz mà là /supplement/ hoặc /lecture/, TUYỆT ĐỐI không gọi processQuizStep trừ khi có question container thực tế
-    const isQuizPage = isExplicitQuizUrl || (hasQuizDOM && !path.includes('/supplement/') && !path.includes('/lecture/'));
+    // ƯU TIÊN QUIZ / GRADED ASSIGNMENT LÊN HÀNG ĐẦU để không bao giờ bị các loại bài khác hoặc navigation cướp quyền
+    const isQuizPage = isQuizUrl || (hasQuizDOM && !path.includes('/supplement/') && !path.includes('/lecture/'));
 
     if (isQuizPage) {
       await processQuizStep();
@@ -760,7 +765,7 @@ export async function executeAutoSkipStep() {
     }
 
     // 4. Màn hình Ungraded Widget (/ungradedWidget/)
-    if (path.includes('/ungradedWidget/')) {
+    if (path.includes('/ungradedWidget/') || currentUrlLower.includes('/ungradedwidget/')) {
       await processUngradedWidgetStep();
       return;
     }

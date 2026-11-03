@@ -2072,10 +2072,11 @@ ${q.text}
         stopAutoSkipLoop();
         return;
       }
+      const currentUrlLower = window.location.href.toLowerCase();
       const path = window.location.pathname;
-      const isExplicitQuizUrl = path.includes("/assignment-submission/") || path.includes("/exam/") || path.includes("/quiz/");
+      const isQuizUrl = currentUrlLower.includes("/quiz/") || currentUrlLower.includes("/exam/") || currentUrlLower.includes("/assignment/") || currentUrlLower.includes("/assignment-submission/") || currentUrlLower.includes("/ungradedlti/");
       const hasQuizDOM = getQuestionContainers().length > 0 || findStartAssignmentButton() !== null || isQuizResultScreen();
-      const isQuizPage = isExplicitQuizUrl || hasQuizDOM && !path.includes("/supplement/") && !path.includes("/lecture/");
+      const isQuizPage = isQuizUrl || hasQuizDOM && !path.includes("/supplement/") && !path.includes("/lecture/");
       if (isQuizPage) {
         await processQuizStep();
         return;
@@ -2090,7 +2091,7 @@ ${q.text}
         await processReadingStep();
         return;
       }
-      if (path.includes("/ungradedWidget/")) {
+      if (path.includes("/ungradedWidget/") || currentUrlLower.includes("/ungradedwidget/")) {
         await processUngradedWidgetStep();
         return;
       }
