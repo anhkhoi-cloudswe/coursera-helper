@@ -83,6 +83,20 @@ export function findMarkAsCompletedButton() {
 
 export function findNextButton() {
   const currentCourseId = getCourseraCourseId();
+  const currentPath = window.location.pathname;
+
+  // Nếu đang ở màn hình Quiz / Assignment nhưng CHƯA LÀM (có nút Start Assignment hoặc có form làm quiz),
+  // tuyệt đối KHÔNG cho phép bấm nút Next để bỏ qua assignment!
+  if (
+    currentPath.includes('/assignment-submission/') ||
+    currentPath.includes('/exam/') ||
+    currentPath.includes('/quiz/')
+  ) {
+    if (!isQuizResultScreen()) {
+      return null;
+    }
+  }
+
   const buttons = Array.from(document.querySelectorAll('button, a[role="button"], a[data-testid*="next"], button[data-testid*="next"]'));
 
   const nextBtn = buttons.find(b => {
@@ -500,13 +514,13 @@ export function findStartAssignmentButton() {
   if (getQuestionContainers().length > 0) return null;
 
   const byTestId = document.querySelector(
-    'button[data-testid*="start"], a[data-testid*="start-assignment"], button[data-e2e*="start"], button[data-testid*="resume"], a[data-testid*="resume"], button[data-testid*="attempt"], a[data-testid*="attempt"], [data-testid*="take-quiz"], [data-testid*="go-to-assignment"]'
+    'button[data-testid*="start"], a[data-testid*="start-assignment"], button[data-e2e*="start"], button[data-testid*="resume"], a[data-testid*="resume"], button[data-testid*="attempt"], a[data-testid*="attempt"], [data-testid*="take-quiz"], [data-testid*="go-to-assignment"], [data-testid*="practice-assignment"]'
   );
   if (byTestId && !byTestId.closest('#coursera-helper-hud, header, nav[role="navigation"]') && !byTestId.disabled) {
     return byTestId;
   }
 
-  const allBtns = Array.from(document.querySelectorAll('button, a[role="button"], a.cds-button, a[href*="/attempt"], a[href*="/exam/"]'));
+  const allBtns = Array.from(document.querySelectorAll('button, a[role="button"], a.cds-button, a[href*="/attempt"], a[href*="/exam/"], span[role="button"]'));
   for (const btn of allBtns) {
     if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
     if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
@@ -532,11 +546,26 @@ export function findStartAssignmentButton() {
       txt.includes('begin assignment') ||
       txt.includes('start attempt') ||
       txt.includes('take assignment') ||
-      txt.includes('go to assignment')
+      txt.includes('go to assignment') ||
+      txt.includes('start practice') ||
+      txt.includes('take practice')
     ) {
       return btn;
     }
   }
+
+  // Fallback: Tìm thẻ có class chứa "start-assignment" hoặc role=button chứa text "start"
+  const labelEl = Array.from(document.querySelectorAll('.cds-button-label, [class*="button-label"]')).find(el => {
+    const t = (el.textContent || '').trim().toLowerCase();
+    return t.includes('start') || t.includes('attempt') || t.includes('resume') || t.includes('bắt đầu');
+  });
+  if (labelEl) {
+    const pBtn = labelEl.closest('button, a, [role="button"]') || labelEl;
+    if (!pBtn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) {
+      return pBtn;
+    }
+  }
+
   return null;
 }
 
@@ -622,9 +651,18 @@ export async function processQuizStep() {
   }
 
   // 2. Kiểm tra nếu đang ở màn hình landing page /assignment-submission/ có nút "Start Assignment" / "Resume" / "Try again"
-  const startBtn = findStartAssignmentButton();
+  // Thử lặp lại tối đa 4 lần (trong 2 giây) để đợi giao diện Coursera render xong nút
+  let startBtn = null;
+  for (let r = 0; r < 4; r++) {
+    startBtn = findStartAssignmentButton();
+    if (startBtn) break;
+    await sleep(500);
+  }
+
   if (startBtn) {
-    showInPageToast(`🚀 [Auto-Skip] Tự động bấm "${startBtn.innerText || 'Start Assignment'}" để vào làm bài!`, false, 4000);
+    showInPageToast(`🚀 [Auto-Skip] Tự động bấm "${(startBtn.innerText || 'Start Assignment').trim()}" để vào làm bài!`, false, 4000);
+    startBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await sleep(300);
     triggerClick(startBtn);
     try { startBtn.click(); } catch (e) {}
     await sleep(2500);
@@ -662,6 +700,14 @@ export async function processQuizStep() {
     }
 
     await navigateToNextUncompletedItem();
+    return true;
+  }
+
+  // Nếu đang ở URL /assignment-submission/ hoặc /exam/ mà vẫn chưa thấy nút và chưa có điểm,
+  // TUYỆT ĐỐI KHÔNG navigate đi nơi khác để tránh skip mất bài! Hãy kiên nhẫn đợi ở chu kỳ sau.
+  const currentPath = window.location.pathname;
+  if (currentPath.includes('/assignment-submission/') || currentPath.includes('/exam/') || currentPath.includes('/quiz/')) {
+    showInPageToast('⏳ [Auto-Skip] Đang đợi trang tải bài tập Assignment...', false, 3000);
     return true;
   }
 

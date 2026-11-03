@@ -1603,6 +1603,12 @@ ${q.text}
   }
   function findNextButton() {
     const currentCourseId = getCourseraCourseId();
+    const currentPath = window.location.pathname;
+    if (currentPath.includes("/assignment-submission/") || currentPath.includes("/exam/") || currentPath.includes("/quiz/")) {
+      if (!isQuizResultScreen()) {
+        return null;
+      }
+    }
     const buttons = Array.from(document.querySelectorAll('button, a[role="button"], a[data-testid*="next"], button[data-testid*="next"]'));
     const nextBtn = buttons.find((b) => {
       if (b.closest('#coursera-helper-hud, header, nav, [data-testid="left-nav"]')) return false;
@@ -1923,18 +1929,28 @@ ${q.text}
   function findStartAssignmentButton() {
     if (getQuestionContainers().length > 0) return null;
     const byTestId = document.querySelector(
-      'button[data-testid*="start"], a[data-testid*="start-assignment"], button[data-e2e*="start"], button[data-testid*="resume"], a[data-testid*="resume"], button[data-testid*="attempt"], a[data-testid*="attempt"], [data-testid*="take-quiz"], [data-testid*="go-to-assignment"]'
+      'button[data-testid*="start"], a[data-testid*="start-assignment"], button[data-e2e*="start"], button[data-testid*="resume"], a[data-testid*="resume"], button[data-testid*="attempt"], a[data-testid*="attempt"], [data-testid*="take-quiz"], [data-testid*="go-to-assignment"], [data-testid*="practice-assignment"]'
     );
     if (byTestId && !byTestId.closest('#coursera-helper-hud, header, nav[role="navigation"]') && !byTestId.disabled) {
       return byTestId;
     }
-    const allBtns = Array.from(document.querySelectorAll('button, a[role="button"], a.cds-button, a[href*="/attempt"], a[href*="/exam/"]'));
+    const allBtns = Array.from(document.querySelectorAll('button, a[role="button"], a.cds-button, a[href*="/attempt"], a[href*="/exam/"], span[role="button"]'));
     for (const btn of allBtns) {
       if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
       if (btn.disabled || btn.getAttribute("aria-disabled") === "true") continue;
       const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
-      if (txt === "start assignment" || txt === "resume assignment" || txt === "resume" || txt === "start quiz" || txt === "take quiz" || txt === "start" || txt === "attempt" || txt === "start attempt" || txt === "resume attempt" || txt === "retake" || txt === "try again" || txt === "b\u1EAFt \u0111\u1EA7u l\xE0m b\xE0i" || txt === "ti\u1EBFp t\u1EE5c" || txt === "l\xE0m b\xE0i" || txt.includes("start assignment") || txt.includes("resume assignment") || txt.includes("begin assignment") || txt.includes("start attempt") || txt.includes("take assignment") || txt.includes("go to assignment")) {
+      if (txt === "start assignment" || txt === "resume assignment" || txt === "resume" || txt === "start quiz" || txt === "take quiz" || txt === "start" || txt === "attempt" || txt === "start attempt" || txt === "resume attempt" || txt === "retake" || txt === "try again" || txt === "b\u1EAFt \u0111\u1EA7u l\xE0m b\xE0i" || txt === "ti\u1EBFp t\u1EE5c" || txt === "l\xE0m b\xE0i" || txt.includes("start assignment") || txt.includes("resume assignment") || txt.includes("begin assignment") || txt.includes("start attempt") || txt.includes("take assignment") || txt.includes("go to assignment") || txt.includes("start practice") || txt.includes("take practice")) {
         return btn;
+      }
+    }
+    const labelEl = Array.from(document.querySelectorAll('.cds-button-label, [class*="button-label"]')).find((el) => {
+      const t = (el.textContent || "").trim().toLowerCase();
+      return t.includes("start") || t.includes("attempt") || t.includes("resume") || t.includes("b\u1EAFt \u0111\u1EA7u");
+    });
+    if (labelEl) {
+      const pBtn = labelEl.closest('button, a, [role="button"]') || labelEl;
+      if (!pBtn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) {
+        return pBtn;
       }
     }
     return null;
@@ -1989,9 +2005,16 @@ ${q.text}
       await navigateToNextUncompletedItem();
       return true;
     }
-    const startBtn = findStartAssignmentButton();
+    let startBtn = null;
+    for (let r = 0; r < 4; r++) {
+      startBtn = findStartAssignmentButton();
+      if (startBtn) break;
+      await sleep(500);
+    }
     if (startBtn) {
-      showInPageToast(`\u{1F680} [Auto-Skip] T\u1EF1 \u0111\u1ED9ng b\u1EA5m "${startBtn.innerText || "Start Assignment"}" \u0111\u1EC3 v\xE0o l\xE0m b\xE0i!`, false, 4e3);
+      showInPageToast(`\u{1F680} [Auto-Skip] T\u1EF1 \u0111\u1ED9ng b\u1EA5m "${(startBtn.innerText || "Start Assignment").trim()}" \u0111\u1EC3 v\xE0o l\xE0m b\xE0i!`, false, 4e3);
+      startBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+      await sleep(300);
       triggerClick(startBtn);
       try {
         startBtn.click();
@@ -2031,6 +2054,11 @@ ${q.text}
         }
       }
       await navigateToNextUncompletedItem();
+      return true;
+    }
+    const currentPath = window.location.pathname;
+    if (currentPath.includes("/assignment-submission/") || currentPath.includes("/exam/") || currentPath.includes("/quiz/")) {
+      showInPageToast("\u23F3 [Auto-Skip] \u0110ang \u0111\u1EE3i trang t\u1EA3i b\xE0i t\u1EADp Assignment...", false, 3e3);
       return true;
     }
     return false;
