@@ -14,8 +14,9 @@ import { extractOptionPureText, extractAllQuizQuestionsFromDOM } from './extract
 import { callGeminiDirectParts, isSupportedModel, parseAnswersFromText } from '../ai/gemini.js';
 import { buildMultimodalBatchParts } from '../ai/prompt.js';
 import { showInPageToast } from '../hud/toast.js';
-import { isExtensionContextValid, showReloadPrompt, showApiKeyPromptModal, normalizeQuizText, sleep } from '../utils/dom.js';
+import { isExtensionContextValid, showReloadPrompt, showApiKeyPromptModal, normalizeQuizText, sleep, triggerClick } from '../utils/dom.js';
 import { completeHonorCodeAndSubmitQuiz } from './submit.js';
+import { findStartAssignmentButton } from '../video/video.js';
 
 export function calculateOptionMatchScore(el, targetAnswer) {
   const rawText = extractOptionPureText(el);
@@ -525,7 +526,29 @@ export async function triggerZeroClickQuizWorkflow(btn) {
   }
 
   try {
-    const questions = await extractAllQuizQuestionsFromDOM();
+    // 1. Kiểm tra nếu đang ở trang landing/giới thiệu có nút "Start Assignment" / "Resume" / "Start attempt"
+    // Tự động bấm để vào làm bài trước khi quét câu hỏi!
+    const landingStartBtn = findStartAssignmentButton();
+    if (landingStartBtn) {
+      const btnLabel = (landingStartBtn.innerText || landingStartBtn.textContent || 'Start Assignment').trim();
+      showInPageToast(`📝 Đang mở bài Quiz/Assignment... (Bấm "${btnLabel}")`, false, 3500);
+      landingStartBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await sleep(200);
+      triggerClick(landingStartBtn);
+      try { landingStartBtn.click(); } catch (e) {}
+      await sleep(2500);
+    }
+
+    // 2. Quét câu hỏi trắc nghiệm
+    showInPageToast('🔍 Đang quét câu hỏi trên trang...');
+    let questions = await extractAllQuizQuestionsFromDOM();
+
+    // Nếu trang vừa bấm Start Assignment và đang render, thử đợi thêm 2s
+    if ((!questions || questions.length === 0) && landingStartBtn) {
+      await sleep(2000);
+      questions = await extractAllQuizQuestionsFromDOM();
+    }
+
     if (!questions || questions.length === 0) {
       showInPageToast('❌ Không tìm thấy câu hỏi trắc nghiệm nào trên trang!', true);
       if (btn) {

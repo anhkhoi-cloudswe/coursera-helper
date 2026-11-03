@@ -1035,6 +1035,543 @@ ${q.text}
     return true;
   }
 
+  // src/video/video.js
+  function getCourseraCourseId() {
+    const scripts = document.querySelectorAll("script");
+    for (const s of scripts) {
+      const text = s.textContent || "";
+      const m = text.match(/"courseId":\s*"?([a-zA-Z0-9_-]+)"?/);
+      if (m) return m[1];
+    }
+    const courseMatch = window.location.pathname.match(/\/learn\/([^\/]+)/);
+    if (courseMatch) return courseMatch[1];
+    return null;
+  }
+  function findVideos() {
+    return Array.from(document.querySelectorAll("video"));
+  }
+  function findMarkAsCompletedButton() {
+    const buttons = Array.from(document.querySelectorAll('button, a[role="button"]'));
+    const markBtn = buttons.find((b) => {
+      if (b.closest("#coursera-helper-hud, header, nav")) return false;
+      const text = (b.innerText || b.textContent || "").trim().toLowerCase();
+      const isCompleted = text.includes("mark as completed") || text.includes("marked as completed") || text.includes("\u0111\xE1nh d\u1EA5u \u0111\xE3 ho\xE0n th\xE0nh") || text.includes("complete and continue") || text.includes("ho\xE0n th\xE0nh v\xE0 ti\u1EBFp t\u1EE5c");
+      const isVisible = b.offsetWidth > 0 && b.offsetHeight > 0;
+      return isCompleted && isVisible && !b.disabled;
+    });
+    return markBtn || null;
+  }
+  function findNextButton() {
+    const currentCourseId = getCourseraCourseId();
+    const currentPath = window.location.pathname;
+    if (currentPath.includes("/assignment-submission/") || currentPath.includes("/exam/") || currentPath.includes("/quiz/")) {
+      if (!isQuizResultScreen()) {
+        return null;
+      }
+    }
+    const buttons = Array.from(document.querySelectorAll('button, a[role="button"], a[data-testid*="next"], button[data-testid*="next"]'));
+    const nextBtn = buttons.find((b) => {
+      if (b.closest('#coursera-helper-hud, header, nav, [data-testid="left-nav"]')) return false;
+      if (b.tagName === "A") {
+        const href = b.getAttribute("href") || "";
+        if (href.startsWith("http") && !href.includes(window.location.host)) return false;
+        if (currentCourseId && href.includes("/learn/") && !href.includes(`/learn/${currentCourseId}/`)) {
+          return false;
+        }
+      }
+      const text = (b.innerText || b.textContent || "").trim().toLowerCase();
+      const testId = (b.getAttribute("data-testid") || "").toLowerCase();
+      const ariaLabel = (b.getAttribute("aria-label") || "").toLowerCase();
+      if (text.includes("next course") || text.includes("kh\xF3a h\u1ECDc ti\u1EBFp theo") || text.includes("move on to the next course")) {
+        return false;
+      }
+      const isNext = text === "next item" || text.startsWith("next item") || text === "go to next item" || text.startsWith("go to next item") || text === "next" || text === "ti\u1EBFp theo" || testId.includes("next-item") || testId === "next-button" || ariaLabel === "next item" || ariaLabel.startsWith("go to next item");
+      const isVisible = b.offsetWidth > 0 && b.offsetHeight > 0;
+      return isNext && isVisible && !b.disabled;
+    });
+    return nextBtn || null;
+  }
+  function isItemNeedsWork(el) {
+    if (!el) return false;
+    const text = (el.innerText || el.textContent || "").toLowerCase();
+    const html = el.innerHTML || "";
+    const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
+    if (html.includes("-8.097c") || html.includes("8.097") || html.includes('data-testid="error"') || html.includes('data-testid="warning"')) {
+      return true;
+    }
+    const gradeMatch = text.match(/grade:\s*(\d{1,3})%/i) || ariaLabel.match(/grade:\s*(\d{1,3})%/i);
+    if (gradeMatch) {
+      const score = parseInt(gradeMatch[1], 10);
+      if (score < 80) return true;
+    }
+    const hasSuccessIcon = !!el.querySelector('[data-testid="learn-item-success-icon"]');
+    if (hasSuccessIcon && (ariaLabel.includes("completed") || text.includes("completed") || text.includes("ho\xE0n th\xE0nh"))) {
+      return false;
+    }
+    if (ariaLabel.includes("not submitted") || ariaLabel.includes("ch\u01B0a n\u1ED9p") || ariaLabel.includes("ch\u01B0a ho\xE0n th\xE0nh")) {
+      return true;
+    }
+    return !hasSuccessIcon;
+  }
+  function expandAllLeftNavModules() {
+    const leftNav = document.querySelector('div[data-testid="left-nav"]');
+    if (!leftNav) return;
+    const collapsedHeaders = Array.from(leftNav.querySelectorAll('button.cds-AccordionHeader-button[aria-expanded="false"]'));
+    for (const btn of collapsedHeaders) {
+      if (btn.querySelector('[data-testid*="daily-goals"]') || btn.id?.includes("daily-goals")) continue;
+      try {
+        btn.click();
+      } catch (e) {
+      }
+    }
+  }
+  function getAllCourseItemsFromLeftNav() {
+    expandAllLeftNavModules();
+    const leftNav = document.querySelector('div[data-testid="left-nav"]');
+    if (!leftNav) return [];
+    const currentCourseId = getCourseraCourseId();
+    const allLinks = Array.from(leftNav.querySelectorAll('a[href*="/learn/"]')).filter((a) => {
+      const href = a.getAttribute("href") || "";
+      if (href.includes("/home/welcome") || href.includes("/home/week")) return false;
+      if (currentCourseId && !href.includes(`/learn/${currentCourseId}/`)) return false;
+      return true;
+    });
+    const currentPath = window.location.pathname;
+    return allLinks.map((link) => {
+      const titleEl = link.querySelector(".css-u7fh1q, .css-1n1j66c, .outline-single-item-content-wrapper") || link;
+      const title = (titleEl.innerText || titleEl.textContent || "").trim();
+      const needsWork = isItemNeedsWork(link);
+      const isCurrent = link.closest('li[data-current-item="true"]') !== null || link.classList.contains("css-jxphqf") || link.pathname === currentPath || link.href.includes(currentPath);
+      return {
+        element: link,
+        href: link.getAttribute("href"),
+        title,
+        needsWork,
+        isCompleted: !needsWork,
+        isCurrent
+      };
+    });
+  }
+  function findOverviewGetStartedButton() {
+    const candidateButtons = Array.from(document.querySelectorAll(
+      'button, a[role="button"], span[role="button"], a.cds-button, button.cds-button, [class*="cds-button"]'
+    ));
+    for (const btn of candidateButtons) {
+      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
+      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+      if (txt === "get started" || txt === "b\u1EAFt \u0111\u1EA7u" || txt === "continue" || txt === "ti\u1EBFp t\u1EE5c h\u1ECDc") {
+        const rect = btn.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          return btn;
+        }
+      }
+    }
+    const specificBtn = document.querySelector(".cds-button-label");
+    if (specificBtn && specificBtn.textContent.trim().toLowerCase() === "get started") {
+      const parentBtn = specificBtn.closest('button, a, [role="button"], span.cds-608') || specificBtn;
+      return parentBtn;
+    }
+    return null;
+  }
+  function findFirstItemNeedingWork() {
+    const currentPath = window.location.pathname;
+    const currentCourseId = getCourseraCourseId();
+    const sidebarItems = getAllCourseItemsFromLeftNav();
+    if (sidebarItems.length > 0) {
+      const currentIdx = sidebarItems.findIndex((it) => it.isCurrent);
+      if (currentIdx !== -1) {
+        const nextPending = sidebarItems.slice(currentIdx + 1).find((it) => it.needsWork);
+        if (nextPending) return nextPending;
+      }
+      const anyPending = sidebarItems.find((it) => it.needsWork);
+      if (anyPending) return anyPending;
+    }
+    const overviewLinks = Array.from(document.querySelectorAll(
+      'a[href*="/lecture/"], a[href*="/supplement/"], a[href*="/assignment-submission/"], a[href*="/quiz/"], a[href*="/exam/"], a[href*="/ungradedWidget/"]'
+    )).filter((a) => {
+      if (a.closest("#coursera-helper-hud, header, nav")) return false;
+      const href = a.getAttribute("href") || "";
+      if (currentCourseId && !href.includes(`/learn/${currentCourseId}/`)) return false;
+      return true;
+    });
+    for (const link of overviewLinks) {
+      const rowContainer = link.closest('li, tr, [data-testid*="item"], div[class*="item" i]') || link;
+      if (isItemNeedsWork(rowContainer) || isItemNeedsWork(link)) {
+        const title = (link.innerText || link.textContent || "").trim();
+        return {
+          element: link,
+          href: link.getAttribute("href"),
+          title: title || "B\xE0i h\u1ECDc c\u1EA7n ho\xE0n th\xE0nh",
+          needsWork: true,
+          isCompleted: false,
+          isCurrent: false
+        };
+      }
+    }
+    const currentModuleMatch = currentPath.match(/\/home\/module\/(\d+)/);
+    const currentModuleNum = currentModuleMatch ? parseInt(currentModuleMatch[1], 10) : 1;
+    const nextModuleLink = Array.from(document.querySelectorAll('a[href*="/home/module/"]')).find((a) => {
+      const href = a.getAttribute("href") || "";
+      const mMatch = href.match(/\/home\/module\/(\d+)/);
+      if (!mMatch) return false;
+      const mNum = parseInt(mMatch[1], 10);
+      if (mNum <= currentModuleNum) return false;
+      const text = (a.innerText || "").toLowerCase();
+      const isCompleted = a.querySelector('[data-testid="learn-item-success-icon"]') || text.includes("completed");
+      return !isCompleted;
+    });
+    if (nextModuleLink) {
+      return {
+        element: nextModuleLink,
+        href: nextModuleLink.getAttribute("href"),
+        title: (nextModuleLink.innerText || "Module ti\u1EBFp theo").trim(),
+        needsWork: true,
+        isCompleted: false,
+        isCurrent: false
+      };
+    }
+    return null;
+  }
+  function isCourseFullyCompleted() {
+    const currentPath = window.location.pathname;
+    if (currentPath.includes("/lecture/") || currentPath.includes("/supplement/") || currentPath.includes("/assignment-submission/") || currentPath.includes("/exam/") || currentPath.includes("/quiz/") || currentPath.includes("/ungradedWidget/")) {
+      return false;
+    }
+    const bodyText = (document.body.innerText || "").toLowerCase();
+    const hasCourseEndGreeting = bodyText.includes("now that you have completed this course") || bodyText.includes("congratulations on completing course") || bodyText.includes("ch\xFAc m\u1EEBng b\u1EA1n \u0111\xE3 ho\xE0n th\xE0nh kh\xF3a h\u1ECDc") || bodyText.includes("ready to move on to the next course");
+    const pendingItem = findFirstItemNeedingWork();
+    if (pendingItem) {
+      return false;
+    }
+    const items = getAllCourseItemsFromLeftNav();
+    if (items.length > 0) {
+      const lastItem = items[items.length - 1];
+      if (lastItem.isCurrent && lastItem.isCompleted && hasCourseEndGreeting) {
+        return true;
+      }
+    }
+    if (hasCourseEndGreeting && bodyText.includes("completed") && !document.querySelector("video")) {
+      return true;
+    }
+    return false;
+  }
+  async function navigateToNextUncompletedItem() {
+    if (isCourseFullyCompleted()) {
+      showInPageToast("\u{1F389} CH\xDAC M\u1EEANG B\u1EA0N \u0110\xC3 HO\xC0N TH\xC0NH 100% TO\xC0N B\u1ED8 KH\xD3A H\u1ECCC! T\u1EF1 \u0111\u1ED9ng d\u1EEBng Auto-Skip.", false, 8e3);
+      stopAutoSkipLoop();
+      return true;
+    }
+    const currentPath = window.location.pathname;
+    if (currentPath.includes("/home/module/") || currentPath.includes("/home/week/") || currentPath.includes("/home/welcome")) {
+      const getStartedBtn = findOverviewGetStartedButton();
+      if (getStartedBtn) {
+        showInPageToast('\u{1F680} [T\u1ED5ng Quan] Ph\xE1t hi\u1EC7n n\xFAt "Get started"! \u0110ang b\u1EA5m \u0111\u1EC3 v\xE0o h\u1ECDc ngay...', false, 3500);
+        getStartedBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+        await sleep(300);
+        triggerClick(getStartedBtn);
+        try {
+          getStartedBtn.click();
+        } catch (e) {
+        }
+        await sleep(2500);
+        return true;
+      }
+    }
+    const targetItem = findFirstItemNeedingWork();
+    if (targetItem && targetItem.element) {
+      showInPageToast(`\u{1F4CC} [R\xE0 so\xE1t B\xE0i H\u1ECDc] Ph\xE1t hi\u1EC7n b\xE0i c\u1EA7n l\xE0m: "${targetItem.title}". \u0110ang chuy\u1EC3n \u0111\u1EBFn...`, false, 3500);
+      targetItem.element.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      await sleep(300);
+      triggerClick(targetItem.element);
+      try {
+        targetItem.element.click();
+      } catch (e) {
+      }
+      await sleep(2500);
+      return true;
+    }
+    const nextBtn = findNextButton();
+    if (nextBtn) {
+      showInPageToast("\u27A1\uFE0F \u0110ang b\u1EA5m chuy\u1EC3n b\xE0i ti\u1EBFp theo...", false, 2500);
+      triggerClick(nextBtn);
+      try {
+        nextBtn.click();
+      } catch (e) {
+      }
+      await sleep(2e3);
+      return true;
+    }
+    return false;
+  }
+  function unlockVideo(video) {
+    if (!video) return;
+    try {
+      video.playbackRate = 16;
+    } catch (e) {
+    }
+    try {
+      const playerContainer = video.closest('.vjs-v6, .video-js, [data-testid="video-player"]');
+      if (playerContainer) {
+        playerContainer.querySelectorAll("[disabled]").forEach((el) => el.removeAttribute("disabled"));
+      }
+    } catch (e) {
+    }
+  }
+  function skipVideoViaMainWorld(video) {
+    if (!video) return;
+    try {
+      if (video.duration && isFinite(video.duration)) {
+        video.currentTime = Math.max(0, video.duration - 0.5);
+      }
+    } catch (e) {
+    }
+    window.postMessage({
+      type: "COURSERA_HELPER_SEEK_END"
+    }, "*");
+    try {
+      video.playbackRate = 16;
+      if (video.paused) video.play();
+    } catch (e) {
+    }
+  }
+  async function completeCourseraVideo() {
+    const videos = findVideos();
+    if (videos.length === 0) {
+      showInPageToast("\u26A0\uFE0F Kh\xF4ng t\xECm th\u1EA5y video tr\xEAn trang!", true);
+      return false;
+    }
+    showInPageToast("\u26A1 \u0110ang k\xEDch ho\u1EA1t tua video si\xEAu t\u1ED1c...");
+    for (const v of videos) {
+      unlockVideo(v);
+      skipVideoViaMainWorld(v);
+    }
+    await sleep(1200);
+    const markBtn = findMarkAsCompletedButton();
+    if (markBtn) {
+      triggerClick(markBtn);
+      try {
+        markBtn.click();
+      } catch (e) {
+      }
+      await sleep(600);
+    }
+    return true;
+  }
+  async function processReadingStep() {
+    showInPageToast("\u{1F4D6} \u0110ang x\u1EED l\xFD b\xE0i \u0111\u1ECDc Reading...");
+    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    await sleep(600);
+    const markBtn = findMarkAsCompletedButton();
+    if (markBtn) {
+      triggerClick(markBtn);
+      try {
+        markBtn.click();
+      } catch (e) {
+      }
+      showInPageToast("\u2705 \u0110\xE3 \u0111\xE1nh d\u1EA5u ho\xE0n th\xE0nh b\xE0i \u0111\u1ECDc!");
+      await sleep(800);
+    }
+    await navigateToNextUncompletedItem();
+  }
+  async function processUngradedWidgetStep() {
+    showInPageToast("\u{1F9E9} \u0110ang x\u1EED l\xFD Ungraded Widget...");
+    const markBtn = findMarkAsCompletedButton();
+    if (markBtn) {
+      triggerClick(markBtn);
+      try {
+        markBtn.click();
+      } catch (e) {
+      }
+      await sleep(600);
+    }
+    await navigateToNextUncompletedItem();
+  }
+  function findStartAssignmentButton() {
+    if (getQuestionContainers().length > 0) return null;
+    const byTestId = document.querySelector(
+      'button[data-testid*="start"], a[data-testid*="start-assignment"], button[data-e2e*="start"], button[data-testid*="resume"], a[data-testid*="resume"], button[data-testid*="attempt"], a[data-testid*="attempt"], [data-testid*="take-quiz"], [data-testid*="go-to-assignment"], [data-testid*="practice-assignment"]'
+    );
+    if (byTestId && !byTestId.closest('#coursera-helper-hud, header, nav[role="navigation"]') && !byTestId.disabled) {
+      return byTestId;
+    }
+    const allBtns = Array.from(document.querySelectorAll('button, a[role="button"], a.cds-button, a[href*="/attempt"], a[href*="/exam/"], span[role="button"]'));
+    for (const btn of allBtns) {
+      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
+      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") continue;
+      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+      if (txt === "start assignment" || txt === "resume assignment" || txt === "resume" || txt === "start quiz" || txt === "take quiz" || txt === "start" || txt === "attempt" || txt === "start attempt" || txt === "resume attempt" || txt === "retake" || txt === "try again" || txt === "b\u1EAFt \u0111\u1EA7u l\xE0m b\xE0i" || txt === "ti\u1EBFp t\u1EE5c" || txt === "l\xE0m b\xE0i" || txt.includes("start assignment") || txt.includes("resume assignment") || txt.includes("begin assignment") || txt.includes("start attempt") || txt.includes("take assignment") || txt.includes("go to assignment") || txt.includes("start practice") || txt.includes("take practice")) {
+        return btn;
+      }
+    }
+    const labelEl = Array.from(document.querySelectorAll('.cds-button-label, [class*="button-label"]')).find((el) => {
+      const t = (el.textContent || "").trim().toLowerCase();
+      return t.includes("start") || t.includes("attempt") || t.includes("resume") || t.includes("b\u1EAFt \u0111\u1EA7u");
+    });
+    if (labelEl) {
+      const pBtn = labelEl.closest('button, a, [role="button"]') || labelEl;
+      if (!pBtn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) {
+        return pBtn;
+      }
+    }
+    return null;
+  }
+  function isQuizResultScreen() {
+    const currentPath = window.location.pathname;
+    if (!currentPath.includes("/assignment-submission/") && !currentPath.includes("/exam/") && !currentPath.includes("/quiz/")) {
+      return false;
+    }
+    const bodyText = (document.body.innerText || "").toLowerCase();
+    const hasGradeKeywords = bodyText.includes("your grade:") || bodyText.includes("your grade") || bodyText.includes("\u0111i\u1EC3m c\u1EE7a b\u1EA1n:") || bodyText.includes("your latest:") || bodyText.includes("your highest:") || bodyText.includes("to pass you need") || bodyText.includes("we keep your highest score") || bodyText.includes("nice work") || bodyText.includes("passed");
+    const hasNextBtn = findQuizNextItemButton() !== null;
+    const hasGradeContainer = document.querySelector(
+      '[class*="grade" i], [class*="score" i], [data-testid*="grade"], [data-testid*="score"]'
+    ) !== null;
+    return hasGradeKeywords && hasNextBtn || hasGradeKeywords && hasGradeContainer;
+  }
+  function findQuizNextItemButton() {
+    const excludeSelector = '#coursera-helper-hud, header, nav[role="navigation"], [class*="video-player"], [class*="vjs-"], [data-testid*="player"]';
+    const testIdBtn = document.querySelector(
+      'button[data-testid="quiz-next-button"], a[data-testid="quiz-next-button"], button[data-testid="next-item-button"], a[data-testid="next-item-button"]'
+    );
+    if (testIdBtn && !testIdBtn.disabled && !testIdBtn.closest(excludeSelector)) {
+      return testIdBtn;
+    }
+    const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    for (const btn of allBtns) {
+      if (btn.closest(excludeSelector)) continue;
+      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") continue;
+      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+      if (txt === "next item" || txt.startsWith("next item") || txt === "go to next item" || txt.startsWith("go to next item") || txt === "ti\u1EBFp theo" || txt === "b\xE0i ti\u1EBFp theo") {
+        return btn;
+      }
+    }
+    return null;
+  }
+  async function processQuizStep() {
+    showInPageToast("\u{1F9E9} [Auto-Skip] Ph\xE1t hi\u1EC7n Quiz / Assignment! \u0110ang ki\u1EC3m tra...", false, 4e3);
+    await sleep(800);
+    if (isQuizResultScreen()) {
+      showInPageToast("\u{1F389} [Auto-Skip] \u0110\xE3 c\xF3 \u0111i\u1EC3m b\xE0i Quiz! \u0110ang chuy\u1EC3n b\xE0i ti\u1EBFp theo...", false, 3e3);
+      const nextBtn = findQuizNextItemButton() || findNextButton();
+      if (nextBtn) {
+        triggerClick(nextBtn);
+        try {
+          nextBtn.click();
+        } catch (e) {
+        }
+        await sleep(2500);
+        return true;
+      }
+      await navigateToNextUncompletedItem();
+      return true;
+    }
+    const btnSolve = document.getElementById("ch-hud-solvequiz") || document.getElementById("ch-btn-solve-quiz");
+    await triggerZeroClickQuizWorkflow(btnSolve);
+    const containers = getQuestionContainers();
+    if (containers.length > 0 || isQuizResultScreen()) {
+      showInPageToast("\u23F3 [Auto-Skip] \u0110ang ch\u1EDD k\u1EBFt qu\u1EA3 n\u1ED9p b\xE0i...", false, 4e3);
+      for (let w = 0; w < 50; w++) {
+        await sleep(500);
+        const modalSubmitBtn = findSubmitConfirmButton();
+        if (modalSubmitBtn) {
+          showInPageToast('\u{1F680} [Auto-Skip] Ph\xE1t hi\u1EC7n modal "Ready to submit?", \u0111ang b\u1EA5m x\xE1c nh\u1EADn n\u1ED9p b\xE0i...', false, 2500);
+          triggerClick(modalSubmitBtn);
+          try {
+            modalSubmitBtn.click();
+          } catch (e) {
+          }
+          await sleep(1200);
+        }
+        const nextBtn = findQuizNextItemButton() || (isQuizResultScreen() ? findNextButton() : null);
+        if (nextBtn) {
+          showInPageToast('\u{1F389} [Auto-Skip] B\xE0i thi \u0111\xE3 ho\xE0n th\xE0nh! \u0110ang b\u1EA5m "Next item" \u0111\u1EC3 sang b\xE0i ti\u1EBFp theo...', false, 4e3);
+          triggerClick(nextBtn);
+          try {
+            nextBtn.click();
+          } catch (e) {
+          }
+          await sleep(2500);
+          return true;
+        }
+      }
+      await navigateToNextUncompletedItem();
+      return true;
+    }
+    const currentPath = window.location.pathname;
+    if (currentPath.includes("/assignment-submission/") || currentPath.includes("/exam/") || currentPath.includes("/quiz/") || currentPath.includes("/assignment/")) {
+      showInPageToast("\u23F3 [Auto-Skip] \u0110ang \u0111\u1EE3i trang t\u1EA3i b\xE0i t\u1EADp Assignment...", false, 3e3);
+      return true;
+    }
+    return false;
+  }
+  async function executeAutoSkipStep() {
+    if (window._chIsStepRunning) return;
+    window._chIsStepRunning = true;
+    try {
+      if (isCourseFullyCompleted()) {
+        showInPageToast("\u{1F389} Ch\xFAc m\u1EEBng b\u1EA1n \u0111\xE3 ho\xE0n th\xE0nh to\xE0n b\u1ED9 kh\xF3a h\u1ECDc! T\u1EF1 \u0111\u1ED9ng d\u1EEBng Auto-Skip.", false, 8e3);
+        stopAutoSkipLoop();
+        return;
+      }
+      const currentUrlLower = window.location.href.toLowerCase();
+      const path = window.location.pathname;
+      const isQuizUrl = currentUrlLower.includes("/quiz/") || currentUrlLower.includes("/exam/") || currentUrlLower.includes("/assignment/") || currentUrlLower.includes("/assignment-submission/") || currentUrlLower.includes("/ungradedlti/");
+      const hasQuizDOM = getQuestionContainers().length > 0 || findStartAssignmentButton() !== null || isQuizResultScreen();
+      const isQuizPage = isQuizUrl || hasQuizDOM && !path.includes("/supplement/") && !path.includes("/lecture/");
+      if (isQuizPage) {
+        await processQuizStep();
+        return;
+      }
+      if (path.includes("/lecture/")) {
+        await completeCourseraVideo();
+        await sleep(1500);
+        await navigateToNextUncompletedItem();
+        return;
+      }
+      if (path.includes("/supplement/")) {
+        await processReadingStep();
+        return;
+      }
+      if (path.includes("/ungradedWidget/") || currentUrlLower.includes("/ungradedwidget/")) {
+        await processUngradedWidgetStep();
+        return;
+      }
+      await navigateToNextUncompletedItem();
+    } finally {
+      window._chIsStepRunning = false;
+    }
+  }
+  function startAutoSkipLoop() {
+    window._chAutoSkipActive = true;
+    const btnAutoSkip = document.getElementById("ch-hud-autoskip");
+    if (btnAutoSkip) {
+      btnAutoSkip.innerHTML = '<span class="ch-btn-icon">\u{1F6D1}</span><span class="ch-btn-label">D\u1EEBng Auto-Skip</span>';
+      btnAutoSkip.style.setProperty("background", "#ef4444", "important");
+      btnAutoSkip.style.setProperty("color", "#ffffff", "important");
+    }
+    showInPageToast("\u{1F680} \u0110\xE3 b\u1EADt T\u1EF1 \u0110\u1ED9ng Skip Module (K\xE8m R\xE0 So\xE1t To\xE0n B\u1ED9 Kh\xF3a H\u1ECDc)!");
+    executeAutoSkipStep();
+    clearInterval(window._chAutoSkipInterval);
+    window._chAutoSkipInterval = setInterval(() => {
+      if (!window._chAutoSkipActive) {
+        clearInterval(window._chAutoSkipInterval);
+        return;
+      }
+      executeAutoSkipStep();
+    }, 4e3);
+  }
+  function stopAutoSkipLoop() {
+    window._chAutoSkipActive = false;
+    clearInterval(window._chAutoSkipInterval);
+    const btnAutoSkip = document.getElementById("ch-hud-autoskip");
+    if (btnAutoSkip) {
+      btnAutoSkip.innerHTML = '<span class="ch-btn-icon">\u{1F680}</span><span class="ch-btn-label">Auto-Skip Module</span>';
+      btnAutoSkip.style.setProperty("background", "#10b981", "important");
+      btnAutoSkip.style.setProperty("color", "#000000", "important");
+    }
+    showInPageToast("\u{1F6D1} \u0110\xE3 d\u1EEBng T\u1EF1 \u0110\u1ED9ng Skip Module.");
+  }
+
   // src/quiz/solver.js
   function calculateOptionMatchScore(el, targetAnswer) {
     const rawText = extractOptionPureText(el);
@@ -1469,7 +2006,25 @@ ${q.text}
       btn.style.opacity = "0.7";
     }
     try {
-      const questions = await extractAllQuizQuestionsFromDOM();
+      const landingStartBtn = findStartAssignmentButton();
+      if (landingStartBtn) {
+        const btnLabel = (landingStartBtn.innerText || landingStartBtn.textContent || "Start Assignment").trim();
+        showInPageToast(`\u{1F4DD} \u0110ang m\u1EDF b\xE0i Quiz/Assignment... (B\u1EA5m "${btnLabel}")`, false, 3500);
+        landingStartBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+        await sleep(200);
+        triggerClick(landingStartBtn);
+        try {
+          landingStartBtn.click();
+        } catch (e) {
+        }
+        await sleep(2500);
+      }
+      showInPageToast("\u{1F50D} \u0110ang qu\xE9t c\xE2u h\u1ECFi tr\xEAn trang...");
+      let questions = await extractAllQuizQuestionsFromDOM();
+      if ((!questions || questions.length === 0) && landingStartBtn) {
+        await sleep(2e3);
+        questions = await extractAllQuizQuestionsFromDOM();
+      }
       if (!questions || questions.length === 0) {
         showInPageToast("\u274C Kh\xF4ng t\xECm th\u1EA5y c\xE2u h\u1ECFi tr\u1EAFc nghi\u1EC7m n\xE0o tr\xEAn trang!", true);
         if (btn) {
@@ -1573,562 +2128,6 @@ ${q.text}
         btn.style.opacity = "1";
       }
     }
-  }
-
-  // src/video/video.js
-  function getCourseraCourseId() {
-    const scripts = document.querySelectorAll("script");
-    for (const s of scripts) {
-      const text = s.textContent || "";
-      const m = text.match(/"courseId":\s*"?([a-zA-Z0-9_-]+)"?/);
-      if (m) return m[1];
-    }
-    const courseMatch = window.location.pathname.match(/\/learn\/([^\/]+)/);
-    if (courseMatch) return courseMatch[1];
-    return null;
-  }
-  function findVideos() {
-    return Array.from(document.querySelectorAll("video"));
-  }
-  function findMarkAsCompletedButton() {
-    const buttons = Array.from(document.querySelectorAll('button, a[role="button"]'));
-    const markBtn = buttons.find((b) => {
-      if (b.closest("#coursera-helper-hud, header, nav")) return false;
-      const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-      const isCompleted = text.includes("mark as completed") || text.includes("marked as completed") || text.includes("\u0111\xE1nh d\u1EA5u \u0111\xE3 ho\xE0n th\xE0nh") || text.includes("complete and continue") || text.includes("ho\xE0n th\xE0nh v\xE0 ti\u1EBFp t\u1EE5c");
-      const isVisible = b.offsetWidth > 0 && b.offsetHeight > 0;
-      return isCompleted && isVisible && !b.disabled;
-    });
-    return markBtn || null;
-  }
-  function findNextButton() {
-    const currentCourseId = getCourseraCourseId();
-    const currentPath = window.location.pathname;
-    if (currentPath.includes("/assignment-submission/") || currentPath.includes("/exam/") || currentPath.includes("/quiz/")) {
-      if (!isQuizResultScreen()) {
-        return null;
-      }
-    }
-    const buttons = Array.from(document.querySelectorAll('button, a[role="button"], a[data-testid*="next"], button[data-testid*="next"]'));
-    const nextBtn = buttons.find((b) => {
-      if (b.closest('#coursera-helper-hud, header, nav, [data-testid="left-nav"]')) return false;
-      if (b.tagName === "A") {
-        const href = b.getAttribute("href") || "";
-        if (href.startsWith("http") && !href.includes(window.location.host)) return false;
-        if (currentCourseId && href.includes("/learn/") && !href.includes(`/learn/${currentCourseId}/`)) {
-          return false;
-        }
-      }
-      const text = (b.innerText || b.textContent || "").trim().toLowerCase();
-      const testId = (b.getAttribute("data-testid") || "").toLowerCase();
-      const ariaLabel = (b.getAttribute("aria-label") || "").toLowerCase();
-      if (text.includes("next course") || text.includes("kh\xF3a h\u1ECDc ti\u1EBFp theo") || text.includes("move on to the next course")) {
-        return false;
-      }
-      const isNext = text === "next item" || text.startsWith("next item") || text === "go to next item" || text.startsWith("go to next item") || text === "next" || text === "ti\u1EBFp theo" || testId.includes("next-item") || testId === "next-button" || ariaLabel === "next item" || ariaLabel.startsWith("go to next item");
-      const isVisible = b.offsetWidth > 0 && b.offsetHeight > 0;
-      return isNext && isVisible && !b.disabled;
-    });
-    return nextBtn || null;
-  }
-  function isItemNeedsWork(el) {
-    if (!el) return false;
-    const text = (el.innerText || el.textContent || "").toLowerCase();
-    const html = el.innerHTML || "";
-    const ariaLabel = (el.getAttribute("aria-label") || "").toLowerCase();
-    if (html.includes("-8.097c") || html.includes("8.097") || html.includes('data-testid="error"') || html.includes('data-testid="warning"')) {
-      return true;
-    }
-    const gradeMatch = text.match(/grade:\s*(\d{1,3})%/i) || ariaLabel.match(/grade:\s*(\d{1,3})%/i);
-    if (gradeMatch) {
-      const score = parseInt(gradeMatch[1], 10);
-      if (score < 80) return true;
-    }
-    const hasSuccessIcon = !!el.querySelector('[data-testid="learn-item-success-icon"]');
-    if (hasSuccessIcon && (ariaLabel.includes("completed") || text.includes("completed") || text.includes("ho\xE0n th\xE0nh"))) {
-      return false;
-    }
-    if (ariaLabel.includes("not submitted") || ariaLabel.includes("ch\u01B0a n\u1ED9p") || ariaLabel.includes("ch\u01B0a ho\xE0n th\xE0nh")) {
-      return true;
-    }
-    return !hasSuccessIcon;
-  }
-  function expandAllLeftNavModules() {
-    const leftNav = document.querySelector('div[data-testid="left-nav"]');
-    if (!leftNav) return;
-    const collapsedHeaders = Array.from(leftNav.querySelectorAll('button.cds-AccordionHeader-button[aria-expanded="false"]'));
-    for (const btn of collapsedHeaders) {
-      if (btn.querySelector('[data-testid*="daily-goals"]') || btn.id?.includes("daily-goals")) continue;
-      try {
-        btn.click();
-      } catch (e) {
-      }
-    }
-  }
-  function getAllCourseItemsFromLeftNav() {
-    expandAllLeftNavModules();
-    const leftNav = document.querySelector('div[data-testid="left-nav"]');
-    if (!leftNav) return [];
-    const currentCourseId = getCourseraCourseId();
-    const allLinks = Array.from(leftNav.querySelectorAll('a[href*="/learn/"]')).filter((a) => {
-      const href = a.getAttribute("href") || "";
-      if (href.includes("/home/welcome") || href.includes("/home/week")) return false;
-      if (currentCourseId && !href.includes(`/learn/${currentCourseId}/`)) return false;
-      return true;
-    });
-    const currentPath = window.location.pathname;
-    return allLinks.map((link) => {
-      const titleEl = link.querySelector(".css-u7fh1q, .css-1n1j66c, .outline-single-item-content-wrapper") || link;
-      const title = (titleEl.innerText || titleEl.textContent || "").trim();
-      const needsWork = isItemNeedsWork(link);
-      const isCurrent = link.closest('li[data-current-item="true"]') !== null || link.classList.contains("css-jxphqf") || link.pathname === currentPath || link.href.includes(currentPath);
-      return {
-        element: link,
-        href: link.getAttribute("href"),
-        title,
-        needsWork,
-        isCompleted: !needsWork,
-        isCurrent
-      };
-    });
-  }
-  function findOverviewGetStartedButton() {
-    const candidateButtons = Array.from(document.querySelectorAll(
-      'button, a[role="button"], span[role="button"], a.cds-button, button.cds-button, [class*="cds-button"]'
-    ));
-    for (const btn of candidateButtons) {
-      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
-      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
-      if (txt === "get started" || txt === "b\u1EAFt \u0111\u1EA7u" || txt === "continue" || txt === "ti\u1EBFp t\u1EE5c h\u1ECDc") {
-        const rect = btn.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          return btn;
-        }
-      }
-    }
-    const specificBtn = document.querySelector(".cds-button-label");
-    if (specificBtn && specificBtn.textContent.trim().toLowerCase() === "get started") {
-      const parentBtn = specificBtn.closest('button, a, [role="button"], span.cds-608') || specificBtn;
-      return parentBtn;
-    }
-    return null;
-  }
-  function findFirstItemNeedingWork() {
-    const currentPath = window.location.pathname;
-    const currentCourseId = getCourseraCourseId();
-    const sidebarItems = getAllCourseItemsFromLeftNav();
-    if (sidebarItems.length > 0) {
-      const currentIdx = sidebarItems.findIndex((it) => it.isCurrent);
-      if (currentIdx !== -1) {
-        const nextPending = sidebarItems.slice(currentIdx + 1).find((it) => it.needsWork);
-        if (nextPending) return nextPending;
-      }
-      const anyPending = sidebarItems.find((it) => it.needsWork);
-      if (anyPending) return anyPending;
-    }
-    const overviewLinks = Array.from(document.querySelectorAll(
-      'a[href*="/lecture/"], a[href*="/supplement/"], a[href*="/assignment-submission/"], a[href*="/quiz/"], a[href*="/exam/"], a[href*="/ungradedWidget/"]'
-    )).filter((a) => {
-      if (a.closest("#coursera-helper-hud, header, nav")) return false;
-      const href = a.getAttribute("href") || "";
-      if (currentCourseId && !href.includes(`/learn/${currentCourseId}/`)) return false;
-      return true;
-    });
-    for (const link of overviewLinks) {
-      const rowContainer = link.closest('li, tr, [data-testid*="item"], div[class*="item" i]') || link;
-      if (isItemNeedsWork(rowContainer) || isItemNeedsWork(link)) {
-        const title = (link.innerText || link.textContent || "").trim();
-        return {
-          element: link,
-          href: link.getAttribute("href"),
-          title: title || "B\xE0i h\u1ECDc c\u1EA7n ho\xE0n th\xE0nh",
-          needsWork: true,
-          isCompleted: false,
-          isCurrent: false
-        };
-      }
-    }
-    const currentModuleMatch = currentPath.match(/\/home\/module\/(\d+)/);
-    const currentModuleNum = currentModuleMatch ? parseInt(currentModuleMatch[1], 10) : 1;
-    const nextModuleLink = Array.from(document.querySelectorAll('a[href*="/home/module/"]')).find((a) => {
-      const href = a.getAttribute("href") || "";
-      const mMatch = href.match(/\/home\/module\/(\d+)/);
-      if (!mMatch) return false;
-      const mNum = parseInt(mMatch[1], 10);
-      if (mNum <= currentModuleNum) return false;
-      const text = (a.innerText || "").toLowerCase();
-      const isCompleted = a.querySelector('[data-testid="learn-item-success-icon"]') || text.includes("completed");
-      return !isCompleted;
-    });
-    if (nextModuleLink) {
-      return {
-        element: nextModuleLink,
-        href: nextModuleLink.getAttribute("href"),
-        title: (nextModuleLink.innerText || "Module ti\u1EBFp theo").trim(),
-        needsWork: true,
-        isCompleted: false,
-        isCurrent: false
-      };
-    }
-    return null;
-  }
-  function isCourseFullyCompleted() {
-    const currentPath = window.location.pathname;
-    if (currentPath.includes("/lecture/") || currentPath.includes("/supplement/") || currentPath.includes("/assignment-submission/") || currentPath.includes("/exam/") || currentPath.includes("/quiz/") || currentPath.includes("/ungradedWidget/")) {
-      return false;
-    }
-    const bodyText = (document.body.innerText || "").toLowerCase();
-    const hasCourseEndGreeting = bodyText.includes("now that you have completed this course") || bodyText.includes("congratulations on completing course") || bodyText.includes("ch\xFAc m\u1EEBng b\u1EA1n \u0111\xE3 ho\xE0n th\xE0nh kh\xF3a h\u1ECDc") || bodyText.includes("ready to move on to the next course");
-    const pendingItem = findFirstItemNeedingWork();
-    if (pendingItem) {
-      return false;
-    }
-    const items = getAllCourseItemsFromLeftNav();
-    if (items.length > 0) {
-      const lastItem = items[items.length - 1];
-      if (lastItem.isCurrent && lastItem.isCompleted && hasCourseEndGreeting) {
-        return true;
-      }
-    }
-    if (hasCourseEndGreeting && bodyText.includes("completed") && !document.querySelector("video")) {
-      return true;
-    }
-    return false;
-  }
-  async function navigateToNextUncompletedItem() {
-    if (isCourseFullyCompleted()) {
-      showInPageToast("\u{1F389} CH\xDAC M\u1EEANG B\u1EA0N \u0110\xC3 HO\xC0N TH\xC0NH 100% TO\xC0N B\u1ED8 KH\xD3A H\u1ECCC! T\u1EF1 \u0111\u1ED9ng d\u1EEBng Auto-Skip.", false, 8e3);
-      stopAutoSkipLoop();
-      return true;
-    }
-    const currentPath = window.location.pathname;
-    if (currentPath.includes("/home/module/") || currentPath.includes("/home/week/") || currentPath.includes("/home/welcome")) {
-      const getStartedBtn = findOverviewGetStartedButton();
-      if (getStartedBtn) {
-        showInPageToast('\u{1F680} [T\u1ED5ng Quan] Ph\xE1t hi\u1EC7n n\xFAt "Get started"! \u0110ang b\u1EA5m \u0111\u1EC3 v\xE0o h\u1ECDc ngay...', false, 3500);
-        getStartedBtn.scrollIntoView({ behavior: "smooth", block: "center" });
-        await sleep(300);
-        triggerClick(getStartedBtn);
-        try {
-          getStartedBtn.click();
-        } catch (e) {
-        }
-        await sleep(2500);
-        return true;
-      }
-    }
-    const targetItem = findFirstItemNeedingWork();
-    if (targetItem && targetItem.element) {
-      showInPageToast(`\u{1F4CC} [R\xE0 so\xE1t B\xE0i H\u1ECDc] Ph\xE1t hi\u1EC7n b\xE0i c\u1EA7n l\xE0m: "${targetItem.title}". \u0110ang chuy\u1EC3n \u0111\u1EBFn...`, false, 3500);
-      targetItem.element.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      await sleep(300);
-      triggerClick(targetItem.element);
-      try {
-        targetItem.element.click();
-      } catch (e) {
-      }
-      await sleep(2500);
-      return true;
-    }
-    const nextBtn = findNextButton();
-    if (nextBtn) {
-      showInPageToast("\u27A1\uFE0F \u0110ang b\u1EA5m chuy\u1EC3n b\xE0i ti\u1EBFp theo...", false, 2500);
-      triggerClick(nextBtn);
-      try {
-        nextBtn.click();
-      } catch (e) {
-      }
-      await sleep(2e3);
-      return true;
-    }
-    return false;
-  }
-  function unlockVideo(video) {
-    if (!video) return;
-    try {
-      video.playbackRate = 16;
-    } catch (e) {
-    }
-    try {
-      const playerContainer = video.closest('.vjs-v6, .video-js, [data-testid="video-player"]');
-      if (playerContainer) {
-        playerContainer.querySelectorAll("[disabled]").forEach((el) => el.removeAttribute("disabled"));
-      }
-    } catch (e) {
-    }
-  }
-  function skipVideoViaMainWorld(video) {
-    if (!video) return;
-    try {
-      if (video.duration && isFinite(video.duration)) {
-        video.currentTime = Math.max(0, video.duration - 0.5);
-      }
-    } catch (e) {
-    }
-    window.postMessage({
-      type: "COURSERA_HELPER_SEEK_END"
-    }, "*");
-    try {
-      video.playbackRate = 16;
-      if (video.paused) video.play();
-    } catch (e) {
-    }
-  }
-  async function completeCourseraVideo() {
-    const videos = findVideos();
-    if (videos.length === 0) {
-      showInPageToast("\u26A0\uFE0F Kh\xF4ng t\xECm th\u1EA5y video tr\xEAn trang!", true);
-      return false;
-    }
-    showInPageToast("\u26A1 \u0110ang k\xEDch ho\u1EA1t tua video si\xEAu t\u1ED1c...");
-    for (const v of videos) {
-      unlockVideo(v);
-      skipVideoViaMainWorld(v);
-    }
-    await sleep(1200);
-    const markBtn = findMarkAsCompletedButton();
-    if (markBtn) {
-      triggerClick(markBtn);
-      try {
-        markBtn.click();
-      } catch (e) {
-      }
-      await sleep(600);
-    }
-    return true;
-  }
-  async function processReadingStep() {
-    showInPageToast("\u{1F4D6} \u0110ang x\u1EED l\xFD b\xE0i \u0111\u1ECDc Reading...");
-    window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
-    await sleep(600);
-    const markBtn = findMarkAsCompletedButton();
-    if (markBtn) {
-      triggerClick(markBtn);
-      try {
-        markBtn.click();
-      } catch (e) {
-      }
-      showInPageToast("\u2705 \u0110\xE3 \u0111\xE1nh d\u1EA5u ho\xE0n th\xE0nh b\xE0i \u0111\u1ECDc!");
-      await sleep(800);
-    }
-    await navigateToNextUncompletedItem();
-  }
-  async function processUngradedWidgetStep() {
-    showInPageToast("\u{1F9E9} \u0110ang x\u1EED l\xFD Ungraded Widget...");
-    const markBtn = findMarkAsCompletedButton();
-    if (markBtn) {
-      triggerClick(markBtn);
-      try {
-        markBtn.click();
-      } catch (e) {
-      }
-      await sleep(600);
-    }
-    await navigateToNextUncompletedItem();
-  }
-  function findStartAssignmentButton() {
-    if (getQuestionContainers().length > 0) return null;
-    const byTestId = document.querySelector(
-      'button[data-testid*="start"], a[data-testid*="start-assignment"], button[data-e2e*="start"], button[data-testid*="resume"], a[data-testid*="resume"], button[data-testid*="attempt"], a[data-testid*="attempt"], [data-testid*="take-quiz"], [data-testid*="go-to-assignment"], [data-testid*="practice-assignment"]'
-    );
-    if (byTestId && !byTestId.closest('#coursera-helper-hud, header, nav[role="navigation"]') && !byTestId.disabled) {
-      return byTestId;
-    }
-    const allBtns = Array.from(document.querySelectorAll('button, a[role="button"], a.cds-button, a[href*="/attempt"], a[href*="/exam/"], span[role="button"]'));
-    for (const btn of allBtns) {
-      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
-      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") continue;
-      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
-      if (txt === "start assignment" || txt === "resume assignment" || txt === "resume" || txt === "start quiz" || txt === "take quiz" || txt === "start" || txt === "attempt" || txt === "start attempt" || txt === "resume attempt" || txt === "retake" || txt === "try again" || txt === "b\u1EAFt \u0111\u1EA7u l\xE0m b\xE0i" || txt === "ti\u1EBFp t\u1EE5c" || txt === "l\xE0m b\xE0i" || txt.includes("start assignment") || txt.includes("resume assignment") || txt.includes("begin assignment") || txt.includes("start attempt") || txt.includes("take assignment") || txt.includes("go to assignment") || txt.includes("start practice") || txt.includes("take practice")) {
-        return btn;
-      }
-    }
-    const labelEl = Array.from(document.querySelectorAll('.cds-button-label, [class*="button-label"]')).find((el) => {
-      const t = (el.textContent || "").trim().toLowerCase();
-      return t.includes("start") || t.includes("attempt") || t.includes("resume") || t.includes("b\u1EAFt \u0111\u1EA7u");
-    });
-    if (labelEl) {
-      const pBtn = labelEl.closest('button, a, [role="button"]') || labelEl;
-      if (!pBtn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) {
-        return pBtn;
-      }
-    }
-    return null;
-  }
-  function isQuizResultScreen() {
-    const currentPath = window.location.pathname;
-    if (!currentPath.includes("/assignment-submission/") && !currentPath.includes("/exam/") && !currentPath.includes("/quiz/")) {
-      return false;
-    }
-    const bodyText = (document.body.innerText || "").toLowerCase();
-    const hasGradeKeywords = bodyText.includes("your grade:") || bodyText.includes("your grade") || bodyText.includes("\u0111i\u1EC3m c\u1EE7a b\u1EA1n:") || bodyText.includes("your latest:") || bodyText.includes("your highest:") || bodyText.includes("to pass you need") || bodyText.includes("we keep your highest score") || bodyText.includes("nice work") || bodyText.includes("passed");
-    const hasNextBtn = findQuizNextItemButton() !== null;
-    const hasGradeContainer = document.querySelector(
-      '[class*="grade" i], [class*="score" i], [data-testid*="grade"], [data-testid*="score"]'
-    ) !== null;
-    return hasGradeKeywords && hasNextBtn || hasGradeKeywords && hasGradeContainer;
-  }
-  function findQuizNextItemButton() {
-    const excludeSelector = '#coursera-helper-hud, header, nav[role="navigation"], [class*="video-player"], [class*="vjs-"], [data-testid*="player"]';
-    const testIdBtn = document.querySelector(
-      'button[data-testid="quiz-next-button"], a[data-testid="quiz-next-button"], button[data-testid="next-item-button"], a[data-testid="next-item-button"]'
-    );
-    if (testIdBtn && !testIdBtn.disabled && !testIdBtn.closest(excludeSelector)) {
-      return testIdBtn;
-    }
-    const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
-    for (const btn of allBtns) {
-      if (btn.closest(excludeSelector)) continue;
-      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") continue;
-      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
-      if (txt === "next item" || txt.startsWith("next item") || txt === "go to next item" || txt.startsWith("go to next item") || txt === "ti\u1EBFp theo" || txt === "b\xE0i ti\u1EBFp theo") {
-        return btn;
-      }
-    }
-    return null;
-  }
-  async function processQuizStep() {
-    showInPageToast("\u{1F9E9} [Auto-Skip] Ph\xE1t hi\u1EC7n Quiz / Assignment! \u0110ang ki\u1EC3m tra...", false, 4e3);
-    await sleep(1e3);
-    if (isQuizResultScreen()) {
-      showInPageToast("\u{1F389} [Auto-Skip] \u0110\xE3 c\xF3 \u0111i\u1EC3m b\xE0i Quiz! \u0110ang chuy\u1EC3n b\xE0i ti\u1EBFp theo...", false, 3e3);
-      const nextBtn = findQuizNextItemButton() || findNextButton();
-      if (nextBtn) {
-        triggerClick(nextBtn);
-        try {
-          nextBtn.click();
-        } catch (e) {
-        }
-        await sleep(2500);
-        return true;
-      }
-      await navigateToNextUncompletedItem();
-      return true;
-    }
-    let startBtn = null;
-    for (let r = 0; r < 4; r++) {
-      startBtn = findStartAssignmentButton();
-      if (startBtn) break;
-      await sleep(500);
-    }
-    if (startBtn) {
-      showInPageToast(`\u{1F680} [Auto-Skip] T\u1EF1 \u0111\u1ED9ng b\u1EA5m "${(startBtn.innerText || "Start Assignment").trim()}" \u0111\u1EC3 v\xE0o l\xE0m b\xE0i!`, false, 4e3);
-      startBtn.scrollIntoView({ behavior: "smooth", block: "center" });
-      await sleep(300);
-      triggerClick(startBtn);
-      try {
-        startBtn.click();
-      } catch (e) {
-      }
-      await sleep(2500);
-      return true;
-    }
-    let containers = getQuestionContainers();
-    if (containers.length > 0) {
-      showInPageToast(`\u26A1 [Auto-Skip] T\xECm th\u1EA5y ${containers.length} c\xE2u h\u1ECFi! B\u1EAFt \u0111\u1EA7u t\u1EF1 \u0111\u1ED9ng gi\u1EA3i v\xE0 n\u1ED9p b\xE0i...`, false, 5e3);
-      const btnSolve = document.getElementById("ch-hud-solvequiz");
-      await triggerZeroClickQuizWorkflow(btnSolve);
-      showInPageToast("\u23F3 [Auto-Skip] \u0110ang ch\u1EDD k\u1EBFt qu\u1EA3 n\u1ED9p b\xE0i...", false, 4e3);
-      for (let w = 0; w < 50; w++) {
-        await sleep(500);
-        const modalSubmitBtn = findSubmitConfirmButton();
-        if (modalSubmitBtn) {
-          showInPageToast('\u{1F680} [Auto-Skip] Ph\xE1t hi\u1EC7n modal "Ready to submit?", \u0111ang b\u1EA5m x\xE1c nh\u1EADn n\u1ED9p b\xE0i...', false, 2500);
-          triggerClick(modalSubmitBtn);
-          try {
-            modalSubmitBtn.click();
-          } catch (e) {
-          }
-          await sleep(1200);
-        }
-        const nextBtn = findQuizNextItemButton() || (isQuizResultScreen() ? findNextButton() : null);
-        if (nextBtn) {
-          showInPageToast('\u{1F389} [Auto-Skip] B\xE0i thi \u0111\xE3 ho\xE0n th\xE0nh! \u0110ang b\u1EA5m "Next item" \u0111\u1EC3 sang b\xE0i ti\u1EBFp theo...', false, 4e3);
-          triggerClick(nextBtn);
-          try {
-            nextBtn.click();
-          } catch (e) {
-          }
-          await sleep(2500);
-          return true;
-        }
-      }
-      await navigateToNextUncompletedItem();
-      return true;
-    }
-    const currentPath = window.location.pathname;
-    if (currentPath.includes("/assignment-submission/") || currentPath.includes("/exam/") || currentPath.includes("/quiz/")) {
-      showInPageToast("\u23F3 [Auto-Skip] \u0110ang \u0111\u1EE3i trang t\u1EA3i b\xE0i t\u1EADp Assignment...", false, 3e3);
-      return true;
-    }
-    return false;
-  }
-  async function executeAutoSkipStep() {
-    if (window._chIsStepRunning) return;
-    window._chIsStepRunning = true;
-    try {
-      if (isCourseFullyCompleted()) {
-        showInPageToast("\u{1F389} Ch\xFAc m\u1EEBng b\u1EA1n \u0111\xE3 ho\xE0n th\xE0nh to\xE0n b\u1ED9 kh\xF3a h\u1ECDc! T\u1EF1 \u0111\u1ED9ng d\u1EEBng Auto-Skip.", false, 8e3);
-        stopAutoSkipLoop();
-        return;
-      }
-      const currentUrlLower = window.location.href.toLowerCase();
-      const path = window.location.pathname;
-      const isQuizUrl = currentUrlLower.includes("/quiz/") || currentUrlLower.includes("/exam/") || currentUrlLower.includes("/assignment/") || currentUrlLower.includes("/assignment-submission/") || currentUrlLower.includes("/ungradedlti/");
-      const hasQuizDOM = getQuestionContainers().length > 0 || findStartAssignmentButton() !== null || isQuizResultScreen();
-      const isQuizPage = isQuizUrl || hasQuizDOM && !path.includes("/supplement/") && !path.includes("/lecture/");
-      if (isQuizPage) {
-        await processQuizStep();
-        return;
-      }
-      if (path.includes("/lecture/")) {
-        await completeCourseraVideo();
-        await sleep(1500);
-        await navigateToNextUncompletedItem();
-        return;
-      }
-      if (path.includes("/supplement/")) {
-        await processReadingStep();
-        return;
-      }
-      if (path.includes("/ungradedWidget/") || currentUrlLower.includes("/ungradedwidget/")) {
-        await processUngradedWidgetStep();
-        return;
-      }
-      await navigateToNextUncompletedItem();
-    } finally {
-      window._chIsStepRunning = false;
-    }
-  }
-  function startAutoSkipLoop() {
-    window._chAutoSkipActive = true;
-    const btnAutoSkip = document.getElementById("ch-hud-autoskip");
-    if (btnAutoSkip) {
-      btnAutoSkip.innerHTML = '<span class="ch-btn-icon">\u{1F6D1}</span><span class="ch-btn-label">D\u1EEBng Auto-Skip</span>';
-      btnAutoSkip.style.setProperty("background", "#ef4444", "important");
-      btnAutoSkip.style.setProperty("color", "#ffffff", "important");
-    }
-    showInPageToast("\u{1F680} \u0110\xE3 b\u1EADt T\u1EF1 \u0110\u1ED9ng Skip Module (K\xE8m R\xE0 So\xE1t To\xE0n B\u1ED9 Kh\xF3a H\u1ECDc)!");
-    executeAutoSkipStep();
-    clearInterval(window._chAutoSkipInterval);
-    window._chAutoSkipInterval = setInterval(() => {
-      if (!window._chAutoSkipActive) {
-        clearInterval(window._chAutoSkipInterval);
-        return;
-      }
-      executeAutoSkipStep();
-    }, 4e3);
-  }
-  function stopAutoSkipLoop() {
-    window._chAutoSkipActive = false;
-    clearInterval(window._chAutoSkipInterval);
-    const btnAutoSkip = document.getElementById("ch-hud-autoskip");
-    if (btnAutoSkip) {
-      btnAutoSkip.innerHTML = '<span class="ch-btn-icon">\u{1F680}</span><span class="ch-btn-label">Auto-Skip Module</span>';
-      btnAutoSkip.style.setProperty("background", "#10b981", "important");
-      btnAutoSkip.style.setProperty("color", "#000000", "important");
-    }
-    showInPageToast("\u{1F6D1} \u0110\xE3 d\u1EEBng T\u1EF1 \u0110\u1ED9ng Skip Module.");
   }
 
   // src/hud/hud.js

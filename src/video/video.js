@@ -634,7 +634,7 @@ export function findQuizNextItemButton() {
 
 export async function processQuizStep() {
   showInPageToast('🧩 [Auto-Skip] Phát hiện Quiz / Assignment! Đang kiểm tra...', false, 4000);
-  await sleep(1000);
+  await sleep(800);
 
   // 1. Kiểm tra nếu đang ở màn hình kết quả điểm ("Your grade: ...")
   if (isQuizResultScreen()) {
@@ -650,33 +650,18 @@ export async function processQuizStep() {
     return true;
   }
 
-  // 2. Kiểm tra nếu đang ở màn hình landing page /assignment-submission/ có nút "Start Assignment" / "Resume" / "Try again"
-  // Thử lặp lại tối đa 4 lần (trong 2 giây) để đợi giao diện Coursera render xong nút
-  let startBtn = null;
-  for (let r = 0; r < 4; r++) {
-    startBtn = findStartAssignmentButton();
-    if (startBtn) break;
-    await sleep(500);
-  }
+  // 2. GỌI TRỰC TIẾP TÍNH NĂNG "GIẢI QUIZ" (triggerZeroClickQuizWorkflow)
+  // triggerZeroClickQuizWorkflow đã tích hợp sẵn:
+  // - Tự kiểm tra nút "Start Assignment" / "Resume" / "Start attempt" và bấm vào làm bài
+  // - Đợi câu hỏi xuất hiện
+  // - Quét câu hỏi trắc nghiệm, gọi Gemini giải và tự tick đáp án
+  // - Tick Coursera Honor Code & nộp bài tự động
+  const btnSolve = document.getElementById('ch-hud-solvequiz') || document.getElementById('ch-btn-solve-quiz');
+  await triggerZeroClickQuizWorkflow(btnSolve);
 
-  if (startBtn) {
-    showInPageToast(`🚀 [Auto-Skip] Tự động bấm "${(startBtn.innerText || 'Start Assignment').trim()}" để vào làm bài!`, false, 4000);
-    startBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    await sleep(300);
-    triggerClick(startBtn);
-    try { startBtn.click(); } catch (e) {}
-    await sleep(2500);
-    return true;
-  }
-
-  // 3. Nếu đang ở trang làm Quiz (có câu hỏi trắc nghiệm)
-  let containers = getQuestionContainers();
-  if (containers.length > 0) {
-    showInPageToast(`⚡ [Auto-Skip] Tìm thấy ${containers.length} câu hỏi! Bắt đầu tự động giải và nộp bài...`, false, 5000);
-    const btnSolve = document.getElementById('ch-hud-solvequiz');
-    await triggerZeroClickQuizWorkflow(btnSolve);
-
-    // Chờ hệ thống nộp bài xong và chờ màn hình kết quả hoặc nút "Next item" xuất hiện
+  // 3. Sau khi giải và nộp bài, chờ xác nhận popup modal và bấm "Next item" để chuyển tiếp
+  const containers = getQuestionContainers();
+  if (containers.length > 0 || isQuizResultScreen()) {
     showInPageToast('⏳ [Auto-Skip] Đang chờ kết quả nộp bài...', false, 4000);
     for (let w = 0; w < 50; w++) {
       await sleep(500);
@@ -706,7 +691,7 @@ export async function processQuizStep() {
   // Nếu đang ở URL /assignment-submission/ hoặc /exam/ mà vẫn chưa thấy nút và chưa có điểm,
   // TUYỆT ĐỐI KHÔNG navigate đi nơi khác để tránh skip mất bài! Hãy kiên nhẫn đợi ở chu kỳ sau.
   const currentPath = window.location.pathname;
-  if (currentPath.includes('/assignment-submission/') || currentPath.includes('/exam/') || currentPath.includes('/quiz/')) {
+  if (currentPath.includes('/assignment-submission/') || currentPath.includes('/exam/') || currentPath.includes('/quiz/') || currentPath.includes('/assignment/')) {
     showInPageToast('⏳ [Auto-Skip] Đang đợi trang tải bài tập Assignment...', false, 3000);
     return true;
   }
