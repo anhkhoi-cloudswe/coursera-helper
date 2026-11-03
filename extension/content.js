@@ -5309,7 +5309,7 @@
         hasExplicitQNum = true;
       } else {
         const cTxt = container.innerText || '';
-        const matchNum = cTxt.match(/(?:Question\s+(\d+)|\b(\d+)\.|\bCâu\s+(\d+))/i);
+        const matchNum = cTxt.match(/(?:Question\s*(\d+)|(?:^|[\r\n\s\u00A0])(\d+)[\.\:\)][\s\u00A0]|\bCâu\s*(\d+))/i);
         if (matchNum) {
           qNum = parseInt(matchNum[1] || matchNum[2] || matchNum[3], 10);
           hasExplicitQNum = true;
@@ -5603,11 +5603,7 @@
       // Quét từ trên xuống: Skip câu Bot đã giải trước đó; Giữ lại câu chưa làm hoặc do Người dùng chọn để Bot kiểm định lại
       const currentContainers = getQuestionContainers();
       const needSolvingInBatch = batchQuestions.filter(q => {
-        const qNum = q.q;
-        const c = currentContainers.find(ct => {
-          const txt = ct.innerText || '';
-          return new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\s+|\\bCâu\\s+${qNum}\\b)`, 'i').test(txt);
-        }) || currentContainers[qNum - 1];
+        const c = findQuestionContainerByNumber(currentContainers, q.q);
         return needsBotSolving(q, c);
       });
 
@@ -5679,9 +5675,12 @@
           const subQs = refreshedSubQs.length > 0 ? refreshedSubQs : requestedSubQs;
 
           // Cuộn trực tiếp tới câu đang giải vét để đảm bảo React mount đầy đủ options và bot không bị kẹt
-          const curTargetContainer = getQuestionContainers()[(subQs[0].q - 1)] || null;
+          const targetContainersNow = getQuestionContainers();
+          const curTargetContainer = findQuestionContainerByNumber(targetContainersNow, subQs[0].q);
           if (curTargetContainer) {
             curTargetContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            curTargetContainer.style.outline = '2px dashed #f59e0b';
+            curTargetContainer.style.borderRadius = '8px';
             await new Promise(r => setTimeout(r, 300));
           }
           showInPageToast(`🎯 Tập trung giải dứt điểm câu: ${subQs.map(q => q.q).join(', ')}...`);
