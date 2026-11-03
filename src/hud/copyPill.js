@@ -1,5 +1,5 @@
 // src/hud/copyPill.js
-// Floating "Copy Sạch" pill button on text selection
+// Auto-Clean on Copy (Ctrl+C / Context Menu) & Floating "Copy Sạch" pill button on text selection
 
 import { cleanCourseraQuiz } from '../ai/prompt.js';
 import { showInPageToast } from './toast.js';
@@ -7,6 +7,37 @@ import { showInPageToast } from './toast.js';
 let floatingCopyBtn = null;
 
 export function initFloatingCopyPill() {
+  // 1. TỰ ĐỘNG CAN THIỆP SỰ KIỆN COPY (Ctrl+C, Chuột phải -> Copy) TRỰC TIẾP TRÊN TRANG
+  document.addEventListener('copy', (event) => {
+    // Không can thiệp nếu người dùng đang gõ/copy trong ô input, textarea hoặc contenteditable của side panel / chat
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
+      // Ngoại trừ nếu đang ở trong đề bài coursera thì vẫn cho phép
+      if (!activeEl.closest('#coursera-helper-sidepanel')) {
+        // Cho qua bình thường nếu là ô nhập liệu người dùng tự gõ
+        // Tuy nhiên nếu có bôi đen bẫy thì vẫn lọc
+      }
+    }
+
+    const selection = window.getSelection();
+    const rawText = selection ? selection.toString() : '';
+    if (!rawText || rawText.trim().length === 0) return;
+
+    // Kiểm tra xem đoạn copy có chứa rác hoặc câu hỏi quiz Coursera hay không
+    const cleaned = cleanCourseraQuiz(rawText);
+
+    // Nếu văn bản sau khi lọc khác với văn bản gốc (tức là đã lọc được bẫy prompt injection, 1 point, honor code, ...)
+    // hoặc chứa từ khóa bẫy
+    if (cleaned !== rawText || /You are a helpful AI assistant|Coursera Honor Code|\b\d+\s*points?\b/i.test(rawText)) {
+      if (event.clipboardData) {
+        event.clipboardData.setData('text/plain', cleaned);
+        event.preventDefault();
+        showInPageToast('✨ Coursera Helper: Đã tự động lọc sạch bẫy Prompt Injection & lưu văn bản sạch vào Clipboard!');
+      }
+    }
+  });
+
+  // 2. NÚT NỔI "Copy sạch" KHI BÔI ĐEN VĂN BẢN
   function createFloatingCopyBtn() {
     if (floatingCopyBtn) return;
     floatingCopyBtn = document.createElement('button');
@@ -117,3 +148,4 @@ export function initFloatingCopyPill() {
     }
   });
 }
+

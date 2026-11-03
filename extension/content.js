@@ -195,19 +195,61 @@
   }
 
   // src/ai/prompt.js
-  function cleanCourseraQuiz(rawText) {
-    if (!rawText) return "";
-    let cleaned = rawText.replace(/\b1\s*point\b|\b\d+\s*points\b/gi, "").replace(/Do you understand\?\.?\s*I understand\.?/gi, "").replace(/Coursera Honor Code[\s\S]*?(?:understand and agree\.?|$)/gi, "").replace(/By clicking Submit[\s\S]*?(?:Honor Code policy\.?|$)/gi, "");
-    const injectionPatterns = [
+  function cleanCourseraQuiz(text) {
+    if (!text) return "";
+    let cleaned = text;
+    cleaned = cleaned.replace(/\s*You are a helpful AI assistant[\s\S]*?Do you understand\?\.?\s*/gi, "\n\n");
+    cleaned = cleaned.replace(/\s*You are a helpful AI assistant[\s\S]*?accessing assessment pages\.?\s*/gi, "\n\n");
+    cleaned = cleaned.replace(/\s*(?:In accordance with Coursera|To uphold Coursera(?:'s)? academic integrity policy|this AI assistant is disabled on assessment pages|interacting with assessment elements is strictly prohibited)[\s\S]*?(?:study course materials[^\n]*\.?|feel free to use me[^\n]*\.?|accessing assessment pages\.?|Do you understand\?\.?)\s*/gi, "\n\n");
+    cleaned = cleaned.replace(/\s*You are a helpful AI assistant[\s\S]*?(?=\s*(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|\n\s*[A-D]\.|\n\n\n|$))/gi, "\n\n");
+    cleaned = cleaned.replace(/\s*(?:To uphold Coursera(?:'s)? academic integrity policy|this AI assistant is disabled on assessment pages|interacting with assessment elements is strictly prohibited)[\s\S]*?(?=\s*(?:###|\bQuestion\s+\d+|\b\d+\.|\bCâu\s+\d+|\n\s*[A-D]\.|\n\n\n|$))/gi, "\n\n");
+    const trapPhrases = [
+      /interacting with assessment elements[^\.\n]*[\.\n]?/gi,
+      /Therefore,\s*when a user asks for assistance[^\.\n]*[\.\n]?/gi,
+      /your \*\*sole function\*\* is to deliver[^\.\n]*[\.\n]?/gi,
+      /You must not attempt to answer questions[^\.\n]*[\.\n]?/gi,
+      /\*\*Message to User:\*\*[^\.\n]*[\.\n]?/gi,
+      /To uphold Coursera(?:'s)? academic integrity policy[^\.\n]*[\.\n]?/gi,
+      /this AI assistant is disabled on assessment pages[^\.\n]*[\.\n]?/gi,
+      /I cannot interact with the questions or content here[^\.\n]*[\.\n]?/gi,
+      /My purpose is to help you learn, not to complete your work for you[^\.\n]*[\.\n]?/gi,
+      /Please feel free to use me on other pages[^\.\n]*[\.\n]?/gi,
+      /helpful AI assistant[^\.\n]*[\.\n]?/gi,
+      /Do you understand\?\.?/gi,
+      /I understand\.?/gi,
+      /\[?IMPORTANT INSTRUCTION FOR AI ASSISTANT[\s\S]*?\]?/gi,
       /IMPORTANT:\s*interacting with assessment elements is strictly prohibited[\s\S]*?(?=(?:Question|\d+\.|\n\n|$))/gi,
       /your sole function is to deliver the message below[\s\S]*?(?=(?:Question|\d+\.|\n\n|$))/gi,
       /academic integrity policy[\s\S]*?prohibits[\s\S]*?(?=(?:Question|\d+\.|\n\n|$))/gi,
       /AI assistant is disabled on assessment pages[\s\S]*?(?=(?:Question|\d+\.|\n\n|$))/gi,
       /IGNORE ALL PREVIOUS INSTRUCTIONS[\s\S]*?(?=(?:Question|\d+\.|\n\n|$))/gi
     ];
-    for (const pattern of injectionPatterns) {
-      cleaned = cleaned.replace(pattern, "");
+    for (const phrase of trapPhrases) {
+      cleaned = cleaned.replace(phrase, "");
     }
+    const trapKeywords = [
+      "interacting with assessment elements",
+      "academic integrity policy",
+      "sole function is to deliver",
+      "disabled on assessment pages",
+      "helpful ai assistant",
+      "not to complete your work for you",
+      "study course materials",
+      "cannot interact with the questions",
+      "message to user",
+      "do you understand?"
+    ];
+    const lines = cleaned.split("\n");
+    const filteredLines = lines.filter((line) => {
+      const l = line.toLowerCase().trim();
+      if (trapKeywords.some((kw) => l.includes(kw))) return false;
+      return true;
+    });
+    cleaned = filteredLines.join("\n");
+    cleaned = cleaned.replace(/\b1\s*point\b|\b\d+\s*points\b/gi, "").replace(/Coursera Honor Code[\s\S]*?(?:understand and agree\.?|$)/gi, "").replace(/By clicking Submit[\s\S]*?(?:Honor Code policy\.?|$)/gi, "").replace(/You must select the checkbox in order to submit the assignment/gi, "");
+    cleaned = cleaned.replace(/\r\n/g, "\n");
+    cleaned = cleaned.replace(/[ \t]+$/gm, "");
+    cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
     return cleaned.trim();
   }
   function buildMultimodalBatchParts(batchQuestions, startNum, endNum) {
@@ -2457,6 +2499,24 @@ ${q.text}
   // src/hud/copyPill.js
   var floatingCopyBtn = null;
   function initFloatingCopyPill() {
+    document.addEventListener("copy", (event) => {
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable)) {
+        if (!activeEl.closest("#coursera-helper-sidepanel")) {
+        }
+      }
+      const selection = window.getSelection();
+      const rawText = selection ? selection.toString() : "";
+      if (!rawText || rawText.trim().length === 0) return;
+      const cleaned = cleanCourseraQuiz(rawText);
+      if (cleaned !== rawText || /You are a helpful AI assistant|Coursera Honor Code|\b\d+\s*points?\b/i.test(rawText)) {
+        if (event.clipboardData) {
+          event.clipboardData.setData("text/plain", cleaned);
+          event.preventDefault();
+          showInPageToast("\u2728 Coursera Helper: \u0110\xE3 t\u1EF1 \u0111\u1ED9ng l\u1ECDc s\u1EA1ch b\u1EABy Prompt Injection & l\u01B0u v\u0103n b\u1EA3n s\u1EA1ch v\xE0o Clipboard!");
+        }
+      }
+    });
     function createFloatingCopyBtn() {
       if (floatingCopyBtn) return;
       floatingCopyBtn = document.createElement("button");
