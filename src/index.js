@@ -2,6 +2,7 @@
 // Chrome Extension Content Script Entry Point
 
 import { createFloatingHUD, updateHUDForCurrentPage } from './hud/hud.js';
+import { initFloatingCopyPill } from './hud/copyPill.js';
 import { triggerZeroClickQuizWorkflow } from './quiz/solver.js';
 import { completeCourseraVideo, startAutoSkipLoop, stopAutoSkipLoop } from './video/video.js';
 import { runAutoPeerReviewWorkflow } from './peer/peer.js';
@@ -23,13 +24,15 @@ import { isExtensionContextValid } from './utils/dom.js';
   }
   injectMainWorldScript();
 
-  // 2. Tạo Floating HUD khi DOM sẵn sàng
+  // 2. Tạo Floating HUD & Floating Copy Pill khi DOM sẵn sàng
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       createFloatingHUD();
+      initFloatingCopyPill();
     });
   } else {
     createFloatingHUD();
+    initFloatingCopyPill();
   }
 
   // 3. SPA URL Watcher (Coursera chuyển trang không reload)
