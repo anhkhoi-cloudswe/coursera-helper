@@ -205,7 +205,33 @@ export function getAllCourseItemsFromLeftNav() {
   });
 }
 
-// Tìm bài học cần làm (chưa hoàn thành hoặc bị failed) trên cả Sidebar lẫn Trang Tổng Quan Overview
+export function findOverviewGetStartedButton() {
+  // Tìm nút "Get started" hoặc "Start" trên trang tổng quan khóa học (/home/module/, /home/week/)
+  const candidateButtons = Array.from(document.querySelectorAll(
+    'button, a[role="button"], span[role="button"], a.cds-button, button.cds-button, [class*="cds-button"]'
+  ));
+
+  for (const btn of candidateButtons) {
+    if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
+    const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+    if (txt === 'get started' || txt === 'bắt đầu' || txt === 'continue' || txt === 'tiếp tục học') {
+      // Đảm bảo nút đang hiển thị
+      const rect = btn.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        return btn;
+      }
+    }
+  }
+
+  // Fallback: Tìm qua selector chính xác người dùng cung cấp
+  const specificBtn = document.querySelector('.cds-button-label');
+  if (specificBtn && specificBtn.textContent.trim().toLowerCase() === 'get started') {
+    const parentBtn = specificBtn.closest('button, a, [role="button"], span.cds-608') || specificBtn;
+    return parentBtn;
+  }
+
+  return null;
+}
 export function findFirstItemNeedingWork() {
   const currentPath = window.location.pathname;
   const currentCourseId = getCourseraCourseId();
@@ -225,6 +251,7 @@ export function findFirstItemNeedingWork() {
   }
 
   // 2. Tầng 2: Rà soát trên Trang Tổng Quan Khóa Học (Course Material, Home, Week, Module Overview như trong hình!)
+  // CHỈ tìm các bài học cụ thể trong nội dung module (/lecture/, /supplement/, /assignment-submission/, ...)
   const overviewLinks = Array.from(document.querySelectorAll(
     'a[href*="/lecture/"], a[href*="/supplement/"], a[href*="/assignment-submission/"], a[href*="/quiz/"], a[href*="/exam/"], a[href*="/ungradedWidget/"]'
   )).filter(a => {
@@ -250,12 +277,25 @@ export function findFirstItemNeedingWork() {
     }
   }
 
-  // 3. Tầng 3: Nếu đang ở trang tổng quan và các bài trong module hiện tại đã xong, tìm Module tiếp theo trên menu trái
-  const nextModuleLink = Array.from(document.querySelectorAll('a[href*="/home/week/"], a[href*="/home/module/"]')).find(a => {
+  // 3. Tầng 3: TUYỆT ĐỐI KHÔNG tự click chuyển đổi giữa các tab Module menu trái (/home/module/)
+  // để tránh việc chuyển qua lại vòng lặp vô tận (Module 1 <-> Module 2) khi chưa hoàn thành bài học.
+  // Thay vào đó, nếu trong module hiện tại đã tick hết 100%, mới tìm Module kế tiếp (chỉ số module lớn hơn).
+  const currentModuleMatch = currentPath.match(/\/home\/module\/(\d+)/);
+  const currentModuleNum = currentModuleMatch ? parseInt(currentModuleMatch[1], 10) : 1;
+
+  const nextModuleLink = Array.from(document.querySelectorAll('a[href*="/home/module/"]')).find(a => {
+    const href = a.getAttribute('href') || '';
+    const mMatch = href.match(/\/home\/module\/(\d+)/);
+    if (!mMatch) return false;
+    const mNum = parseInt(mMatch[1], 10);
+    // Chỉ chọn module tiếp theo (chỉ số lớn hơn module hiện tại)
+    if (mNum <= currentModuleNum) return false;
+
     const text = (a.innerText || '').toLowerCase();
     const isCompleted = a.querySelector('[data-testid="learn-item-success-icon"]') || text.includes('completed');
-    return !isCompleted && !a.href.includes(currentPath);
+    return !isCompleted;
   });
+
   if (nextModuleLink) {
     return {
       element: nextModuleLink,
@@ -271,6 +311,21 @@ export function findFirstItemNeedingWork() {
 }
 
 export function isCourseFullyCompleted() {
+  const currentPath = window.location.pathname;
+
+  // Nếu đang ở trong một bài học cụ thể (/lecture/, /supplement/, /assignment-submission/, /exam/, /quiz/)
+  // thì tuyệt đối KHÔNG coi là hoàn thành khóa học!
+  if (
+    currentPath.includes('/lecture/') ||
+    currentPath.includes('/supplement/') ||
+    currentPath.includes('/assignment-submission/') ||
+    currentPath.includes('/exam/') ||
+    currentPath.includes('/quiz/') ||
+    currentPath.includes('/ungradedWidget/')
+  ) {
+    return false;
+  }
+
   const bodyText = (document.body.innerText || '').toLowerCase();
 
   // Kiểm tra thông báo hoàn thành toàn bộ khóa học
@@ -310,7 +365,22 @@ export async function navigateToNextUncompletedItem() {
     return true;
   }
 
-  // 2. Tìm bài học cần làm (chưa làm hoặc bị failed) trên Left-Nav hoặc Overview
+  // 2. Nếu đang ở Trang Tổng Quan (/home/module/, /home/week/), ƯU TIÊN tìm và bấm nút "Get started" / "Continue"
+  const currentPath = window.location.pathname;
+  if (currentPath.includes('/home/module/') || currentPath.includes('/home/week/') || currentPath.includes('/home/welcome')) {
+    const getStartedBtn = findOverviewGetStartedButton();
+    if (getStartedBtn) {
+      showInPageToast('🚀 [Tổng Quan] Phát hiện nút "Get started"! Đang bấm để vào học ngay...', false, 3500);
+      getStartedBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await sleep(300);
+      triggerClick(getStartedBtn);
+      try { getStartedBtn.click(); } catch (e) {}
+      await sleep(2500);
+      return true;
+    }
+  }
+
+  // 3. Tìm bài học cần làm (chưa làm hoặc bị failed) trên Left-Nav hoặc Overview
   const targetItem = findFirstItemNeedingWork();
   if (targetItem && targetItem.element) {
     showInPageToast(`📌 [Rà soát Bài Học] Phát hiện bài cần làm: "${targetItem.title}". Đang chuyển đến...`, false, 3500);
@@ -322,7 +392,7 @@ export async function navigateToNextUncompletedItem() {
     return true;
   }
 
-  // 3. Fallback: Nút Next thông thường trong bài học
+  // 4. Fallback: Nút Next thông thường trong bài học
   const nextBtn = findNextButton();
   if (nextBtn) {
     showInPageToast('➡️ Đang bấm chuyển bài tiếp theo...', false, 2500);
@@ -471,6 +541,16 @@ export function findStartAssignmentButton() {
 }
 
 export function isQuizResultScreen() {
+  const currentPath = window.location.pathname;
+  // Chỉ kiểm tra màn hình kết quả điểm nếu đang ở các URL liên quan đến Quiz / Assignment
+  if (
+    !currentPath.includes('/assignment-submission/') &&
+    !currentPath.includes('/exam/') &&
+    !currentPath.includes('/quiz/')
+  ) {
+    return false;
+  }
+
   const bodyText = (document.body.innerText || '').toLowerCase();
   const hasGradeKeywords = (
     bodyText.includes('your grade:') ||
@@ -603,12 +683,16 @@ export async function executeAutoSkipStep() {
     const path = window.location.pathname;
 
     // 1. Kiểm tra màn hình Quiz / Assignment / Exam hoặc landing page /assignment-submission/
-    const isQuizPage = path.includes('/assignment-submission/') ||
-                       path.includes('/exam/') ||
-                       path.includes('/quiz/') ||
-                       getQuestionContainers().length > 0 ||
+    const isExplicitQuizUrl = path.includes('/assignment-submission/') ||
+                             path.includes('/exam/') ||
+                             path.includes('/quiz/');
+
+    const hasQuizDOM = getQuestionContainers().length > 0 ||
                        findStartAssignmentButton() !== null ||
                        isQuizResultScreen();
+
+    // Nếu không phải URL quiz mà là /supplement/ hoặc /lecture/, TUYỆT ĐỐI không gọi processQuizStep trừ khi có question container thực tế
+    const isQuizPage = isExplicitQuizUrl || (hasQuizDOM && !path.includes('/supplement/') && !path.includes('/lecture/'));
 
     if (isQuizPage) {
       await processQuizStep();

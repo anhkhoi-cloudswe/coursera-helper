@@ -1686,6 +1686,27 @@ ${q.text}
       };
     });
   }
+  function findOverviewGetStartedButton() {
+    const candidateButtons = Array.from(document.querySelectorAll(
+      'button, a[role="button"], span[role="button"], a.cds-button, button.cds-button, [class*="cds-button"]'
+    ));
+    for (const btn of candidateButtons) {
+      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
+      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+      if (txt === "get started" || txt === "b\u1EAFt \u0111\u1EA7u" || txt === "continue" || txt === "ti\u1EBFp t\u1EE5c h\u1ECDc") {
+        const rect = btn.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          return btn;
+        }
+      }
+    }
+    const specificBtn = document.querySelector(".cds-button-label");
+    if (specificBtn && specificBtn.textContent.trim().toLowerCase() === "get started") {
+      const parentBtn = specificBtn.closest('button, a, [role="button"], span.cds-608') || specificBtn;
+      return parentBtn;
+    }
+    return null;
+  }
   function findFirstItemNeedingWork() {
     const currentPath = window.location.pathname;
     const currentCourseId = getCourseraCourseId();
@@ -1721,10 +1742,17 @@ ${q.text}
         };
       }
     }
-    const nextModuleLink = Array.from(document.querySelectorAll('a[href*="/home/week/"], a[href*="/home/module/"]')).find((a) => {
+    const currentModuleMatch = currentPath.match(/\/home\/module\/(\d+)/);
+    const currentModuleNum = currentModuleMatch ? parseInt(currentModuleMatch[1], 10) : 1;
+    const nextModuleLink = Array.from(document.querySelectorAll('a[href*="/home/module/"]')).find((a) => {
+      const href = a.getAttribute("href") || "";
+      const mMatch = href.match(/\/home\/module\/(\d+)/);
+      if (!mMatch) return false;
+      const mNum = parseInt(mMatch[1], 10);
+      if (mNum <= currentModuleNum) return false;
       const text = (a.innerText || "").toLowerCase();
       const isCompleted = a.querySelector('[data-testid="learn-item-success-icon"]') || text.includes("completed");
-      return !isCompleted && !a.href.includes(currentPath);
+      return !isCompleted;
     });
     if (nextModuleLink) {
       return {
@@ -1739,6 +1767,10 @@ ${q.text}
     return null;
   }
   function isCourseFullyCompleted() {
+    const currentPath = window.location.pathname;
+    if (currentPath.includes("/lecture/") || currentPath.includes("/supplement/") || currentPath.includes("/assignment-submission/") || currentPath.includes("/exam/") || currentPath.includes("/quiz/") || currentPath.includes("/ungradedWidget/")) {
+      return false;
+    }
     const bodyText = (document.body.innerText || "").toLowerCase();
     const hasCourseEndGreeting = bodyText.includes("now that you have completed this course") || bodyText.includes("congratulations on completing course") || bodyText.includes("ch\xFAc m\u1EEBng b\u1EA1n \u0111\xE3 ho\xE0n th\xE0nh kh\xF3a h\u1ECDc") || bodyText.includes("ready to move on to the next course");
     const pendingItem = findFirstItemNeedingWork();
@@ -1762,6 +1794,22 @@ ${q.text}
       showInPageToast("\u{1F389} CH\xDAC M\u1EEANG B\u1EA0N \u0110\xC3 HO\xC0N TH\xC0NH 100% TO\xC0N B\u1ED8 KH\xD3A H\u1ECCC! T\u1EF1 \u0111\u1ED9ng d\u1EEBng Auto-Skip.", false, 8e3);
       stopAutoSkipLoop();
       return true;
+    }
+    const currentPath = window.location.pathname;
+    if (currentPath.includes("/home/module/") || currentPath.includes("/home/week/") || currentPath.includes("/home/welcome")) {
+      const getStartedBtn = findOverviewGetStartedButton();
+      if (getStartedBtn) {
+        showInPageToast('\u{1F680} [T\u1ED5ng Quan] Ph\xE1t hi\u1EC7n n\xFAt "Get started"! \u0110ang b\u1EA5m \u0111\u1EC3 v\xE0o h\u1ECDc ngay...', false, 3500);
+        getStartedBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+        await sleep(300);
+        triggerClick(getStartedBtn);
+        try {
+          getStartedBtn.click();
+        } catch (e) {
+        }
+        await sleep(2500);
+        return true;
+      }
     }
     const targetItem = findFirstItemNeedingWork();
     if (targetItem && targetItem.element) {
@@ -1892,6 +1940,10 @@ ${q.text}
     return null;
   }
   function isQuizResultScreen() {
+    const currentPath = window.location.pathname;
+    if (!currentPath.includes("/assignment-submission/") && !currentPath.includes("/exam/") && !currentPath.includes("/quiz/")) {
+      return false;
+    }
     const bodyText = (document.body.innerText || "").toLowerCase();
     const hasGradeKeywords = bodyText.includes("your grade:") || bodyText.includes("your grade") || bodyText.includes("\u0111i\u1EC3m c\u1EE7a b\u1EA1n:") || bodyText.includes("your latest:") || bodyText.includes("your highest:") || bodyText.includes("to pass you need") || bodyText.includes("we keep your highest score") || bodyText.includes("nice work") || bodyText.includes("passed");
     const hasNextBtn = findQuizNextItemButton() !== null;
@@ -1993,7 +2045,9 @@ ${q.text}
         return;
       }
       const path = window.location.pathname;
-      const isQuizPage = path.includes("/assignment-submission/") || path.includes("/exam/") || path.includes("/quiz/") || getQuestionContainers().length > 0 || findStartAssignmentButton() !== null || isQuizResultScreen();
+      const isExplicitQuizUrl = path.includes("/assignment-submission/") || path.includes("/exam/") || path.includes("/quiz/");
+      const hasQuizDOM = getQuestionContainers().length > 0 || findStartAssignmentButton() !== null || isQuizResultScreen();
+      const isQuizPage = isExplicitQuizUrl || hasQuizDOM && !path.includes("/supplement/") && !path.includes("/lecture/");
       if (isQuizPage) {
         await processQuizStep();
         return;
