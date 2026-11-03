@@ -5,6 +5,7 @@ import { showInPageToast } from '../hud/toast.js';
 import { triggerClick, sleep } from '../utils/dom.js';
 import { getQuestionContainers } from '../quiz/containers.js';
 import { triggerZeroClickQuizWorkflow } from '../quiz/solver.js';
+import { findSubmitConfirmButton } from '../quiz/submit.js';
 
 export function getCourseraCSRFToken() {
   const match = document.cookie.match(/(?:^|;\s*)CSRF3-Token=([^;]+)/);
@@ -345,6 +346,16 @@ export async function processQuizStep() {
     showInPageToast('⏳ [Auto-Skip] Đang chờ kết quả nộp bài...', false, 4000);
     for (let w = 0; w < 50; w++) {
       await sleep(500);
+
+      // Nếu modal xác nhận "Ready to submit?" vẫn còn hiển thị trên màn hình -> Click xác nhận ngay lập tức!
+      const modalSubmitBtn = findSubmitConfirmButton();
+      if (modalSubmitBtn) {
+        showInPageToast('🚀 [Auto-Skip] Phát hiện modal "Ready to submit?", đang bấm xác nhận nộp bài...', false, 2500);
+        triggerClick(modalSubmitBtn);
+        try { modalSubmitBtn.click(); } catch (e) {}
+        await sleep(1200);
+      }
+
       const nextBtn = findQuizNextItemButton() || (isQuizResultScreen() ? findNextButton() : null);
       if (nextBtn) {
         showInPageToast('🎉 [Auto-Skip] Bài thi đã hoàn thành! Đang bấm "Next item" để sang bài tiếp theo...', false, 4000);

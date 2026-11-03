@@ -84,8 +84,9 @@ export function findQuizSubmitButton(onlyEnabled = false) {
     const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
     const isSaveDraft = txt.includes('draft') || txt.includes('nháp');
     const isBack = txt.includes('back') || txt.includes('quay lại');
+    const isCancel = txt.includes('cancel') || txt.includes('hủy');
     const isSubmit = txt === 'submit' || txt === 'nộp bài' || txt.startsWith('submit ') || txt.includes('submit assignment');
-    if (!isSubmit || isSaveDraft || isBack) return false;
+    if (!isSubmit || isSaveDraft || isBack || isCancel) return false;
     if (btn.offsetWidth === 0 || btn.offsetHeight === 0) return false;
     if (onlyEnabled && (btn.disabled || btn.getAttribute('aria-disabled') === 'true')) return false;
     return true;
@@ -95,102 +96,97 @@ export function findQuizSubmitButton(onlyEnabled = false) {
 }
 
 export function findSubmitConfirmButton(originalSubmitBtn = null) {
-  // 1. Tìm container modal xác nhận
-  const dialogs = Array.from(document.querySelectorAll(
-    '[role="dialog"], [aria-modal="true"], .rc-Dialog, .cds-Modal, [data-testid*="dialog"], [data-testid*="modal"], div[class*="dialog" i], div[class*="modal" i]'
-  ));
-
-  let visibleDialog = dialogs.find(d => {
-    if (d.closest('#coursera-helper-hud')) return false;
-    return d.offsetHeight > 30 && window.getComputedStyle(d).display !== 'none';
+  // Chiến lược 1: Tìm nút Submit nằm trong cùng Modal với nút "Cancel"
+  // Mọi modal popup của Coursera ("Ready to submit?") đều có 1 nút "Submit" đứng cạnh 1 nút "Cancel"
+  const allCancelBtns = Array.from(document.querySelectorAll('button, [role="button"]')).filter(b => {
+    if (b.closest('#coursera-helper-hud, header, nav')) return false;
+    const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+    return t === 'cancel' || t === 'hủy';
   });
 
-  if (!visibleDialog) {
-    const candidates = Array.from(document.querySelectorAll('*')).filter(el => {
-      if (el.tagName === 'BODY' || el.tagName === 'HTML' || el.children.length === 0) return false;
-      if (el.closest('#coursera-helper-hud, header, nav')) return false;
-      const text = (el.innerText || '').toLowerCase();
-      return (
-        text.includes('ready to submit') ||
-        text.includes('submit review') ||
-        text.includes('submit your review') ||
-        text.includes('sẵn sàng nộp bài') ||
-        text.includes('are you sure you want to submit') ||
-        text.includes('xác nhận nộp')
-      );
-    });
-    if (candidates.length > 0) {
-      candidates.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
-      visibleDialog = candidates[0].closest('div[class*="dialog" i], div[class*="modal" i], [role="dialog"], [aria-modal="true"]') || candidates[0];
-    }
-  }
-
-  if (visibleDialog) {
-    const modalText = (visibleDialog.innerText || '').toLowerCase();
-    // Nếu modal cảnh báo thiếu câu hỏi: tuyệt đối không bấm nộp
-    if (modalText.includes('missing or invalid answers') || modalText.includes('incomplete or invalid') || modalText.includes('chưa hoàn thành')) {
-      showInPageToast('⛔ Coursera phát hiện còn câu hỏi chưa làm! Đang hủy nộp để bảo vệ điểm của bạn...', true, 8000);
-      const cancelBtn = Array.from(visibleDialog.querySelectorAll('button, [role="button"]')).find(b => {
-        const t = (b.innerText || '').toLowerCase();
-        return t.includes('cancel') || t.includes('hủy') || t.includes('quay lại') || t.includes('back');
+  for (const cancelBtn of allCancelBtns) {
+    // Leo lên container chung của modal (khoảng 1-4 cấp cha)
+    let p = cancelBtn.parentElement;
+    for (let depth = 0; depth < 5 && p && p !== document.body; depth++) {
+      const modalBtns = Array.from(p.querySelectorAll('button, [role="button"]'));
+      const submitInModal = modalBtns.find(b => {
+        if (b === cancelBtn) return false;
+        if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
+        if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
+        const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+        return (
+          txt === 'submit' ||
+          txt === 'nộp bài' ||
+          txt === 'yes, submit' ||
+          txt === 'submit quiz' ||
+          txt === 'submit assignment' ||
+          txt.includes('submit') ||
+          txt.includes('nộp')
+        );
       });
-      if (cancelBtn) {
-        triggerClick(cancelBtn);
+
+      if (submitInModal) {
+        return submitInModal;
       }
-      return null;
+      p = p.parentElement;
     }
   }
 
-  // 2. Tìm nút Submit xác nhận bên trong modal hoặc trên document
-  const searchRoot = visibleDialog || document;
-  const allBtns = Array.from(searchRoot.querySelectorAll('button, [role="button"], a.cds-button, [data-testid*="submit"], [data-testid*="confirm"]'));
+  // Chiến lược 2: Tìm theo container modal chứa text "ready to submit" hoặc "sure you want to submit"
+  const candidates = Array.from(document.querySelectorAll('*')).filter(el => {
+    if (el.tagName === 'BODY' || el.tagName === 'HTML' || el.children.length === 0) return false;
+    if (el.closest('#coursera-helper-hud, header, nav')) return false;
+    const text = (el.innerText || '').toLowerCase();
+    return (
+      text.includes('ready to submit') ||
+      text.includes('are you sure you want to submit') ||
+      text.includes('sẵn sàng nộp bài') ||
+      text.includes('xác nhận nộp')
+    );
+  });
 
-  for (const btn of allBtns) {
-    if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
-    if (originalSubmitBtn && (btn === originalSubmitBtn || originalSubmitBtn.contains(btn))) continue;
-    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') continue;
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
+    // Leo lên thẻ cha bao bọc cả header lẫn button của modal
+    let modalBox = candidates[0];
+    while (modalBox && modalBox !== document.body && modalBox.querySelectorAll('button').length < 2) {
+      modalBox = modalBox.parentElement;
+    }
 
-    const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-    if (txt.includes('cancel') || txt.includes('hủy') || txt.includes('close') || txt === 'back' || txt.includes('quay lại')) continue;
+    if (modalBox) {
+      const modalBtns = Array.from(modalBox.querySelectorAll('button, [role="button"]'));
+      const submitBtn = modalBtns.find(b => {
+        if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
+        if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
+        const t = (b.innerText || b.textContent || '').trim().toLowerCase();
+        if (t.includes('cancel') || t.includes('hủy') || t.includes('back')) return false;
+        return t.includes('submit') || t.includes('nộp') || t.includes('confirm') || t.includes('yes');
+      });
+      if (submitBtn) return submitBtn;
+    }
+  }
 
-    if (
+  // Chiến lược 3: Tìm bất kỳ button nào có chữ "Submit" hiển thị trên trang mà KHÁC originalSubmitBtn
+  const allSubmitBtns = Array.from(document.querySelectorAll('button, [role="button"]')).filter(b => {
+    if (b.closest('#coursera-helper-hud, header, nav')) return false;
+    if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
+    if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
+    if (b.offsetWidth === 0 || b.offsetHeight === 0) return false;
+    const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+    if (txt.includes('cancel') || txt.includes('draft') || txt.includes('nháp') || txt.includes('back')) return false;
+    return (
       txt === 'submit' ||
-      txt === 'submit quiz' ||
       txt === 'submit assignment' ||
-      txt === 'submit review' ||
       txt === 'yes, submit' ||
       txt === 'nộp bài' ||
-      txt === 'confirm' ||
-      txt === 'xác nhận' ||
       txt.includes('submit') ||
       txt.includes('nộp')
-    ) {
-      return btn;
-    }
-  }
+    );
+  });
 
-  // 3. Fallback cho CDS Modal: Nút primary không phải nút Cancel
-  if (visibleDialog) {
-    const modalBtns = Array.from(visibleDialog.querySelectorAll('button, [role="button"]'));
-    const primaryBtn = modalBtns.find(b => {
-      if (b.closest('#coursera-helper-hud')) return false;
-      if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
-      if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
-      const t = (b.innerText || '').toLowerCase().trim();
-      if (t.includes('cancel') || t.includes('hủy') || t.includes('close')) return false;
-      const cls = (b.className || '').toLowerCase();
-      return cls.includes('primary') || b.getAttribute('data-testid')?.includes('submit') || b.getAttribute('data-testid')?.includes('confirm');
-    });
-    if (primaryBtn) return primaryBtn;
-
-    const nonCancel = modalBtns.find(b => {
-      if (b.closest('#coursera-helper-hud')) return false;
-      if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
-      if (b.disabled || b.getAttribute('aria-disabled') === 'true') return false;
-      const t = (b.innerText || '').toLowerCase().trim();
-      return t && !t.includes('cancel') && !t.includes('hủy') && !t.includes('close') && b.offsetHeight > 20;
-    });
-    if (nonCancel) return nonCancel;
+  // Nút submit trong modal thường xuất hiện sau cùng trên DOM
+  if (allSubmitBtns.length > 0) {
+    return allSubmitBtns[allSubmitBtns.length - 1];
   }
 
   return null;
@@ -295,14 +291,13 @@ export async function completeHonorCodeAndSubmitQuiz() {
     confirmBtn.style.boxShadow = '0 0 16px rgba(59, 130, 246, 0.85)';
 
     // Kích hoạt click đầy đủ SyntheticEvent + native click
-    ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
-      confirmBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
-    });
+    triggerClick(confirmBtn);
     try {
       confirmBtn.click();
     } catch (e) {}
 
-    showInPageToast('🎉 ĐÃ BẤM XÁC NHẬN SUBMIT MODAL THÀNH CÔNG! Bài thi đã được nộp hoàn tất!');
+    showInPageToast('🎉 ĐÃ BẤM XÁC NHẬN SUBMIT MODAL THÀNH CÔNG! Đang nộp bài...', false, 4000);
+    await sleep(1000);
     return true;
   } else {
     // Dự phòng tìm lại lần nữa

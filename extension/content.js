@@ -825,8 +825,9 @@ ${q.text}
       const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
       const isSaveDraft = txt.includes("draft") || txt.includes("nh\xE1p");
       const isBack = txt.includes("back") || txt.includes("quay l\u1EA1i");
+      const isCancel = txt.includes("cancel") || txt.includes("h\u1EE7y");
       const isSubmit = txt === "submit" || txt === "n\u1ED9p b\xE0i" || txt.startsWith("submit ") || txt.includes("submit assignment");
-      if (!isSubmit || isSaveDraft || isBack) return false;
+      if (!isSubmit || isSaveDraft || isBack || isCancel) return false;
       if (btn.offsetWidth === 0 || btn.offsetHeight === 0) return false;
       if (onlyEnabled && (btn.disabled || btn.getAttribute("aria-disabled") === "true")) return false;
       return true;
@@ -834,71 +835,63 @@ ${q.text}
     return submitBtns[submitBtns.length - 1] || null;
   }
   function findSubmitConfirmButton(originalSubmitBtn = null) {
-    const dialogs = Array.from(document.querySelectorAll(
-      '[role="dialog"], [aria-modal="true"], .rc-Dialog, .cds-Modal, [data-testid*="dialog"], [data-testid*="modal"], div[class*="dialog" i], div[class*="modal" i]'
-    ));
-    let visibleDialog = dialogs.find((d) => {
-      if (d.closest("#coursera-helper-hud")) return false;
-      return d.offsetHeight > 30 && window.getComputedStyle(d).display !== "none";
+    const allCancelBtns = Array.from(document.querySelectorAll('button, [role="button"]')).filter((b) => {
+      if (b.closest("#coursera-helper-hud, header, nav")) return false;
+      const t = (b.innerText || b.textContent || "").trim().toLowerCase();
+      return t === "cancel" || t === "h\u1EE7y";
     });
-    if (!visibleDialog) {
-      const candidates = Array.from(document.querySelectorAll("*")).filter((el) => {
-        if (el.tagName === "BODY" || el.tagName === "HTML" || el.children.length === 0) return false;
-        if (el.closest("#coursera-helper-hud, header, nav")) return false;
-        const text = (el.innerText || "").toLowerCase();
-        return text.includes("ready to submit") || text.includes("submit review") || text.includes("submit your review") || text.includes("s\u1EB5n s\xE0ng n\u1ED9p b\xE0i") || text.includes("are you sure you want to submit") || text.includes("x\xE1c nh\u1EADn n\u1ED9p");
-      });
-      if (candidates.length > 0) {
-        candidates.sort((a, b) => (a.innerText || "").length - (b.innerText || "").length);
-        visibleDialog = candidates[0].closest('div[class*="dialog" i], div[class*="modal" i], [role="dialog"], [aria-modal="true"]') || candidates[0];
-      }
-    }
-    if (visibleDialog) {
-      const modalText = (visibleDialog.innerText || "").toLowerCase();
-      if (modalText.includes("missing or invalid answers") || modalText.includes("incomplete or invalid") || modalText.includes("ch\u01B0a ho\xE0n th\xE0nh")) {
-        showInPageToast("\u26D4 Coursera ph\xE1t hi\u1EC7n c\xF2n c\xE2u h\u1ECFi ch\u01B0a l\xE0m! \u0110ang h\u1EE7y n\u1ED9p \u0111\u1EC3 b\u1EA3o v\u1EC7 \u0111i\u1EC3m c\u1EE7a b\u1EA1n...", true, 8e3);
-        const cancelBtn = Array.from(visibleDialog.querySelectorAll('button, [role="button"]')).find((b) => {
-          const t = (b.innerText || "").toLowerCase();
-          return t.includes("cancel") || t.includes("h\u1EE7y") || t.includes("quay l\u1EA1i") || t.includes("back");
+    for (const cancelBtn of allCancelBtns) {
+      let p = cancelBtn.parentElement;
+      for (let depth = 0; depth < 5 && p && p !== document.body; depth++) {
+        const modalBtns = Array.from(p.querySelectorAll('button, [role="button"]'));
+        const submitInModal = modalBtns.find((b) => {
+          if (b === cancelBtn) return false;
+          if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
+          if (b.disabled || b.getAttribute("aria-disabled") === "true") return false;
+          const txt = (b.innerText || b.textContent || "").trim().toLowerCase();
+          return txt === "submit" || txt === "n\u1ED9p b\xE0i" || txt === "yes, submit" || txt === "submit quiz" || txt === "submit assignment" || txt.includes("submit") || txt.includes("n\u1ED9p");
         });
-        if (cancelBtn) {
-          triggerClick(cancelBtn);
+        if (submitInModal) {
+          return submitInModal;
         }
-        return null;
+        p = p.parentElement;
       }
     }
-    const searchRoot = visibleDialog || document;
-    const allBtns = Array.from(searchRoot.querySelectorAll('button, [role="button"], a.cds-button, [data-testid*="submit"], [data-testid*="confirm"]'));
-    for (const btn of allBtns) {
-      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
-      if (originalSubmitBtn && (btn === originalSubmitBtn || originalSubmitBtn.contains(btn))) continue;
-      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") continue;
-      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
-      if (txt.includes("cancel") || txt.includes("h\u1EE7y") || txt.includes("close") || txt === "back" || txt.includes("quay l\u1EA1i")) continue;
-      if (txt === "submit" || txt === "submit quiz" || txt === "submit assignment" || txt === "submit review" || txt === "yes, submit" || txt === "n\u1ED9p b\xE0i" || txt === "confirm" || txt === "x\xE1c nh\u1EADn" || txt.includes("submit") || txt.includes("n\u1ED9p")) {
-        return btn;
+    const candidates = Array.from(document.querySelectorAll("*")).filter((el) => {
+      if (el.tagName === "BODY" || el.tagName === "HTML" || el.children.length === 0) return false;
+      if (el.closest("#coursera-helper-hud, header, nav")) return false;
+      const text = (el.innerText || "").toLowerCase();
+      return text.includes("ready to submit") || text.includes("are you sure you want to submit") || text.includes("s\u1EB5n s\xE0ng n\u1ED9p b\xE0i") || text.includes("x\xE1c nh\u1EADn n\u1ED9p");
+    });
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => (a.innerText || "").length - (b.innerText || "").length);
+      let modalBox = candidates[0];
+      while (modalBox && modalBox !== document.body && modalBox.querySelectorAll("button").length < 2) {
+        modalBox = modalBox.parentElement;
+      }
+      if (modalBox) {
+        const modalBtns = Array.from(modalBox.querySelectorAll('button, [role="button"]'));
+        const submitBtn = modalBtns.find((b) => {
+          if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
+          if (b.disabled || b.getAttribute("aria-disabled") === "true") return false;
+          const t = (b.innerText || b.textContent || "").trim().toLowerCase();
+          if (t.includes("cancel") || t.includes("h\u1EE7y") || t.includes("back")) return false;
+          return t.includes("submit") || t.includes("n\u1ED9p") || t.includes("confirm") || t.includes("yes");
+        });
+        if (submitBtn) return submitBtn;
       }
     }
-    if (visibleDialog) {
-      const modalBtns = Array.from(visibleDialog.querySelectorAll('button, [role="button"]'));
-      const primaryBtn = modalBtns.find((b) => {
-        if (b.closest("#coursera-helper-hud")) return false;
-        if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
-        if (b.disabled || b.getAttribute("aria-disabled") === "true") return false;
-        const t = (b.innerText || "").toLowerCase().trim();
-        if (t.includes("cancel") || t.includes("h\u1EE7y") || t.includes("close")) return false;
-        const cls = (b.className || "").toLowerCase();
-        return cls.includes("primary") || b.getAttribute("data-testid")?.includes("submit") || b.getAttribute("data-testid")?.includes("confirm");
-      });
-      if (primaryBtn) return primaryBtn;
-      const nonCancel = modalBtns.find((b) => {
-        if (b.closest("#coursera-helper-hud")) return false;
-        if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
-        if (b.disabled || b.getAttribute("aria-disabled") === "true") return false;
-        const t = (b.innerText || "").toLowerCase().trim();
-        return t && !t.includes("cancel") && !t.includes("h\u1EE7y") && !t.includes("close") && b.offsetHeight > 20;
-      });
-      if (nonCancel) return nonCancel;
+    const allSubmitBtns = Array.from(document.querySelectorAll('button, [role="button"]')).filter((b) => {
+      if (b.closest("#coursera-helper-hud, header, nav")) return false;
+      if (originalSubmitBtn && (b === originalSubmitBtn || originalSubmitBtn.contains(b))) return false;
+      if (b.disabled || b.getAttribute("aria-disabled") === "true") return false;
+      if (b.offsetWidth === 0 || b.offsetHeight === 0) return false;
+      const txt = (b.innerText || b.textContent || "").trim().toLowerCase();
+      if (txt.includes("cancel") || txt.includes("draft") || txt.includes("nh\xE1p") || txt.includes("back")) return false;
+      return txt === "submit" || txt === "submit assignment" || txt === "yes, submit" || txt === "n\u1ED9p b\xE0i" || txt.includes("submit") || txt.includes("n\u1ED9p");
+    });
+    if (allSubmitBtns.length > 0) {
+      return allSubmitBtns[allSubmitBtns.length - 1];
     }
     return null;
   }
@@ -976,14 +969,13 @@ ${q.text}
       await sleep(200);
       confirmBtn.style.outline = "3px solid #3b82f6";
       confirmBtn.style.boxShadow = "0 0 16px rgba(59, 130, 246, 0.85)";
-      ["pointerdown", "mousedown", "pointerup", "mouseup", "click"].forEach((evt) => {
-        confirmBtn.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
-      });
+      triggerClick(confirmBtn);
       try {
         confirmBtn.click();
       } catch (e) {
       }
-      showInPageToast("\u{1F389} \u0110\xC3 B\u1EA4M X\xC1C NH\u1EACN SUBMIT MODAL TH\xC0NH C\xD4NG! B\xE0i thi \u0111\xE3 \u0111\u01B0\u1EE3c n\u1ED9p ho\xE0n t\u1EA5t!");
+      showInPageToast("\u{1F389} \u0110\xC3 B\u1EA4M X\xC1C NH\u1EACN SUBMIT MODAL TH\xC0NH C\xD4NG! \u0110ang n\u1ED9p b\xE0i...", false, 4e3);
+      await sleep(1e3);
       return true;
     } else {
       await sleep(600);
@@ -1759,6 +1751,16 @@ ${q.text}
       showInPageToast("\u23F3 [Auto-Skip] \u0110ang ch\u1EDD k\u1EBFt qu\u1EA3 n\u1ED9p b\xE0i...", false, 4e3);
       for (let w = 0; w < 50; w++) {
         await sleep(500);
+        const modalSubmitBtn = findSubmitConfirmButton();
+        if (modalSubmitBtn) {
+          showInPageToast('\u{1F680} [Auto-Skip] Ph\xE1t hi\u1EC7n modal "Ready to submit?", \u0111ang b\u1EA5m x\xE1c nh\u1EADn n\u1ED9p b\xE0i...', false, 2500);
+          triggerClick(modalSubmitBtn);
+          try {
+            modalSubmitBtn.click();
+          } catch (e) {
+          }
+          await sleep(1200);
+        }
         const nextBtn = findQuizNextItemButton() || (isQuizResultScreen() ? findNextButton() : null);
         if (nextBtn) {
           showInPageToast('\u{1F389} [Auto-Skip] B\xE0i thi \u0111\xE3 ho\xE0n th\xE0nh! \u0110ang b\u1EA5m "Next item" \u0111\u1EC3 sang b\xE0i ti\u1EBFp theo...', false, 4e3);
