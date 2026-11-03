@@ -1534,12 +1534,24 @@ ${q.text}
   }
 
   // src/video/video.js
+  function getCourseraCourseId() {
+    const scripts = document.querySelectorAll("script");
+    for (const s of scripts) {
+      const text = s.textContent || "";
+      const m = text.match(/"courseId":\s*"?([a-zA-Z0-9_-]+)"?/);
+      if (m) return m[1];
+    }
+    const courseMatch = window.location.pathname.match(/\/learn\/([^\/]+)/);
+    if (courseMatch) return courseMatch[1];
+    return null;
+  }
   function findVideos() {
     return Array.from(document.querySelectorAll("video"));
   }
   function findMarkAsCompletedButton() {
     const buttons = Array.from(document.querySelectorAll('button, a[role="button"]'));
     const markBtn = buttons.find((b) => {
+      if (b.closest("#coursera-helper-hud, header, nav")) return false;
       const text = (b.innerText || b.textContent || "").trim().toLowerCase();
       const isCompleted = text.includes("mark as completed") || text.includes("marked as completed") || text.includes("\u0111\xE1nh d\u1EA5u \u0111\xE3 ho\xE0n th\xE0nh") || text.includes("complete and continue") || text.includes("ho\xE0n th\xE0nh v\xE0 ti\u1EBFp t\u1EE5c");
       const isVisible = b.offsetWidth > 0 && b.offsetHeight > 0;
@@ -1548,25 +1560,129 @@ ${q.text}
     return markBtn || null;
   }
   function findNextButton() {
+    const currentCourseId = getCourseraCourseId();
     const buttons = Array.from(document.querySelectorAll('button, a[role="button"], a[data-testid*="next"], button[data-testid*="next"]'));
     const nextBtn = buttons.find((b) => {
+      if (b.closest('#coursera-helper-hud, header, nav, [data-testid="left-nav"]')) return false;
+      if (b.tagName === "A") {
+        const href = b.getAttribute("href") || "";
+        if (href.startsWith("http") && !href.includes(window.location.host)) return false;
+        if (currentCourseId && href.includes("/learn/") && !href.includes(`/learn/${currentCourseId}/`)) {
+          return false;
+        }
+      }
       const text = (b.innerText || b.textContent || "").trim().toLowerCase();
       const testId = (b.getAttribute("data-testid") || "").toLowerCase();
       const ariaLabel = (b.getAttribute("aria-label") || "").toLowerCase();
-      const isNext = text.includes("next") || text.includes("ti\u1EBFp theo") || text.includes("go to next item") || testId.includes("next") || ariaLabel.includes("next");
+      if (text.includes("next course") || text.includes("kh\xF3a h\u1ECDc ti\u1EBFp theo") || text.includes("move on to the next course")) {
+        return false;
+      }
+      const isNext = text === "next item" || text.startsWith("next item") || text === "go to next item" || text.startsWith("go to next item") || text === "next" || text === "ti\u1EBFp theo" || testId.includes("next-item") || testId === "next-button" || ariaLabel === "next item" || ariaLabel.startsWith("go to next item");
       const isVisible = b.offsetWidth > 0 && b.offsetHeight > 0;
       return isNext && isVisible && !b.disabled;
     });
     return nextBtn || null;
   }
-  function findNextSidebarLink() {
-    const currentPath = window.location.pathname;
-    const links = Array.from(document.querySelectorAll('a[href*="/learn/"]'));
-    const currentIdx = links.findIndex((a) => a.pathname === currentPath || a.href.includes(currentPath));
-    if (currentIdx !== -1 && currentIdx < links.length - 1) {
-      return links[currentIdx + 1];
+  function expandAllLeftNavModules() {
+    const leftNav = document.querySelector('div[data-testid="left-nav"]');
+    if (!leftNav) return;
+    const collapsedHeaders = Array.from(leftNav.querySelectorAll('button.cds-AccordionHeader-button[aria-expanded="false"]'));
+    for (const btn of collapsedHeaders) {
+      if (btn.querySelector('[data-testid*="daily-goals"]') || btn.id?.includes("daily-goals")) continue;
+      try {
+        btn.click();
+      } catch (e) {
+      }
     }
-    return null;
+  }
+  function getAllCourseItemsFromLeftNav() {
+    expandAllLeftNavModules();
+    const leftNav = document.querySelector('div[data-testid="left-nav"]');
+    if (!leftNav) return [];
+    const currentCourseId = getCourseraCourseId();
+    const allLinks = Array.from(leftNav.querySelectorAll('a[href*="/learn/"]')).filter((a) => {
+      const href = a.getAttribute("href") || "";
+      if (href.includes("/home/welcome") || href.includes("/home/week")) return false;
+      if (currentCourseId && !href.includes(`/learn/${currentCourseId}/`)) return false;
+      return true;
+    });
+    const currentPath = window.location.pathname;
+    return allLinks.map((link) => {
+      const ariaLabel = (link.getAttribute("aria-label") || "").toLowerCase();
+      const titleEl = link.querySelector(".css-u7fh1q, .css-1n1j66c, .outline-single-item-content-wrapper") || link;
+      const title = (titleEl.innerText || titleEl.textContent || "").trim();
+      const hasSuccessIcon = !!link.querySelector('[data-testid="learn-item-success-icon"]');
+      const isCompleted = hasSuccessIcon || ariaLabel.includes("completed") || ariaLabel.includes("\u0111\xE3 ho\xE0n th\xE0nh");
+      const isCurrent = link.closest('li[data-current-item="true"]') !== null || link.classList.contains("css-jxphqf") || link.pathname === currentPath || link.href.includes(currentPath);
+      return {
+        element: link,
+        href: link.getAttribute("href"),
+        title,
+        isCompleted,
+        isCurrent
+      };
+    });
+  }
+  function isCourseFullyCompleted() {
+    const bodyText = (document.body.innerText || "").toLowerCase();
+    const hasCourseEndGreeting = bodyText.includes("now that you have completed this course") || bodyText.includes("congratulations on completing course") || bodyText.includes("ch\xFAc m\u1EEBng b\u1EA1n \u0111\xE3 ho\xE0n th\xE0nh kh\xF3a h\u1ECDc") || bodyText.includes("ready to move on to the next course");
+    const items = getAllCourseItemsFromLeftNav();
+    if (items.length > 0) {
+      const uncompleted = items.filter((it) => !it.isCompleted);
+      if (uncompleted.length === 0) return true;
+      const lastItem = items[items.length - 1];
+      if (lastItem.isCurrent && lastItem.isCompleted && hasCourseEndGreeting) {
+        return true;
+      }
+    }
+    if (hasCourseEndGreeting && bodyText.includes("completed") && !document.querySelector("video")) {
+      return true;
+    }
+    return false;
+  }
+  async function navigateToNextUncompletedItem() {
+    if (isCourseFullyCompleted()) {
+      showInPageToast("\u{1F389} CH\xDAC M\u1EEANG B\u1EA0N \u0110\xC3 HO\xC0N TH\xC0NH 100% KH\xD3A H\u1ECCC! T\u1EF1 \u0111\u1ED9ng d\u1EEBng Auto-Skip.", false, 8e3);
+      stopAutoSkipLoop();
+      return true;
+    }
+    const items = getAllCourseItemsFromLeftNav();
+    if (items.length > 0) {
+      const currentIdx = items.findIndex((it) => it.isCurrent);
+      let nextUncompleted = null;
+      if (currentIdx !== -1) {
+        nextUncompleted = items.slice(currentIdx + 1).find((it) => !it.isCompleted);
+      }
+      if (!nextUncompleted) {
+        nextUncompleted = items.find((it) => !it.isCompleted);
+      }
+      if (nextUncompleted && nextUncompleted.element) {
+        showInPageToast(`\u{1F4CC} [R\xE0 so\xE1t Left-Nav] Ph\xE1t hi\u1EC7n b\xE0i ch\u01B0a xong: "${nextUncompleted.title}". \u0110ang chuy\u1EC3n \u0111\u1EBFn...`, false, 3500);
+        nextUncompleted.element.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        await sleep(300);
+        triggerClick(nextUncompleted.element);
+        try {
+          nextUncompleted.element.click();
+        } catch (e) {
+        }
+        await sleep(2500);
+        return true;
+      }
+    }
+    const nextBtn = findNextButton();
+    if (nextBtn) {
+      showInPageToast("\u27A1\uFE0F \u0110ang b\u1EA5m chuy\u1EC3n b\xE0i ti\u1EBFp theo...", false, 2500);
+      triggerClick(nextBtn);
+      try {
+        nextBtn.click();
+      } catch (e) {
+      }
+      await sleep(2e3);
+      return true;
+    }
+    showInPageToast("\u{1F3C1} Kh\xF4ng c\xF2n b\xE0i h\u1ECDc n\xE0o c\u1EA7n l\xE0m ti\u1EBFp. T\u1EF1 \u0111\u1ED9ng d\u1EEBng Auto-Skip!", false, 5e3);
+    stopAutoSkipLoop();
+    return false;
   }
   function unlockVideo(video) {
     if (!video) return;
@@ -1636,16 +1752,7 @@ ${q.text}
       showInPageToast("\u2705 \u0110\xE3 \u0111\xE1nh d\u1EA5u ho\xE0n th\xE0nh b\xE0i \u0111\u1ECDc!");
       await sleep(800);
     }
-    const nextBtn = findNextButton() || findNextSidebarLink();
-    if (nextBtn) {
-      triggerClick(nextBtn);
-      try {
-        nextBtn.click();
-      } catch (e) {
-      }
-      return true;
-    }
-    return false;
+    await navigateToNextUncompletedItem();
   }
   async function processUngradedWidgetStep() {
     showInPageToast("\u{1F9E9} \u0110ang x\u1EED l\xFD Ungraded Widget...");
@@ -1658,16 +1765,7 @@ ${q.text}
       }
       await sleep(600);
     }
-    const nextBtn = findNextButton() || findNextSidebarLink();
-    if (nextBtn) {
-      triggerClick(nextBtn);
-      try {
-        nextBtn.click();
-      } catch (e) {
-      }
-      return true;
-    }
-    return false;
+    await navigateToNextUncompletedItem();
   }
   function findStartAssignmentButton() {
     if (getQuestionContainers().length > 0) return null;
@@ -1720,9 +1818,9 @@ ${q.text}
     showInPageToast("\u{1F9E9} [Auto-Skip] Ph\xE1t hi\u1EC7n Quiz / Assignment! \u0110ang ki\u1EC3m tra...", false, 4e3);
     await sleep(1e3);
     if (isQuizResultScreen()) {
+      showInPageToast("\u{1F389} [Auto-Skip] \u0110\xE3 c\xF3 \u0111i\u1EC3m b\xE0i Quiz! \u0110ang chuy\u1EC3n b\xE0i ti\u1EBFp theo...", false, 3e3);
       const nextBtn = findQuizNextItemButton() || findNextButton();
       if (nextBtn) {
-        showInPageToast('\u{1F389} [Auto-Skip] \u0110\xE3 c\xF3 k\u1EBFt qu\u1EA3 b\xE0i Quiz! B\u1EA5m "Next item" \u0111\u1EC3 chuy\u1EC3n ti\u1EBFp...', false, 4e3);
         triggerClick(nextBtn);
         try {
           nextBtn.click();
@@ -1731,6 +1829,8 @@ ${q.text}
         await sleep(2500);
         return true;
       }
+      await navigateToNextUncompletedItem();
+      return true;
     }
     const startBtn = findStartAssignmentButton();
     if (startBtn) {
@@ -1773,6 +1873,7 @@ ${q.text}
           return true;
         }
       }
+      await navigateToNextUncompletedItem();
       return true;
     }
     return false;
@@ -1781,6 +1882,11 @@ ${q.text}
     if (window._chIsStepRunning) return;
     window._chIsStepRunning = true;
     try {
+      if (isCourseFullyCompleted()) {
+        showInPageToast("\u{1F389} Ch\xFAc m\u1EEBng b\u1EA1n \u0111\xE3 ho\xE0n th\xE0nh to\xE0n b\u1ED9 kh\xF3a h\u1ECDc! T\u1EF1 \u0111\u1ED9ng d\u1EEBng Auto-Skip.", false, 8e3);
+        stopAutoSkipLoop();
+        return;
+      }
       const path = window.location.pathname;
       const isQuizPage = path.includes("/assignment-submission/") || path.includes("/exam/") || path.includes("/quiz/") || getQuestionContainers().length > 0 || findStartAssignmentButton() !== null || isQuizResultScreen();
       if (isQuizPage) {
@@ -1790,14 +1896,7 @@ ${q.text}
       if (path.includes("/lecture/")) {
         await completeCourseraVideo();
         await sleep(1500);
-        const nextBtn2 = findNextButton() || findNextSidebarLink();
-        if (nextBtn2) {
-          triggerClick(nextBtn2);
-          try {
-            nextBtn2.click();
-          } catch (e) {
-          }
-        }
+        await navigateToNextUncompletedItem();
         return;
       }
       if (path.includes("/supplement/")) {
@@ -1808,21 +1907,14 @@ ${q.text}
         await processUngradedWidgetStep();
         return;
       }
-      const nextBtn = findNextButton() || findNextSidebarLink();
-      if (nextBtn) {
-        triggerClick(nextBtn);
-        try {
-          nextBtn.click();
-        } catch (e) {
-        }
-      }
+      await navigateToNextUncompletedItem();
     } finally {
       window._chIsStepRunning = false;
     }
   }
   function startAutoSkipLoop() {
     window._chAutoSkipActive = true;
-    showInPageToast("\u{1F680} \u0110\xE3 b\u1EADt T\u1EF1 \u0110\u1ED9ng Skip Module (K\xE8m Gi\u1EA3i Quiz & N\u1ED9p B\xE0i)!");
+    showInPageToast("\u{1F680} \u0110\xE3 b\u1EADt T\u1EF1 \u0110\u1ED9ng Skip Module (K\xE8m R\xE0 So\xE1t Left-Nav To\xE0n Di\u1EC7n)!");
     executeAutoSkipStep();
     clearInterval(window._chAutoSkipInterval);
     window._chAutoSkipInterval = setInterval(() => {
@@ -1836,6 +1928,11 @@ ${q.text}
   function stopAutoSkipLoop() {
     window._chAutoSkipActive = false;
     clearInterval(window._chAutoSkipInterval);
+    const btnAutoSkip = document.getElementById("ch-hud-autoskip");
+    if (btnAutoSkip) {
+      btnAutoSkip.innerHTML = '<span class="ch-btn-icon">\u{1F680}</span><span class="ch-btn-label">Auto-Skip Module</span>';
+      btnAutoSkip.style.background = "#10b981";
+    }
     showInPageToast("\u{1F6D1} \u0110\xE3 d\u1EEBng T\u1EF1 \u0110\u1ED9ng Skip Module.");
   }
 

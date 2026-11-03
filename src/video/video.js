@@ -1,5 +1,5 @@
 // src/video/video.js
-// Video playback acceleration, bypass, reading auto-completion, and auto-skip module engine (with Quiz Solver integration)
+// Video acceleration, reading completion, left-nav comprehensive audit, quiz solver integration, and course completion auto-stop
 
 import { showInPageToast } from '../hud/toast.js';
 import { triggerClick, sleep } from '../utils/dom.js';
@@ -68,6 +68,7 @@ export function findVideos() {
 export function findMarkAsCompletedButton() {
   const buttons = Array.from(document.querySelectorAll('button, a[role="button"]'));
   const markBtn = buttons.find(b => {
+    if (b.closest('#coursera-helper-hud, header, nav')) return false;
     const text = (b.innerText || b.textContent || '').trim().toLowerCase();
     const isCompleted = text.includes('mark as completed') ||
                         text.includes('marked as completed') ||
@@ -81,29 +82,180 @@ export function findMarkAsCompletedButton() {
 }
 
 export function findNextButton() {
+  const currentCourseId = getCourseraCourseId();
   const buttons = Array.from(document.querySelectorAll('button, a[role="button"], a[data-testid*="next"], button[data-testid*="next"]'));
+
   const nextBtn = buttons.find(b => {
+    if (b.closest('#coursera-helper-hud, header, nav, [data-testid="left-nav"]')) return false;
+
+    // Tuyệt đối không click vào link ra ngoài khóa học khác (như link giới thiệu course mới ở cuối trang)
+    if (b.tagName === 'A') {
+      const href = b.getAttribute('href') || '';
+      if (href.startsWith('http') && !href.includes(window.location.host)) return false;
+      if (currentCourseId && href.includes('/learn/') && !href.includes(`/learn/${currentCourseId}/`)) {
+        return false; // Link dẫn sang khóa học khác -> bỏ qua!
+      }
+    }
+
     const text = (b.innerText || b.textContent || '').trim().toLowerCase();
     const testId = (b.getAttribute('data-testid') || '').toLowerCase();
     const ariaLabel = (b.getAttribute('aria-label') || '').toLowerCase();
-    const isNext = text.includes('next') || text.includes('tiếp theo') ||
-                   text.includes('go to next item') ||
-                   testId.includes('next') || ariaLabel.includes('next');
+
+    // Bỏ qua các text quảng cáo hoặc chuyển khóa học
+    if (text.includes('next course') || text.includes('khóa học tiếp theo') || text.includes('move on to the next course')) {
+      return false;
+    }
+
+    const isNext = text === 'next item' || text.startsWith('next item') ||
+                   text === 'go to next item' || text.startsWith('go to next item') ||
+                   text === 'next' || text === 'tiếp theo' ||
+                   testId.includes('next-item') || testId === 'next-button' ||
+                   ariaLabel === 'next item' || ariaLabel.startsWith('go to next item');
+
     const isVisible = b.offsetWidth > 0 && b.offsetHeight > 0;
     return isNext && isVisible && !b.disabled;
   });
+
   return nextBtn || null;
 }
 
-export function findNextSidebarLink() {
-  const currentPath = window.location.pathname;
-  const links = Array.from(document.querySelectorAll('a[href*="/learn/"]'));
-  const currentIdx = links.findIndex(a => a.pathname === currentPath || a.href.includes(currentPath));
+// ==========================================
+// RÀ SOÁT SIDEBAR LEFT-NAV (data-testid="left-nav")
+// ==========================================
 
-  if (currentIdx !== -1 && currentIdx < links.length - 1) {
-    return links[currentIdx + 1];
+export function expandAllLeftNavModules() {
+  const leftNav = document.querySelector('div[data-testid="left-nav"]');
+  if (!leftNav) return;
+
+  const collapsedHeaders = Array.from(leftNav.querySelectorAll('button.cds-AccordionHeader-button[aria-expanded="false"]'));
+  for (const btn of collapsedHeaders) {
+    if (btn.querySelector('[data-testid*="daily-goals"]') || btn.id?.includes('daily-goals')) continue;
+    try {
+      btn.click();
+    } catch (e) {}
   }
-  return null;
+}
+
+export function getAllCourseItemsFromLeftNav() {
+  expandAllLeftNavModules();
+
+  const leftNav = document.querySelector('div[data-testid="left-nav"]');
+  if (!leftNav) return [];
+
+  const currentCourseId = getCourseraCourseId();
+  const allLinks = Array.from(leftNav.querySelectorAll('a[href*="/learn/"]')).filter(a => {
+    const href = a.getAttribute('href') || '';
+    if (href.includes('/home/welcome') || href.includes('/home/week')) return false;
+    if (currentCourseId && !href.includes(`/learn/${currentCourseId}/`)) return false;
+    return true;
+  });
+
+  const currentPath = window.location.pathname;
+
+  return allLinks.map(link => {
+    const ariaLabel = (link.getAttribute('aria-label') || '').toLowerCase();
+    const titleEl = link.querySelector('.css-u7fh1q, .css-1n1j66c, .outline-single-item-content-wrapper') || link;
+    const title = (titleEl.innerText || titleEl.textContent || '').trim();
+
+    const hasSuccessIcon = !!link.querySelector('[data-testid="learn-item-success-icon"]');
+    const isCompleted = hasSuccessIcon ||
+                        ariaLabel.includes('completed') ||
+                        ariaLabel.includes('đã hoàn thành');
+
+    const isCurrent = link.closest('li[data-current-item="true"]') !== null ||
+                      link.classList.contains('css-jxphqf') ||
+                      link.pathname === currentPath ||
+                      link.href.includes(currentPath);
+
+    return {
+      element: link,
+      href: link.getAttribute('href'),
+      title,
+      isCompleted,
+      isCurrent
+    };
+  });
+}
+
+export function isCourseFullyCompleted() {
+  const bodyText = (document.body.innerText || '').toLowerCase();
+
+  // Kiểm tra thông báo hoàn thành toàn bộ khóa học
+  const hasCourseEndGreeting = (
+    bodyText.includes('now that you have completed this course') ||
+    bodyText.includes('congratulations on completing course') ||
+    bodyText.includes('chúc mừng bạn đã hoàn thành khóa học') ||
+    bodyText.includes('ready to move on to the next course')
+  );
+
+  const items = getAllCourseItemsFromLeftNav();
+  if (items.length > 0) {
+    const uncompleted = items.filter(it => !it.isCompleted);
+    // Nếu không còn bài nào chưa hoàn thành
+    if (uncompleted.length === 0) return true;
+    // Nếu đang ở bài cuối cùng và có dấu hiệu hoàn thành
+    const lastItem = items[items.length - 1];
+    if (lastItem.isCurrent && lastItem.isCompleted && hasCourseEndGreeting) {
+      return true;
+    }
+  }
+
+  if (hasCourseEndGreeting && bodyText.includes('completed') && !document.querySelector('video')) {
+    return true;
+  }
+
+  return false;
+}
+
+export async function navigateToNextUncompletedItem() {
+  // 1. Kiểm tra an toàn: Nếu toàn bộ khóa học đã hoàn thành -> DỪNG NGAY!
+  if (isCourseFullyCompleted()) {
+    showInPageToast('🎉 CHÚC MỪNG BẠN ĐÃ HOÀN THÀNH 100% KHÓA HỌC! Tự động dừng Auto-Skip.', false, 8000);
+    stopAutoSkipLoop();
+    return true;
+  }
+
+  // 2. Rà soát danh sách bài học trên sidebar left-nav
+  const items = getAllCourseItemsFromLeftNav();
+  if (items.length > 0) {
+    const currentIdx = items.findIndex(it => it.isCurrent);
+
+    // Ưu tiên 2.1: Tìm bài chưa hoàn thành tiếp theo phía dưới bài hiện tại
+    let nextUncompleted = null;
+    if (currentIdx !== -1) {
+      nextUncompleted = items.slice(currentIdx + 1).find(it => !it.isCompleted);
+    }
+
+    // Ưu tiên 2.2: Nếu phía dưới không còn, rà soát lại từ đầu để gom các bài bị bỏ sót phía trên
+    if (!nextUncompleted) {
+      nextUncompleted = items.find(it => !it.isCompleted);
+    }
+
+    if (nextUncompleted && nextUncompleted.element) {
+      showInPageToast(`📌 [Rà soát Left-Nav] Phát hiện bài chưa xong: "${nextUncompleted.title}". Đang chuyển đến...`, false, 3500);
+      nextUncompleted.element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      await sleep(300);
+      triggerClick(nextUncompleted.element);
+      try { nextUncompleted.element.click(); } catch (e) {}
+      await sleep(2500);
+      return true;
+    }
+  }
+
+  // 3. Fallback: Nút Next thông thường trong bài học
+  const nextBtn = findNextButton();
+  if (nextBtn) {
+    showInPageToast('➡️ Đang bấm chuyển bài tiếp theo...', false, 2500);
+    triggerClick(nextBtn);
+    try { nextBtn.click(); } catch (e) {}
+    await sleep(2000);
+    return true;
+  }
+
+  // 4. Nếu không còn bài nào và không có nút next -> Khóa học đã xong, dừng lại
+  showInPageToast('🏁 Không còn bài học nào cần làm tiếp. Tự động dừng Auto-Skip!', false, 5000);
+  stopAutoSkipLoop();
+  return false;
 }
 
 export function unlockVideo(video) {
@@ -177,14 +329,8 @@ export async function processReadingStep() {
     await sleep(800);
   }
 
-  const nextBtn = findNextButton() || findNextSidebarLink();
-  if (nextBtn) {
-    triggerClick(nextBtn);
-    try { nextBtn.click(); } catch (e) {}
-    return true;
-  }
-
-  return false;
+  // Dùng bộ rà soát Left-Nav để chuyển bài chắc chắn không bỏ sót
+  await navigateToNextUncompletedItem();
 }
 
 export async function processUngradedWidgetStep() {
@@ -196,13 +342,7 @@ export async function processUngradedWidgetStep() {
     await sleep(600);
   }
 
-  const nextBtn = findNextButton() || findNextSidebarLink();
-  if (nextBtn) {
-    triggerClick(nextBtn);
-    try { nextBtn.click(); } catch (e) {}
-    return true;
-  }
-  return false;
+  await navigateToNextUncompletedItem();
 }
 
 // ==========================================
@@ -210,10 +350,8 @@ export async function processUngradedWidgetStep() {
 // ==========================================
 
 export function findStartAssignmentButton() {
-  // Nếu đã có câu hỏi trắc nghiệm trên DOM thì không tìm nút Start nữa
   if (getQuestionContainers().length > 0) return null;
 
-  // 1. Data-testid / test-hook của Coursera
   const byTestId = document.querySelector(
     'button[data-testid*="start"], a[data-testid*="start-assignment"], button[data-e2e*="start"], button[data-testid*="resume"], a[data-testid*="resume"], button[data-testid*="attempt"], a[data-testid*="attempt"], [data-testid*="take-quiz"], [data-testid*="go-to-assignment"]'
   );
@@ -221,7 +359,6 @@ export function findStartAssignmentButton() {
     return byTestId;
   }
 
-  // 2. Tìm theo text nút (Hỗ trợ toàn diện màn hình /assignment-submission/)
   const allBtns = Array.from(document.querySelectorAll('button, a[role="button"], a.cds-button, a[href*="/attempt"], a[href*="/exam/"]'));
   for (const btn of allBtns) {
     if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
@@ -315,14 +452,16 @@ export async function processQuizStep() {
 
   // 1. Kiểm tra nếu đang ở màn hình kết quả điểm ("Your grade: ...")
   if (isQuizResultScreen()) {
+    showInPageToast('🎉 [Auto-Skip] Đã có điểm bài Quiz! Đang chuyển bài tiếp theo...', false, 3000);
     const nextBtn = findQuizNextItemButton() || findNextButton();
     if (nextBtn) {
-      showInPageToast('🎉 [Auto-Skip] Đã có kết quả bài Quiz! Bấm "Next item" để chuyển tiếp...', false, 4000);
       triggerClick(nextBtn);
       try { nextBtn.click(); } catch (e) {}
       await sleep(2500);
       return true;
     }
+    await navigateToNextUncompletedItem();
+    return true;
   }
 
   // 2. Kiểm tra nếu đang ở màn hình landing page /assignment-submission/ có nút "Start Assignment" / "Resume"
@@ -365,6 +504,9 @@ export async function processQuizStep() {
         return true;
       }
     }
+
+    // Nếu không thấy next item button, rà soát lại left-nav
+    await navigateToNextUncompletedItem();
     return true;
   }
 
@@ -376,6 +518,13 @@ export async function executeAutoSkipStep() {
   window._chIsStepRunning = true;
 
   try {
+    // 0. Kiểm tra nếu khóa học đã hoàn tất 100% -> Dừng Auto-Skip
+    if (isCourseFullyCompleted()) {
+      showInPageToast('🎉 Chúc mừng bạn đã hoàn thành toàn bộ khóa học! Tự động dừng Auto-Skip.', false, 8000);
+      stopAutoSkipLoop();
+      return;
+    }
+
     const path = window.location.pathname;
 
     // 1. Kiểm tra màn hình Quiz / Assignment / Exam hoặc landing page /assignment-submission/
@@ -395,11 +544,8 @@ export async function executeAutoSkipStep() {
     if (path.includes('/lecture/')) {
       await completeCourseraVideo();
       await sleep(1500);
-      const nextBtn = findNextButton() || findNextSidebarLink();
-      if (nextBtn) {
-        triggerClick(nextBtn);
-        try { nextBtn.click(); } catch (e) {}
-      }
+      // Rà soát Left-Nav để nhảy tới bài tiếp theo chưa làm (không bao giờ bỏ sót video)
+      await navigateToNextUncompletedItem();
       return;
     }
 
@@ -415,12 +561,8 @@ export async function executeAutoSkipStep() {
       return;
     }
 
-    // 5. Fallback thông thường: Nút Next hoặc Sidebar Link
-    const nextBtn = findNextButton() || findNextSidebarLink();
-    if (nextBtn) {
-      triggerClick(nextBtn);
-      try { nextBtn.click(); } catch (e) {}
-    }
+    // 5. Fallback thông thường
+    await navigateToNextUncompletedItem();
   } finally {
     window._chIsStepRunning = false;
   }
@@ -428,7 +570,7 @@ export async function executeAutoSkipStep() {
 
 export function startAutoSkipLoop() {
   window._chAutoSkipActive = true;
-  showInPageToast('🚀 Đã bật Tự Động Skip Module (Kèm Giải Quiz & Nộp Bài)!');
+  showInPageToast('🚀 Đã bật Tự Động Skip Module (Kèm Rà Soát Left-Nav Toàn Diện)!');
   executeAutoSkipStep();
 
   clearInterval(window._chAutoSkipInterval);
@@ -444,5 +586,13 @@ export function startAutoSkipLoop() {
 export function stopAutoSkipLoop() {
   window._chAutoSkipActive = false;
   clearInterval(window._chAutoSkipInterval);
+
+  // Khôi phục giao diện nút Auto-Skip trên HUD
+  const btnAutoSkip = document.getElementById('ch-hud-autoskip');
+  if (btnAutoSkip) {
+    btnAutoSkip.innerHTML = '<span class="ch-btn-icon">🚀</span><span class="ch-btn-label">Auto-Skip Module</span>';
+    btnAutoSkip.style.background = '#10b981';
+  }
+
   showInPageToast('🛑 Đã dừng Tự Động Skip Module.');
 }
