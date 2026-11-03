@@ -1677,41 +1677,150 @@ ${q.text}
     }
     return false;
   }
-  async function executeAutoSkipStep() {
-    const path = window.location.pathname;
-    if (path.includes("/lecture/")) {
-      await completeCourseraVideo();
-      await sleep(1500);
-      const nextBtn2 = findNextButton() || findNextSidebarLink();
-      if (nextBtn2) {
-        triggerClick(nextBtn2);
+  function findStartAssignmentButton() {
+    if (getQuestionContainers().length > 0) return null;
+    const byTestId = document.querySelector(
+      'button[data-testid*="start"], a[data-testid*="start-assignment"], button[data-e2e*="start"], button[data-testid*="resume"], a[data-testid*="resume"], button[data-testid*="attempt"], a[data-testid*="attempt"], [data-testid*="take-quiz"], [data-testid*="go-to-assignment"]'
+    );
+    if (byTestId && !byTestId.closest('#coursera-helper-hud, header, nav[role="navigation"]') && !byTestId.disabled) {
+      return byTestId;
+    }
+    const allBtns = Array.from(document.querySelectorAll('button, a[role="button"], a.cds-button, a[href*="/attempt"], a[href*="/exam/"]'));
+    for (const btn of allBtns) {
+      if (btn.closest('#coursera-helper-hud, header, nav[role="navigation"]')) continue;
+      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") continue;
+      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+      if (txt === "start assignment" || txt === "resume assignment" || txt === "resume" || txt === "start quiz" || txt === "take quiz" || txt === "start" || txt === "attempt" || txt === "start attempt" || txt === "resume attempt" || txt === "retake" || txt === "try again" || txt === "b\u1EAFt \u0111\u1EA7u l\xE0m b\xE0i" || txt === "ti\u1EBFp t\u1EE5c" || txt === "l\xE0m b\xE0i" || txt.includes("start assignment") || txt.includes("resume assignment") || txt.includes("begin assignment") || txt.includes("start attempt") || txt.includes("take assignment") || txt.includes("go to assignment")) {
+        return btn;
+      }
+    }
+    return null;
+  }
+  function isQuizResultScreen() {
+    const bodyText = (document.body.innerText || "").toLowerCase();
+    const hasGradeKeywords = bodyText.includes("your grade:") || bodyText.includes("your grade") || bodyText.includes("\u0111i\u1EC3m c\u1EE7a b\u1EA1n:") || bodyText.includes("your latest:") || bodyText.includes("your highest:") || bodyText.includes("to pass you need") || bodyText.includes("we keep your highest score") || bodyText.includes("nice work") || bodyText.includes("passed");
+    const hasNextBtn = findQuizNextItemButton() !== null;
+    const hasGradeContainer = document.querySelector(
+      '[class*="grade" i], [class*="score" i], [data-testid*="grade"], [data-testid*="score"]'
+    ) !== null;
+    return hasGradeKeywords && hasNextBtn || hasGradeKeywords && hasGradeContainer;
+  }
+  function findQuizNextItemButton() {
+    const excludeSelector = '#coursera-helper-hud, header, nav[role="navigation"], [class*="video-player"], [class*="vjs-"], [data-testid*="player"]';
+    const testIdBtn = document.querySelector(
+      'button[data-testid="quiz-next-button"], a[data-testid="quiz-next-button"], button[data-testid="next-item-button"], a[data-testid="next-item-button"]'
+    );
+    if (testIdBtn && !testIdBtn.disabled && !testIdBtn.closest(excludeSelector)) {
+      return testIdBtn;
+    }
+    const allBtns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    for (const btn of allBtns) {
+      if (btn.closest(excludeSelector)) continue;
+      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") continue;
+      const txt = (btn.innerText || btn.textContent || "").trim().toLowerCase();
+      if (txt === "next item" || txt.startsWith("next item") || txt === "go to next item" || txt.startsWith("go to next item") || txt === "ti\u1EBFp theo" || txt === "b\xE0i ti\u1EBFp theo") {
+        return btn;
+      }
+    }
+    return null;
+  }
+  async function processQuizStep() {
+    showInPageToast("\u{1F9E9} [Auto-Skip] Ph\xE1t hi\u1EC7n Quiz / Assignment! \u0110ang ki\u1EC3m tra...", false, 4e3);
+    await sleep(1e3);
+    if (isQuizResultScreen()) {
+      const nextBtn = findQuizNextItemButton() || findNextButton();
+      if (nextBtn) {
+        showInPageToast('\u{1F389} [Auto-Skip] \u0110\xE3 c\xF3 k\u1EBFt qu\u1EA3 b\xE0i Quiz! B\u1EA5m "Next item" \u0111\u1EC3 chuy\u1EC3n ti\u1EBFp...', false, 4e3);
+        triggerClick(nextBtn);
         try {
-          nextBtn2.click();
+          nextBtn.click();
+        } catch (e) {
+        }
+        await sleep(2500);
+        return true;
+      }
+    }
+    const startBtn = findStartAssignmentButton();
+    if (startBtn) {
+      showInPageToast(`\u{1F680} [Auto-Skip] T\u1EF1 \u0111\u1ED9ng b\u1EA5m "${startBtn.innerText || "Start Assignment"}" \u0111\u1EC3 v\xE0o l\xE0m b\xE0i!`, false, 4e3);
+      triggerClick(startBtn);
+      try {
+        startBtn.click();
+      } catch (e) {
+      }
+      await sleep(2500);
+      return true;
+    }
+    let containers = getQuestionContainers();
+    if (containers.length > 0) {
+      showInPageToast(`\u26A1 [Auto-Skip] T\xECm th\u1EA5y ${containers.length} c\xE2u h\u1ECFi! B\u1EAFt \u0111\u1EA7u t\u1EF1 \u0111\u1ED9ng gi\u1EA3i v\xE0 n\u1ED9p b\xE0i...`, false, 5e3);
+      const btnSolve = document.getElementById("ch-hud-solvequiz");
+      await triggerZeroClickQuizWorkflow(btnSolve);
+      showInPageToast("\u23F3 [Auto-Skip] \u0110ang ch\u1EDD k\u1EBFt qu\u1EA3 n\u1ED9p b\xE0i...", false, 4e3);
+      for (let w = 0; w < 50; w++) {
+        await sleep(500);
+        const nextBtn = findQuizNextItemButton() || (isQuizResultScreen() ? findNextButton() : null);
+        if (nextBtn) {
+          showInPageToast('\u{1F389} [Auto-Skip] B\xE0i thi \u0111\xE3 ho\xE0n th\xE0nh! \u0110ang b\u1EA5m "Next item" \u0111\u1EC3 sang b\xE0i ti\u1EBFp theo...', false, 4e3);
+          triggerClick(nextBtn);
+          try {
+            nextBtn.click();
+          } catch (e) {
+          }
+          await sleep(2500);
+          return true;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+  async function executeAutoSkipStep() {
+    if (window._chIsStepRunning) return;
+    window._chIsStepRunning = true;
+    try {
+      const path = window.location.pathname;
+      const isQuizPage = path.includes("/assignment-submission/") || path.includes("/exam/") || path.includes("/quiz/") || getQuestionContainers().length > 0 || findStartAssignmentButton() !== null || isQuizResultScreen();
+      if (isQuizPage) {
+        await processQuizStep();
+        return;
+      }
+      if (path.includes("/lecture/")) {
+        await completeCourseraVideo();
+        await sleep(1500);
+        const nextBtn2 = findNextButton() || findNextSidebarLink();
+        if (nextBtn2) {
+          triggerClick(nextBtn2);
+          try {
+            nextBtn2.click();
+          } catch (e) {
+          }
+        }
+        return;
+      }
+      if (path.includes("/supplement/")) {
+        await processReadingStep();
+        return;
+      }
+      if (path.includes("/ungradedWidget/")) {
+        await processUngradedWidgetStep();
+        return;
+      }
+      const nextBtn = findNextButton() || findNextSidebarLink();
+      if (nextBtn) {
+        triggerClick(nextBtn);
+        try {
+          nextBtn.click();
         } catch (e) {
         }
       }
-      return;
-    }
-    if (path.includes("/supplement/")) {
-      await processReadingStep();
-      return;
-    }
-    if (path.includes("/ungradedWidget/")) {
-      await processUngradedWidgetStep();
-      return;
-    }
-    const nextBtn = findNextButton() || findNextSidebarLink();
-    if (nextBtn) {
-      triggerClick(nextBtn);
-      try {
-        nextBtn.click();
-      } catch (e) {
-      }
+    } finally {
+      window._chIsStepRunning = false;
     }
   }
   function startAutoSkipLoop() {
     window._chAutoSkipActive = true;
-    showInPageToast("\u{1F680} \u0110\xE3 b\u1EADt T\u1EF1 \u0110\u1ED9ng Skip Module!");
+    showInPageToast("\u{1F680} \u0110\xE3 b\u1EADt T\u1EF1 \u0110\u1ED9ng Skip Module (K\xE8m Gi\u1EA3i Quiz & N\u1ED9p B\xE0i)!");
     executeAutoSkipStep();
     clearInterval(window._chAutoSkipInterval);
     window._chAutoSkipInterval = setInterval(() => {
