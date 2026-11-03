@@ -2,9 +2,9 @@
 // Bundler & Packager: esbuild compilation + old zip cleaner + fresh zip packager
 
 import esbuild from 'esbuild';
+import { ZipArchive } from 'archiver';
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
 
 async function build() {
   console.log('⚡ Starting build process with esbuild...');
@@ -45,7 +45,18 @@ async function build() {
   // 4. Đóng gói zip mới nhất cho phiên bản 2.5.0
   const zipName = `coursera-helper-extension-${manifest.version}.zip`;
   console.log(`📦 Packaging fresh extension archive: ${zipName}...`);
-  execSync(`powershell -Command "Compress-Archive -Path extension/* -DestinationPath ${zipName} -Force"`);
+  await new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(zipName);
+    const archive = new ZipArchive({ zlib: { level: 9 } });
+
+    output.on('close', resolve);
+    output.on('error', reject);
+    archive.on('error', reject);
+
+    archive.pipe(output);
+    archive.directory('extension', false);
+    archive.finalize();
+  });
   
   if (fs.existsSync(zipName)) {
     const stats = fs.statSync(zipName);
