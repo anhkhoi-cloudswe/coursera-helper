@@ -3042,11 +3042,7 @@
       // Quét từ trên xuống: Skip câu Bot đã giải trước đó; Giữ lại câu chưa làm hoặc do Người dùng chọn để Bot kiểm định lại
       const currentContainers = getQuestionContainers();
       const needSolvingInBatch = batchQuestions.filter(q => {
-        const qNum = q.q;
-        const c = currentContainers.find(ct => {
-          const txt = ct.innerText || '';
-          return new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i').test(txt);
-        }) || currentContainers[qNum - 1];
+        const c = findQuestionContainerByNumber(currentContainers, q.q);
         return needsBotSolving(q, c);
       });
 
@@ -3111,9 +3107,12 @@
           const subQs = refreshedSubQs.length > 0 ? refreshedSubQs : requestedSubQs;
 
           // Cuộn trực tiếp tới câu đang giải vét để đảm bảo React mount đầy đủ options và bot không bị kẹt
-          const curTargetContainer = getQuestionContainers()[(subQs[0].q - 1)] || null;
+          const targetContainersNow = getQuestionContainers();
+          const curTargetContainer = findQuestionContainerByNumber(targetContainersNow, subQs[0].q);
           if (curTargetContainer) {
             curTargetContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            curTargetContainer.style.outline = '2px dashed #f59e0b';
+            curTargetContainer.style.borderRadius = '8px';
             await new Promise(r => setTimeout(r, 300));
           }
           showInPageToast(`🎯 Tập trung giải dứt điểm câu: ${subQs.map(q => q.q).join(', ')}...`);
@@ -4699,6 +4698,38 @@
     return text;
   }
 
+  function findQuestionContainerByNumber(containers, qNum, idx = null) {
+    if (!containers || containers.length === 0) return null;
+    const cleanNum = parseInt(qNum, 10);
+    if (!isNaN(cleanNum)) {
+      // 1. Tìm container khớp số thứ tự trong nội dung text bằng regex bao quát mọi biến thể Coursera
+      const found = containers.find(c => {
+        const txt = c.innerText || c.textContent || '';
+        const regex = new RegExp(`(?:Question\\s*${cleanNum}\\b|(?:^|[\\r\\n\\s\\u00A0])${cleanNum}[\\.\\:\\)][\\s\\u00A0]|\\bCâu\\s*${cleanNum}\\b)`, 'i');
+        return regex.test(txt);
+      });
+      if (found) return found;
+
+      // 2. Tìm container có data-testid hoặc id chứa số
+      const byAttr = containers.find(c => {
+        const testId = c.getAttribute('data-testid') || '';
+        const id = c.id || '';
+        return new RegExp(`(?:question|part)[-_]?0*${cleanNum}(?:[-_]|$)`, 'i').test(testId + ' ' + id);
+      });
+      if (byAttr) return byAttr;
+
+      // 3. Fallback vị trí theo index (1-based)
+      if (cleanNum >= 1 && cleanNum <= containers.length) {
+        return containers[cleanNum - 1];
+      }
+    }
+
+    if (idx !== null && idx >= 0 && idx < containers.length) {
+      return containers[idx];
+    }
+    return null;
+  }
+
   function calculateOptionMatchScore(el, targetAnswer) {
     const rawText = extractOptionPureText(el);
     if (!rawText || rawText.length > 800) return 0;
@@ -4717,22 +4748,24 @@
 
     const escapedOpt = opt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const optRegex = new RegExp(`(^|\\s)${escapedOpt}(\\s|$)`, 'i');
-    if (optRegex.test(ans)) return 0.95;
+    if (optRegex.test(ans)) return 0.96;
 
-    // 3. Chuỗi chứa chuỗi con
-    if (opt.includes(ans)) return 0.92;
-    if (ans.includes(opt)) return 0.90;
+    // 3. Chuỗi chứa chuỗi con (đặc biệt hỗ trợ fill-in-the-blank khi AI trả về cụm/cả câu hoặc ngược lại)
+    if (opt.includes(ans)) return 0.94;
+    if (ans.includes(opt)) return 0.92;
 
-    // 4. Token Jaccard overlap
+    // 4. Token Overlap (tính theo min size để bắt cụm từ nằm trong câu dài của AI)
     const optWords = new Set(opt.split(' ').filter(w => w.length >= 1));
     const ansWords = new Set(ans.split(' ').filter(w => w.length >= 1));
-    if (ansWords.size > 0) {
+    if (ansWords.size > 0 && optWords.size > 0) {
       let overlap = 0;
       for (const w of ansWords) {
         if (optWords.has(w)) overlap++;
       }
-      const score = overlap / ansWords.size;
-      if (score >= 0.5) return score;
+      const scoreVsAns = overlap / ansWords.size;
+      const scoreVsOpt = overlap / optWords.size;
+      const maxRatio = Math.max(scoreVsAns, scoreVsOpt);
+      if (maxRatio >= 0.5) return maxRatio * 0.92;
     }
 
     return 0;
@@ -4822,13 +4855,7 @@
     for (let idx = 0; idx < allQuestions.length; idx++) {
       const q = allQuestions[idx];
       const qNum = q.q || (idx + 1);
-      let container = null;
-      if (containers.length > 0) {
-        container = containers.find(c => {
-          const txt = c.innerText || c.textContent || '';
-          return new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i').test(txt);
-        }) || containers[qNum - 1] || containers[idx];
-      }
+      const container = findQuestionContainerByNumber(containers, qNum, idx);
       if (!container || !isQuestionContainerAnswered(container)) {
         unanswered.push(q);
       }
@@ -4845,9 +4872,9 @@
     const containers = getQuestionContainers();
     for (const q of missingQuestions) {
       const qNum = q.q;
-      const container = containers.find(c => new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i').test(c.innerText || '')) || containers[qNum - 1];
+      const container = findQuestionContainerByNumber(containers, qNum);
       if (container) {
-        container.scrollIntoView({ behavior: 'auto', block: 'center' });
+        container.scrollIntoView({ behavior: 'smooth', block: 'center' });
         await new Promise(r => setTimeout(r, 250));
       }
     }
@@ -5016,14 +5043,7 @@
       const letters = item.letters || [];
       if (targetAnswers.length === 0 && optionIndices.length === 0 && letters.length === 0) continue;
 
-      let container = null;
-      if (containers.length > 0) {
-        container = containers.find(c => {
-          const txt = c.innerText || c.textContent || '';
-          const regex = new RegExp(`(?:Question\\s+${qNum}\\b|\\b${qNum}\\.\\s+|\\bCâu\\s+${qNum}\\b)`, 'i');
-          return regex.test(txt);
-        }) || (qNum >= 1 && qNum <= containers.length ? containers[qNum - 1] : containers[i]);
-      }
+      const container = findQuestionContainerByNumber(containers, qNum, i);
 
       const searchRoot = container || document;
       const optElements = Array.from(searchRoot.querySelectorAll(
@@ -5697,18 +5717,25 @@
     const finalUnanswered = getUnansweredQuestions(questions);
     const finalContainers = getQuestionContainers();
     const finalDomUnanswered = finalContainers.filter(c => !isQuestionContainerAnswered(c));
+    const missingCount = Math.max(finalUnanswered.length, finalDomUnanswered.length);
+
     if (btnSolve) {
-      if (finalUnanswered.length === 0 && finalDomUnanswered.length === 0) {
+      if (missingCount === 0) {
         btnSolve.innerHTML = '✅ Đã Giải Xong!';
+        btnSolve.style.background = '#10b981';
       } else {
-        btnSolve.innerHTML = `⚠️ Thiếu ${Math.max(finalUnanswered.length, finalDomUnanswered.length)} câu`;
+        btnSolve.innerHTML = `⚠️ Giải lại ${missingCount} câu thiếu`;
+        btnSolve.style.background = '#f59e0b';
+        btnSolve.title = `Nhấn vào đây để tập trung giải dứt điểm ${missingCount} câu còn thiếu!`;
       }
       setTimeout(() => {
         if (btnSolve) {
           btnSolve.innerHTML = origBtnText;
+          btnSolve.style.background = '';
           btnSolve.style.opacity = '1';
+          btnSolve.title = 'Tự động quét toàn bộ câu hỏi (kèm hình ảnh), gọi Gemini giải, tick đáp án và tự động nộp bài!';
         }
-      }, 4000);
+      }, 7000);
     }
 
     const allDomContainers = finalContainers;
@@ -5716,12 +5743,19 @@
     const pageText = document.body.innerText || '';
     const hasUnansWarning = pageText.includes("haven't answered this question") || pageText.includes("You haven't answered");
 
-    if (questions && questions.length > 0 && remainingUnanswered.length === 0 && domUnanswered.length === 0 && !hasUnansWarning) {
+    if (questions && questions.length > 0 && missingCount === 0 && !hasUnansWarning) {
       showInPageToast(`🎉 Đã điền xong tất cả ${questions.length} / ${questions.length} câu hỏi! Đang tự động nộp bài...`, false, 4000);
       await completeHonorCodeAndSubmitQuiz();
     } else {
-      const count = Math.max(remainingUnanswered.length, domUnanswered.length);
-      showInPageToast(`⚠️ Còn ${count} câu chưa chọn được đáp án. Tuyệt đối không nộp bài để bảo vệ điểm của bạn!`, true, 8000);
+      // Tự động cuộn đến câu hỏi chưa trả lời đầu tiên và làm nổi bật để người dùng & bot thấy rõ
+      const firstMissingContainer = finalDomUnanswered[0] || (finalUnanswered.length > 0 ? findQuestionContainerByNumber(finalContainers, finalUnanswered[0].q) : null);
+      if (firstMissingContainer) {
+        firstMissingContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        firstMissingContainer.style.outline = '3px solid #ef4444';
+        firstMissingContainer.style.boxShadow = '0 0 20px rgba(239, 68, 68, 0.45)';
+        firstMissingContainer.style.borderRadius = '8px';
+      }
+      showInPageToast(`⚠️ Còn ${missingCount} câu chưa chọn được đáp án. Đã cuộn đến câu còn thiếu! Bấm nút "Giải Quiz" lần nữa để giải tiếp hoặc chọn đáp án giúp bạn.`, true, 8000);
     }
   }
 
