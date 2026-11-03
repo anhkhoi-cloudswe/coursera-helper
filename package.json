@@ -1,0 +1,25 @@
+{
+  "name": "coursera-helper",
+  "version": "2.5.0",
+  "description": "Coursera Helper Extension with Modular Architecture",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anhkhoi-cloudswe/coursera-helper.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/anhkhoi-cloudswe/coursera-helper/issues"
+  },
+  "homepage": "https://github.com/anhkhoi-cloudswe/coursera-helper#readme",
+  "devDependencies": {
+    "archiver": "^8.0.0",
+    "esbuild": "^0.28.2"
+  }
+}

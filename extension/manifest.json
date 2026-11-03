@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Coursera Helper — Quiz Cleaner & AI Solver",
-  "version": "2.4.8",
+  "version": "2.5.0",
   "description": "Tự động loại bỏ prompt injection, giải trắc nghiệm bằng Gemini AI, tua video và auto skip bài học Coursera.",
   "icons": {
     "16": "icons/icon16.png",
@@ -33,8 +33,13 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["injected.js"],
-      "matches": ["*://*.coursera.org/*", "*://coursera.org/*"]
+      "resources": [
+        "injected.js"
+      ],
+      "matches": [
+        "*://*.coursera.org/*",
+        "*://coursera.org/*"
+      ]
     }
   ],
   "content_scripts": [

@@ -10,6 +10,7 @@ venv/
 .vscode/
 .idea/
 .DS_Store
-# Zip packages
+# Node & Zip packages
+node_modules/
 *.zip
 
