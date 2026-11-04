@@ -1417,16 +1417,18 @@ ${q.text}
   }
   function isQuizResultScreen() {
     const currentPath = window.location.pathname;
-    if (!currentPath.includes("/assignment-submission/") && !currentPath.includes("/exam/") && !currentPath.includes("/quiz/")) {
+    if (!currentPath.includes("/assignment-submission/") && !currentPath.includes("/assignment/") && !currentPath.includes("/exam/") && !currentPath.includes("/quiz/")) {
+      return false;
+    }
+    if (findStartAssignmentButton() !== null || getQuestionContainers().length > 0) {
       return false;
     }
     const bodyText = (document.body.innerText || "").toLowerCase();
-    const hasGradeKeywords = bodyText.includes("your grade:") || bodyText.includes("your grade") || bodyText.includes("\u0111i\u1EC3m c\u1EE7a b\u1EA1n:") || bodyText.includes("your latest:") || bodyText.includes("your highest:") || bodyText.includes("to pass you need") || bodyText.includes("we keep your highest score") || bodyText.includes("nice work") || bodyText.includes("passed");
+    const hasPassedKeyword = bodyText.includes("you passed!") || bodyText.includes("you passed") || bodyText.includes("status: passed") || bodyText.includes("nice work!") || bodyText.includes("congratulations!") || bodyText.includes("\u0111\xE3 \u0111\u1EA1t") || bodyText.includes("\u0111\xE3 v\u01B0\u1EE3t qua");
+    const gradeMatch = bodyText.match(/your (?:latest|highest|final)?\s*grade:\s*(\d{1,3})%/i) || bodyText.match(/grade:\s*(\d{1,3})%/i) || bodyText.match(/điểm của bạn:\s*(\d{1,3})%/i);
+    const isPassingGrade = gradeMatch && parseInt(gradeMatch[1], 10) >= 80;
     const hasNextBtn = findQuizNextItemButton() !== null;
-    const hasGradeContainer = document.querySelector(
-      '[class*="grade" i], [class*="score" i], [data-testid*="grade"], [data-testid*="score"]'
-    ) !== null;
-    return hasGradeKeywords && hasNextBtn || hasGradeKeywords && hasGradeContainer;
+    return hasPassedKeyword && hasNextBtn || isPassingGrade && hasNextBtn;
   }
   function findQuizNextItemButton() {
     const excludeSelector = '#coursera-helper-hud, header, nav[role="navigation"], [class*="video-player"], [class*="vjs-"], [data-testid*="player"]';

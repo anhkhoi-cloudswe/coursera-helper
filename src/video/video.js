@@ -574,31 +574,41 @@ export function isQuizResultScreen() {
   // Chỉ kiểm tra màn hình kết quả điểm nếu đang ở các URL liên quan đến Quiz / Assignment
   if (
     !currentPath.includes('/assignment-submission/') &&
+    !currentPath.includes('/assignment/') &&
     !currentPath.includes('/exam/') &&
     !currentPath.includes('/quiz/')
   ) {
     return false;
   }
 
+  // NẾU CÓ NÚT "START ASSIGNMENT" / "RESUME" / "START ATTEMPT" HOẶC CÒN CÂU HỎI TRÊN TRANG,
+  // ĐÂY LÀ BÀI CẦN LÀM, TUYỆT ĐỐI KHÔNG PHẢI MÀN HÌNH ĐÃ HOÀN THÀNH!
+  if (findStartAssignmentButton() !== null || getQuestionContainers().length > 0) {
+    return false;
+  }
+
   const bodyText = (document.body.innerText || '').toLowerCase();
-  const hasGradeKeywords = (
-    bodyText.includes('your grade:') ||
-    bodyText.includes('your grade') ||
-    bodyText.includes('điểm của bạn:') ||
-    bodyText.includes('your latest:') ||
-    bodyText.includes('your highest:') ||
-    bodyText.includes('to pass you need') ||
-    bodyText.includes('we keep your highest score') ||
-    bodyText.includes('nice work') ||
-    bodyText.includes('passed')
+
+  // Coursera kết quả đã đạt: "Grade: 100%", "Passed", "Congratulations", "Nice work! You passed"
+  // Chú ý: Tránh match các câu mô tả yêu cầu điểm trên trang giới thiệu như "To pass you need 80%"
+  const hasPassedKeyword = (
+    bodyText.includes('you passed!') ||
+    bodyText.includes('you passed') ||
+    bodyText.includes('status: passed') ||
+    bodyText.includes('nice work!') ||
+    bodyText.includes('congratulations!') ||
+    bodyText.includes('đã đạt') ||
+    bodyText.includes('đã vượt qua')
   );
 
-  const hasNextBtn = findQuizNextItemButton() !== null;
-  const hasGradeContainer = document.querySelector(
-    '[class*="grade" i], [class*="score" i], [data-testid*="grade"], [data-testid*="score"]'
-  ) !== null;
+  const gradeMatch = bodyText.match(/your (?:latest|highest|final)?\s*grade:\s*(\d{1,3})%/i) ||
+                     bodyText.match(/grade:\s*(\d{1,3})%/i) ||
+                     bodyText.match(/điểm của bạn:\s*(\d{1,3})%/i);
+  const isPassingGrade = gradeMatch && parseInt(gradeMatch[1], 10) >= 80;
 
-  return (hasGradeKeywords && hasNextBtn) || (hasGradeKeywords && hasGradeContainer);
+  const hasNextBtn = findQuizNextItemButton() !== null;
+
+  return (hasPassedKeyword && hasNextBtn) || (isPassingGrade && hasNextBtn);
 }
 
 export function findQuizNextItemButton() {
