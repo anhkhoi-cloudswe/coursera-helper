@@ -847,12 +847,13 @@ textarea::placeholder {
 }
 
 .btn-ai {
-  background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
-  color: white;
+  background: #6366f1;
+  color: #ffffff;
   font-weight: 800;
 }
 .btn-ai:hover {
-  background: linear-gradient(135deg, #9333ea 0%, #db2777 100%);
+  background: #4f46e5;
+  color: #ffffff;
 }
 
 .btn-default {
