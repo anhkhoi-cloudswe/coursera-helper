@@ -195,6 +195,46 @@
       box-sizing: border-box;
     }
 
+    /* Language Switcher Button Group */
+    .lang-switch-wrap {
+      display: inline-flex;
+      background: #090d16;
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo-sm);
+      border-radius: var(--radius-sm);
+      padding: 2px;
+      gap: 2px;
+      height: 36px;
+      align-items: center;
+      box-sizing: border-box;
+    }
+
+    .lang-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 0 10px;
+      height: 28px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      line-height: 28px;
+      font-family: inherit;
+    }
+
+    .lang-btn:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .lang-btn.active {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 1px 1px 0px #000;
+    }
+
     .btn:hover {
       transform: translate(-1px, -1px);
       box-shadow: 4px 4px 0px #000000;
@@ -237,13 +277,13 @@
     }
 
     .btn-ai {
-      background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+      background: #6366f1;
       color: #ffffff;
       font-weight: 800;
     }
 
     .btn-ai:hover {
-      background: linear-gradient(135deg, #9333ea 0%, #db2777 100%);
+      background: #4f46e5;
     }
 
     .btn-ghost {
@@ -878,22 +918,28 @@
       </div>
 
       <div class="nav-actions">
-        <button class="btn btn-default" id="btnLoadSample" title="Dán đề mẫu để kiểm tra tính năng">
+        <!-- Language Switcher Toggle (EN / VI - English default) -->
+        <div class="lang-switch-wrap">
+          <button class="lang-btn active" id="btnLangEn" onclick="switchHomeLang('en')" title="Switch to English">EN</button>
+          <button class="lang-btn" id="btnLangVi" onclick="switchHomeLang('vi')" title="Chuyển sang Tiếng Việt">VI</button>
+        </div>
+
+        <button class="btn btn-default" id="btnLoadSample" title="Dán đề mẫu để kiểm tra tính năng" data-i18n-title="btn_sample_title">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-          Thử mẫu
+          <span data-i18n="btn_sample">Thử mẫu</span>
         </button>
 
-        <button class="btn btn-default" id="btnOpenSettings" title="Cấu hình Google Gemini API Key">
+        <button class="btn btn-default" id="btnOpenSettings" title="Cấu hình Google Gemini API Key" data-i18n-title="btn_settings_title">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-          <span id="apiKeyStatusLabel">Cài đặt API</span>
+          <span id="apiKeyStatusLabel" data-i18n="btn_api_settings">Cài đặt API</span>
         </button>
 
-        <a href="/guide.html" class="btn btn-default" title="Hướng dẫn sử dụng" style="text-decoration: none;">
-          📖 Hướng dẫn
+        <a href="/guide.html" class="btn btn-default" title="Hướng dẫn sử dụng" data-i18n-title="nav_guide_title" style="text-decoration: none;">
+          📖 <span data-i18n="nav_guide">Hướng dẫn</span>
         </a>
 
-        <a href="/policy.html" class="btn btn-default" title="Chính sách quyền riêng tư" style="text-decoration: none;">
-          🛡️ Chính sách
+        <a href="/policy.html" class="btn btn-default" title="Chính sách quyền riêng tư" data-i18n-title="nav_policy_title" style="text-decoration: none;">
+          🛡️ <span data-i18n="nav_policy">Chính sách</span>
         </a>
 
         <a href="https://github.com/anhkhoi-cloudswe/coursera-helper" target="_blank" class="btn btn-ghost" title="Mã nguồn GitHub">
@@ -906,15 +952,15 @@
     <div class="metrics-bar">
       <div class="metric-chip">
         <span class="metric-dot"></span>
-        <span>Đoạn bẫy đã khử:</span>
+        <span data-i18n="stat_traps">Traps Removed:</span>
         <strong id="statTraps">0</strong>
       </div>
       <div class="metric-chip">
-        <span>Ký tự rác loại bỏ:</span>
+        <span data-i18n="stat_chars">Junk Chars Stripped:</span>
         <strong id="statChars">0</strong>
       </div>
       <div class="metric-chip">
-        <span>Câu hỏi nhận diện:</span>
+        <span data-i18n="stat_questions">Questions Identified:</span>
         <strong id="statQuestions">0</strong>
       </div>
     </div>
@@ -926,18 +972,18 @@
         <div class="card-header">
           <div class="card-title">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-            Văn bản Coursera gốc
+            <span data-i18n="raw_title">Original Coursera Text</span>
           </div>
           <div style="display: flex; gap: 8px;">
             <button class="btn btn-primary" id="btnPaste">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
-              Dán nhanh <span class="kbd">Ctrl+V</span>
+              <span data-i18n="btn_paste">Quick Paste</span> <span class="kbd">Ctrl+V</span>
             </button>
-            <button class="btn btn-default" id="btnClear" title="Xóa toàn bộ">Xóa</button>
+            <button class="btn btn-default" id="btnClear" title="Clear all text" data-i18n-title="btn_clear_title" data-i18n="btn_clear">Clear</button>
           </div>
         </div>
         <div class="editor-body">
-          <textarea id="rawInput" placeholder="Nhấn 'Dán nhanh' hoặc bấm Ctrl+V để dán toàn bộ bài kiểm tra Coursera tại đây..."></textarea>
+          <textarea id="rawInput" placeholder="Click 'Quick Paste' or press Ctrl+V to paste full Coursera quiz here..."></textarea>
         </div>
       </div>
 
@@ -946,25 +992,25 @@
         <div class="card-header">
           <!-- Segmented Tab Controls -->
           <div class="tab-pills">
-            <button class="tab-btn active" id="tabCleaned" data-tab="viewCleaned">
-              Văn bản sạch
+            <button class="tab-btn active" id="tabCleaned" data-tab="viewCleaned" data-i18n="tab_clean">
+              Clean Text
             </button>
-            <button class="tab-btn" id="tabAi" data-tab="viewAi">
-              Đáp án Gemini
+            <button class="tab-btn" id="tabAi" data-tab="viewAi" data-i18n="tab_ai">
+              Gemini Answers
             </button>
           </div>
 
           <div style="display: flex; gap: 8px;">
-            <button class="btn btn-emerald" id="btnCopyCleaned" title="Sao chép nội dung sạch">
+            <button class="btn btn-emerald" id="btnCopyCleaned" title="Copy clean content" data-i18n-title="btn_copy_clean_title">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              Copy sạch
+              <span data-i18n="btn_copy_clean">Copy Clean</span>
             </button>
-            <button class="btn btn-default" id="btnCopyPrompt" title="Copy sẵn câu lệnh và câu hỏi để dán vào web gemini.google.com">
-              📋 Copy Prompt
+            <button class="btn btn-default" id="btnCopyPrompt" title="Copy ready prompt and questions for Gemini Web" data-i18n-title="btn_prompt_title">
+              📋 <span data-i18n="btn_prompt">Copy Prompt</span>
             </button>
-            <button class="btn btn-ai" id="btnSolveWithGemini" title="Tự động gọi Gemini AI để giải đề (Ctrl+Enter)">
+            <button class="btn btn-ai" id="btnSolveWithGemini" title="Call Gemini AI to solve automatically (Ctrl+Enter)" data-i18n-title="btn_solve_title">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
-              Gemini giải <span class="kbd" style="background: rgba(255,255,255,0.2); color: white;">Ctrl+↵</span>
+              <span data-i18n="btn_solve">Solve with Gemini</span> <span class="kbd" style="background: rgba(255,255,255,0.2); color: white;">Ctrl+↵</span>
             </button>
           </div>
         </div>
@@ -972,7 +1018,7 @@
         <div class="editor-body">
           <!-- View 1: Cleaned Text -->
           <div class="view-content active" id="viewCleaned">
-            <textarea id="cleanedOutput" readonly placeholder="Nội dung sau khi lọc sạch prompt injection và '1 point' sẽ tự động xuất hiện ở đây..."></textarea>
+            <textarea id="cleanedOutput" readonly placeholder="Cleaned text without prompt injection and '1 point' will appear here automatically..."></textarea>
           </div>
 
           <!-- View 2: Gemini AI Results -->
@@ -980,7 +1026,7 @@
             <div class="ai-render-area" id="aiRenderArea">
               <div style="color: var(--text-dim); text-align: center; margin-top: 100px;">
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5" style="margin-bottom: 12px; opacity: 0.6;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                <p>Chưa có bài giải. Nhấn <strong>"Gemini giải"</strong> để nhận đáp án tự động từ AI!</p>
+                <p data-i18n="ai_empty_desc">No solution yet. Click <strong>"Solve with Gemini"</strong> to get automatic AI answers!</p>
               </div>
             </div>
           </div>
@@ -1000,32 +1046,32 @@
       <div class="modal-header">
         <h3>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-          Cấu hình Gemini AI
+          <span data-i18n="modal_title">Gemini AI Configuration</span>
         </h3>
         <button class="btn btn-ghost" id="btnCloseSettings" style="padding: 4px 8px;">✕</button>
       </div>
 
       <div class="form-group">
-        <label for="modalApiKey">Google Gemini API Key</label>
+        <label for="modalApiKey" data-i18n="modal_key_label">Google Gemini API Key</label>
         <input type="password" id="modalApiKey" class="input-field" placeholder="AIzaSy...">
-        <div class="form-helper">
-          Chưa có khóa? Lấy miễn phí tại <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio ↗</a>. Khóa được lưu hoàn toàn cục bộ trên trình duyệt của bạn (localStorage), an toàn 100%.
+        <div class="form-helper" data-i18n="modal_helper">
+          Need a key? Get one free at <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio ↗</a>. Keys are stored 100% locally in your browser (localStorage).
         </div>
       </div>
 
       <div class="form-group">
-        <label for="modalModelSelect">Mô hình AI (Model)</label>
+        <label for="modalModelSelect" data-i18n="modal_model_label">AI Model</label>
         <select id="modalModelSelect" class="input-field">
-          <option value="gemini-3.6-flash" selected>Gemini 3.6 Flash (Khuyên dùng - Chuẩn xác & Nhanh)</option>
-          <option value="gemini-3.8-flash">Gemini 3.8 Flash (Bản mới nhất)</option>
-          <option value="gemini-3.6-pro">Gemini 3.6 Pro (Chi tiết sâu, suy luận cao)</option>
+          <option value="gemini-3.6-flash" selected>Gemini 3.6 Flash (Recommended - Fast & Accurate)</option>
+          <option value="gemini-3.8-flash">Gemini 3.8 Flash (Latest Version)</option>
+          <option value="gemini-3.6-pro">Gemini 3.6 Pro (Deep Reasoning)</option>
           <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
         </select>
       </div>
 
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
-        <button class="btn btn-default" id="btnCancelSettings">Đóng</button>
-        <button class="btn btn-primary" id="btnSaveSettings">Lưu cấu hình</button>
+        <button class="btn btn-default" id="btnCancelSettings" data-i18n="btn_close">Close</button>
+        <button class="btn btn-primary" id="btnSaveSettings" data-i18n="btn_save_settings">Save Settings</button>
       </div>
     </div>
   </div>
@@ -1037,6 +1083,147 @@
   </div>
 
   <script>
+    // =======================================================
+    // I18N SYSTEM (ENGLISH DEFAULT & VIETNAMESE)
+    // =======================================================
+    const HOME_I18N = {
+      en: {
+        btn_sample: "Sample",
+        btn_sample_title: "Load sample questions to test features",
+        btn_settings_title: "Configure Google Gemini API Key",
+        btn_api_settings: "API Settings",
+        api_connected: "API Connected",
+        api_not_connected: "API Settings",
+        nav_guide: "Guide",
+        nav_guide_title: "User Guide & Manual",
+        nav_policy: "Privacy",
+        nav_policy_title: "Privacy Policy",
+        stat_traps: "Traps Removed:",
+        stat_chars: "Junk Chars Stripped:",
+        stat_questions: "Questions Identified:",
+        raw_title: "Original Coursera Text",
+        btn_paste: "Quick Paste",
+        btn_clear: "Clear",
+        btn_clear_title: "Clear all text",
+        raw_placeholder: "Click 'Quick Paste' or press Ctrl+V to paste full Coursera quiz here...",
+        tab_clean: "Clean Text",
+        tab_ai: "Gemini Answers",
+        btn_copy_clean: "Copy Clean",
+        btn_copy_clean_title: "Copy clean content",
+        btn_prompt: "Copy Prompt",
+        btn_prompt_title: "Copy ready prompt and questions for Gemini Web",
+        btn_solve: "Solve with Gemini",
+        btn_solve_title: "Call Gemini AI to solve automatically (Ctrl+Enter)",
+        clean_placeholder: "Cleaned text without prompt injection and '1 point' will appear here automatically...",
+        ai_empty_desc: 'No solution yet. Click <strong>"Solve with Gemini"</strong> to get automatic AI answers!',
+        modal_title: "Gemini AI Configuration",
+        modal_key_label: "Google Gemini API Key",
+        modal_helper: 'Need a key? Get one free at <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio ↗</a>. Keys are stored 100% locally in your browser (localStorage).',
+        modal_model_label: "AI Model",
+        btn_close: "Close",
+        btn_save_settings: "Save Settings",
+        toast_copied: "Copied to clipboard!",
+        toast_copied_clean: "Clean text copied!",
+        toast_copied_prompt: "Prompt copied for Gemini Web!",
+        toast_cleared: "Cleared",
+        toast_sample_loaded: "Sample quiz loaded & cleaned!",
+        toast_saved_api: "Gemini configuration saved!",
+        toast_no_questions: "Please paste your questions first!"
+      },
+      vi: {
+        btn_sample: "Thử mẫu",
+        btn_sample_title: "Dán đề mẫu để kiểm tra tính năng",
+        btn_settings_title: "Cấu hình Google Gemini API Key",
+        btn_api_settings: "Cài đặt API",
+        api_connected: "API Đã kết nối",
+        api_not_connected: "Cài đặt API",
+        nav_guide: "Hướng dẫn",
+        nav_guide_title: "Hướng dẫn sử dụng",
+        nav_policy: "Chính sách",
+        nav_policy_title: "Chính sách quyền riêng tư",
+        stat_traps: "Đoạn bẫy đã khử:",
+        stat_chars: "Ký tự rác loại bỏ:",
+        stat_questions: "Câu hỏi nhận diện:",
+        raw_title: "Văn bản Coursera gốc",
+        btn_paste: "Dán nhanh",
+        btn_clear: "Xóa",
+        btn_clear_title: "Xóa toàn bộ",
+        raw_placeholder: "Nhấn 'Dán nhanh' hoặc bấm Ctrl+V để dán toàn bộ bài kiểm tra Coursera tại đây...",
+        tab_clean: "Văn bản sạch",
+        tab_ai: "Đáp án Gemini",
+        btn_copy_clean: "Copy sạch",
+        btn_copy_clean_title: "Sao chép nội dung sạch",
+        btn_prompt: "Copy Prompt",
+        btn_prompt_title: "Copy sẵn câu lệnh và câu hỏi để dán vào web gemini.google.com",
+        btn_solve: "Gemini giải",
+        btn_solve_title: "Tự động gọi Gemini AI để giải đề (Ctrl+Enter)",
+        clean_placeholder: "Nội dung sau khi lọc sạch prompt injection và '1 point' sẽ tự động xuất hiện ở đây...",
+        ai_empty_desc: 'Chưa có bài giải. Nhấn <strong>"Gemini giải"</strong> để nhận đáp án tự động từ AI!',
+        modal_title: "Cấu hình Gemini AI",
+        modal_key_label: "Google Gemini API Key",
+        modal_helper: 'Chưa có khóa? Lấy miễn phí tại <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio ↗</a>. Khóa được lưu hoàn toàn cục bộ trên trình duyệt của bạn (localStorage), an toàn 100%.',
+        modal_model_label: "Mô hình AI (Model)",
+        btn_close: "Đóng",
+        btn_save_settings: "Lưu cấu hình",
+        toast_copied: "Đã sao chép!",
+        toast_copied_clean: "Đã copy văn bản sạch!",
+        toast_copied_prompt: "Đã copy Prompt cho Gemini!",
+        toast_cleared: "Đã xóa",
+        toast_sample_loaded: "Đã nạp đề trắc nghiệm mẫu & lọc sạch!",
+        toast_saved_api: "Đã lưu cấu hình Gemini!",
+        toast_no_questions: "Vui lòng nhập hoặc dán câu hỏi trước!"
+      }
+    };
+
+    let currentHomeLang = localStorage.getItem('coursera_home_lang') || 'en';
+
+    function switchHomeLang(lang) {
+      currentHomeLang = (lang === 'vi') ? 'vi' : 'en';
+      localStorage.setItem('coursera_home_lang', currentHomeLang);
+      const dict = HOME_I18N[currentHomeLang] || HOME_I18N.en;
+
+      // Update data-i18n elements
+      document.querySelectorAll('[data-i18n]').forEach((el) => {
+        const key = el.getAttribute('data-i18n');
+        if (dict[key]) {
+          if (key.includes('desc') || key.includes('helper')) {
+            el.innerHTML = dict[key];
+          } else {
+            el.textContent = dict[key];
+          }
+        }
+      });
+
+      // Update data-i18n-title elements
+      document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+        const key = el.getAttribute('data-i18n-title');
+        if (dict[key]) {
+          el.title = dict[key];
+        }
+      });
+
+      // Placeholders
+      const rawEl = document.getElementById('rawInput');
+      const cleanEl = document.getElementById('cleanedOutput');
+      if (rawEl) rawEl.placeholder = dict.raw_placeholder;
+      if (cleanEl) cleanEl.placeholder = dict.clean_placeholder;
+
+      // Toggle EN / VI buttons active class
+      const btnEn = document.getElementById('btnLangEn');
+      const btnVi = document.getElementById('btnLangVi');
+      if (btnEn && btnVi) {
+        if (currentHomeLang === 'en') {
+          btnEn.classList.add('active');
+          btnVi.classList.remove('active');
+        } else {
+          btnVi.classList.add('active');
+          btnEn.classList.remove('active');
+        }
+      }
+
+      updateApiStatusLabel();
+    }
+
     // State & DOM Selectors
     const rawInput = document.getElementById('rawInput');
     const cleanedOutput = document.getElementById('cleanedOutput');
@@ -1094,18 +1281,19 @@
     updateApiStatusLabel();
 
     function updateApiStatusLabel() {
+      const dict = HOME_I18N[currentHomeLang] || HOME_I18N.en;
       if (savedApiKey) {
         if (apiKeyStatusLabel) {
-          apiKeyStatusLabel.innerText = "API Đã kết nối";
+          apiKeyStatusLabel.innerText = dict.api_connected;
           apiKeyStatusLabel.style.color = "var(--emerald)";
         }
-        if (aiStatusBadge) aiStatusBadge.innerText = `Gemini (${savedModel}) sẵn sàng`;
+        if (aiStatusBadge) aiStatusBadge.innerText = `Gemini (${savedModel}) ${currentHomeLang === 'vi' ? 'sẵn sàng' : 'ready'}`;
       } else {
         if (apiKeyStatusLabel) {
-          apiKeyStatusLabel.innerText = "Cài đặt API";
+          apiKeyStatusLabel.innerText = dict.api_not_connected;
           apiKeyStatusLabel.style.color = "var(--text-muted)";
         }
-        if (aiStatusBadge) aiStatusBadge.innerText = "Chưa kết nối API (Dùng Copy Prompt)";
+        if (aiStatusBadge) aiStatusBadge.innerText = currentHomeLang === 'vi' ? "Chưa kết nối API (Dùng Copy Prompt)" : "API Not Connected (Use Copy Prompt)";
       }
     }
 
@@ -1509,8 +1697,11 @@ Network intrusion detection alerts
       localStorage.setItem('coursera_gemini_model', savedModel);
       updateApiStatusLabel();
       closeModal();
-      showToast('Đã lưu cấu hình Gemini!');
+      showToast(HOME_I18N[currentHomeLang]?.toast_saved_api || 'Gemini configuration saved!');
     });
+
+    // Initialize Home Page Language on load
+    switchHomeLang(currentHomeLang);
 
     // Clipboard Helper
     async function copyText(text) {
