@@ -485,9 +485,9 @@ function setupHUDButtonActions() {
   const btnGuide = document.getElementById('ch-hud-guide');
   btnGuide?.addEventListener('click', () => {
     try {
-      chrome.runtime.sendMessage({ action: 'open_side_panel' });
+      chrome.runtime.sendMessage({ action: 'open_guide' });
     } catch (e) {
-      showInPageToast('💡 Bấm vào biểu tượng tiện ích Coursera Helper ở góc trình duyệt để mở Side Panel!');
+      window.open('https://coursera-helper.vercel.app/guide', '_blank');
     }
   });
 }

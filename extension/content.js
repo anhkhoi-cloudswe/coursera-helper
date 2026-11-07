@@ -2579,9 +2579,9 @@ ${q.text}
     const btnGuide = document.getElementById("ch-hud-guide");
     btnGuide?.addEventListener("click", () => {
       try {
-        chrome.runtime.sendMessage({ action: "open_side_panel" });
+        chrome.runtime.sendMessage({ action: "open_guide" });
       } catch (e) {
-        showInPageToast("\u{1F4A1} B\u1EA5m v\xE0o bi\u1EC3u t\u01B0\u1EE3ng ti\u1EC7n \xEDch Coursera Helper \u1EDF g\xF3c tr\xECnh duy\u1EC7t \u0111\u1EC3 m\u1EDF Side Panel!");
+        window.open("https://coursera-helper.vercel.app/guide", "_blank");
       }
     });
   }
