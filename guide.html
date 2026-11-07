@@ -639,24 +639,27 @@
   <div class="container">
     <!-- Navigation Header -->
     <header>
-      <a href="/" class="brand">
-        <div class="brand-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            <path d="m9 12 2 2 4-4"/>
-          </svg>
-        </div>
-        <div class="brand-info">
-          <h1>Coursera Helper</h1>
-        </div>
-      </a>
-      <div class="nav-actions">
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <a href="/" class="brand">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              <path d="m9 12 2 2 4-4"/>
+            </svg>
+          </div>
+          <div class="brand-info">
+            <h1>Coursera Helper</h1>
+          </div>
+        </a>
+
         <!-- Language Switcher in Nav Bar (EN / VI) -->
         <div class="lang-switch-wrap">
           <button class="lang-btn active" id="btnEn" onclick="switchGuideLang('en')" title="Switch to English">EN</button>
           <button class="lang-btn" id="btnVi" onclick="switchGuideLang('vi')" title="Chuyển sang Tiếng Việt">VI</button>
         </div>
+      </div>
 
+      <div class="nav-actions">
         <a href="/" class="nav-btn" id="navHome">Home</a>
         <a href="/guide.html" class="nav-btn nav-btn-primary" id="navGuide">Guide</a>
         <a href="/policy.html" class="nav-btn" id="navPolicy">Privacy Policy</a>
