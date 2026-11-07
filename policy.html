@@ -229,34 +229,45 @@
       letter-spacing: 0.06em;
     }
 
-    .lang-switcher {
-      display: flex;
-      gap: 8px;
+    /* Language Switcher Button Group in Nav */
+    .lang-switch-wrap {
+      display: inline-flex;
+      background: #090d16;
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo-sm);
+      border-radius: var(--radius-sm);
+      padding: 2px;
+      gap: 2px;
+      height: 36px;
+      align-items: center;
+      box-sizing: border-box;
     }
 
     .lang-btn {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-      font-weight: 700;
-      padding: 5px 14px;
-      background: #0d1117;
-      border: var(--border-neo);
-      box-shadow: var(--shadow-neo-sm);
+      border: none;
+      background: transparent;
       color: var(--text-muted);
-      border-radius: var(--radius-sm);
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 0 10px;
+      height: 28px;
+      border-radius: 4px;
       cursor: pointer;
       transition: all 0.15s ease;
+      line-height: 28px;
+      font-family: inherit;
       outline: none;
     }
 
     .lang-btn:hover {
       color: #ffffff;
-      background: #1e2433;
+      background: rgba(255, 255, 255, 0.08);
     }
 
     .lang-btn.active {
       background: var(--primary);
       color: #ffffff;
+      box-shadow: 1px 1px 0px #000;
     }
 
     .hero-title {
@@ -421,9 +432,15 @@
         </div>
       </a>
       <div class="nav-actions">
-        <a href="/" class="nav-btn">Trang Chủ</a>
-        <a href="/guide.html" class="nav-btn">Hướng Dẫn</a>
-        <a href="/policy.html" class="nav-btn nav-btn-primary">Quyền Riêng Tư</a>
+        <!-- Language Switcher in Nav Bar (EN / VI) -->
+        <div class="lang-switch-wrap">
+          <button class="lang-btn active" id="btnEn" onclick="switchLang('en')" title="Switch to English">EN</button>
+          <button class="lang-btn" id="btnVi" onclick="switchLang('vi')" title="Chuyển sang Tiếng Việt">VI</button>
+        </div>
+
+        <a href="/" class="nav-btn" id="navHome">Home</a>
+        <a href="/guide.html" class="nav-btn" id="navGuide">Guide</a>
+        <a href="/policy.html" class="nav-btn nav-btn-primary" id="navPolicy">Privacy Policy</a>
         <a href="https://github.com/anhkhoi-cloudswe/coursera-helper" target="_blank" class="nav-btn">GitHub</a>
       </div>
     </header>
@@ -432,10 +449,6 @@
     <div class="hero-banner">
       <div class="hero-label-group">
         <span class="hero-label">DOCUMENTATION & LEGAL</span>
-        <div class="lang-switcher">
-          <button class="lang-btn active" id="btnEn" onclick="switchLang('en')">English</button>
-          <button class="lang-btn" id="btnVi" onclick="switchLang('vi')">Tiếng Việt</button>
-        </div>
       </div>
       <h1 class="hero-title" id="heroTitle">Privacy Policy — Coursera Helper</h1>
       <p class="hero-desc" id="heroDesc">
@@ -624,6 +637,9 @@
       const btnVi = document.getElementById('btnVi');
       const heroTitle = document.getElementById('heroTitle');
       const heroDesc = document.getElementById('heroDesc');
+      const navHome = document.getElementById('navHome');
+      const navGuide = document.getElementById('navGuide');
+      const navPolicy = document.getElementById('navPolicy');
 
       if (lang === 'vi') {
         enBox.style.display = 'none';
@@ -632,6 +648,9 @@
         btnVi.classList.add('active');
         heroTitle.innerText = 'Chính Sách Quyền Riêng Tư — Coursera Helper';
         heroDesc.innerText = 'Chính sách này giải thích cách Coursera Helper — Quiz Cleaner & AI Solver xử lý và bảo vệ thông tin người dùng, tuân thủ nghiêm ngặt Chính sách dành cho Nhà phát triển Chrome Web Store.';
+        if (navHome) navHome.innerText = 'Trang Chủ';
+        if (navGuide) navGuide.innerText = 'Hướng Dẫn';
+        if (navPolicy) navPolicy.innerText = 'Quyền Riêng Tư';
       } else {
         enBox.style.display = 'block';
         viBox.style.display = 'none';
@@ -639,8 +658,14 @@
         btnVi.classList.remove('active');
         heroTitle.innerText = 'Privacy Policy — Coursera Helper';
         heroDesc.innerText = 'This Privacy Policy explains how Coursera Helper — Quiz Cleaner & AI Solver handles, processes, and protects user information in strict compliance with Google Chrome Web Store Developer Program Policies.';
+        if (navHome) navHome.innerText = 'Home';
+        if (navGuide) navGuide.innerText = 'Guide';
+        if (navPolicy) navPolicy.innerText = 'Privacy Policy';
       }
     }
+
+    // Default to English on load
+    switchLang('en');
   </script>
 </body>
 </html>

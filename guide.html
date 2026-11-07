@@ -230,34 +230,45 @@
       letter-spacing: 0.06em;
     }
 
-    .lang-switcher {
-      display: flex;
-      gap: 8px;
+    /* Language Switcher in Nav Bar */
+    .lang-switch-wrap {
+      display: inline-flex;
+      background: #090d16;
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo-sm);
+      border-radius: var(--radius-sm);
+      padding: 2px;
+      gap: 2px;
+      height: 36px;
+      align-items: center;
+      box-sizing: border-box;
     }
 
     .lang-btn {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-      font-weight: 700;
-      padding: 5px 14px;
-      background: #0d1117;
-      border: var(--border-neo);
-      box-shadow: var(--shadow-neo-sm);
+      border: none;
+      background: transparent;
       color: var(--text-muted);
-      border-radius: var(--radius-sm);
+      font-size: 0.78rem;
+      font-weight: 800;
+      padding: 0 10px;
+      height: 28px;
+      border-radius: 4px;
       cursor: pointer;
       transition: all 0.15s ease;
+      line-height: 28px;
+      font-family: inherit;
       outline: none;
     }
 
     .lang-btn:hover {
       color: #ffffff;
-      background: #1e2433;
+      background: rgba(255, 255, 255, 0.08);
     }
 
     .lang-btn.active {
       background: var(--primary);
       color: #ffffff;
+      box-shadow: 1px 1px 0px #000;
     }
 
     .hero-title {
@@ -640,9 +651,15 @@
         </div>
       </a>
       <div class="nav-actions">
-        <a href="/" class="nav-btn">Trang Chủ</a>
-        <a href="/guide.html" class="nav-btn nav-btn-primary">Hướng Dẫn</a>
-        <a href="/policy.html" class="nav-btn">Quyền Riêng Tư</a>
+        <!-- Language Switcher in Nav Bar (EN / VI) -->
+        <div class="lang-switch-wrap">
+          <button class="lang-btn active" id="btnEn" onclick="switchGuideLang('en')" title="Switch to English">EN</button>
+          <button class="lang-btn" id="btnVi" onclick="switchGuideLang('vi')" title="Chuyển sang Tiếng Việt">VI</button>
+        </div>
+
+        <a href="/" class="nav-btn" id="navHome">Home</a>
+        <a href="/guide.html" class="nav-btn nav-btn-primary" id="navGuide">Guide</a>
+        <a href="/policy.html" class="nav-btn" id="navPolicy">Privacy Policy</a>
         <a href="https://github.com/anhkhoi-cloudswe/coursera-helper" target="_blank" class="nav-btn">GitHub</a>
       </div>
     </header>
@@ -651,10 +668,6 @@
     <div class="hero-banner">
       <div class="hero-label-group">
         <span class="hero-label">DOCUMENTATION & MANUAL</span>
-        <div class="lang-switcher">
-          <button class="lang-btn" id="btnEn" onclick="switchGuideLang('en')">English</button>
-          <button class="lang-btn active" id="btnVi" onclick="switchGuideLang('vi')">Tiếng Việt</button>
-        </div>
       </div>
       <h1 class="hero-title" id="guideHeroTitle">Cẩm Nang Hướng Dẫn Sử Dụng Coursera Helper</h1>
       <p class="hero-desc" id="guideHeroDesc">
@@ -1146,6 +1159,9 @@
       const btnEn = document.getElementById('btnEn');
       const heroTitle = document.getElementById('guideHeroTitle');
       const heroDesc = document.getElementById('guideHeroDesc');
+      const navHome = document.getElementById('navHome');
+      const navGuide = document.getElementById('navGuide');
+      const navPolicy = document.getElementById('navPolicy');
 
       if (lang === 'en') {
         if (viBox) viBox.style.display = 'none';
@@ -1156,6 +1172,9 @@
         btnEn?.classList.add('active');
         if (heroTitle) heroTitle.textContent = 'Coursera Helper User Guide & Documentation';
         if (heroDesc) heroDesc.textContent = 'Comprehensive manual covering all Chrome Extension features and online Web Solver tools. Automate learning workflows, bypass prompt injection traps, fast-forward lectures, and auto-solve quizzes with Gemini AI.';
+        if (navHome) navHome.innerText = 'Home';
+        if (navGuide) navGuide.innerText = 'Guide';
+        if (navPolicy) navPolicy.innerText = 'Privacy Policy';
       } else {
         if (viBox) viBox.style.display = 'block';
         if (enBox) enBox.style.display = 'none';
@@ -1165,8 +1184,14 @@
         btnEn?.classList.remove('active');
         if (heroTitle) heroTitle.textContent = 'Cẩm Nang Hướng Dẫn Sử Dụng Coursera Helper';
         if (heroDesc) heroDesc.textContent = 'Tài liệu vận hành chi tiết toàn bộ tính năng của tiện ích Chrome Extension và công cụ Web Solver trực tuyến. Tự động hóa quá trình học tập, bóc tách prompt injection rác, xử lý Video/Reading và tự động giải trắc nghiệm bằng Google Gemini AI.';
+        if (navHome) navHome.innerText = 'Trang Chủ';
+        if (navGuide) navGuide.innerText = 'Hướng Dẫn';
+        if (navPolicy) navPolicy.innerText = 'Quyền Riêng Tư';
       }
     }
+
+    // Default to English on load
+    switchGuideLang('en');
   </script>
 </body>
 </html>
