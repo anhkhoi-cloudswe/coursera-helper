@@ -8,7 +8,7 @@
 </head>
 <body>
   <div class="side-wrapper">
-    <!-- Header -->
+    <!-- Top Header -->
     <header class="header">
       <div class="brand">
         <div class="brand-icon">
@@ -23,27 +23,45 @@
       </div>
 
       <div class="header-actions">
-        <button class="btn btn-ai btn-sm" id="btnAutoScanSolve" title="Tự động quét toàn bộ câu hỏi và tự động tick trên Coursera">
-          Tự quét & giải
-        </button>
-        <button class="icon-btn" id="btnToggleSettings" title="Cài đặt Gemini API Key">
+        <!-- Language Switcher Toggle -->
+        <div class="lang-switch-wrap">
+          <button class="lang-btn active" id="btnLangVi" data-lang="vi" title="Chuyển sang Tiếng Việt">VI</button>
+          <button class="lang-btn" id="btnLangEn" data-lang="en" title="Switch to English">EN</button>
+        </div>
+        <button class="icon-btn" id="btnToggleSettings" title="Cài đặt Gemini API Key" data-i18n-title="btn_settings_title">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         </button>
-        <button class="icon-btn" id="btnOpenWeb" title="Mở trang Web đầy đủ">
+        <button class="icon-btn" id="btnOpenWeb" title="Mở trang Web đầy đủ" data-i18n-title="btn_web_title">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
         </button>
       </div>
     </header>
 
+    <!-- Top Navigation Bar (Tham khảo định dạng hình 2) -->
+    <nav class="main-nav-tabs">
+      <button class="nav-tab active" id="navTabQuiz" data-tab="quiz">
+        <span class="nav-tab-icon">📝</span>
+        <span class="nav-tab-label" data-i18n="nav_quiz">Quiz</span>
+      </button>
+      <button class="nav-tab" id="navTabVideo" data-tab="video">
+        <span class="nav-tab-icon">🎬</span>
+        <span class="nav-tab-label" data-i18n="nav_video">Video</span>
+      </button>
+      <button class="nav-tab" id="navTabGuide" data-tab="guide">
+        <span class="nav-tab-icon">📖</span>
+        <span class="nav-tab-label" data-i18n="nav_guide">Hướng dẫn</span>
+      </button>
+    </nav>
+
     <!-- Collapsible Settings Panel -->
     <div class="settings-box" id="settingsBox" style="display: none;">
       <div class="settings-head">
-        <span>Cấu hình Gemini API</span>
+        <span data-i18n="settings_title">Cấu hình Gemini API</span>
         <button class="btn-close" id="btnCloseSettings">✕</button>
       </div>
       <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px;">
         <div style="font-size: 11px; font-weight: 600; color: #94a3b8; display: flex; justify-content: space-between;">
-          <span>Danh sách Gemini API Key (Xoay tua)</span>
+          <span data-i18n="settings_keys_label">Danh sách Gemini API Key (Xoay tua)</span>
         </div>
         <input type="password" id="apiKeyInput" placeholder="🔑 API Key 1 (AIzaSy... — Chính)" class="input-text">
         <input type="password" id="apiKeyInput2" placeholder="🔄 API Key 2 (Dự phòng xoay tua 1 — Tùy chọn)" class="input-text">
@@ -55,81 +73,194 @@
           <option value="gemini-3.7-flash">Gemini 3.7 Flash (Mới — Ổn định &amp; Tối ưu)</option>
           <option value="gemini-3.8-flash">Gemini 3.8 Flash (Thế hệ mới — Siêu tốc)</option>
         </select>
-        <button class="btn btn-primary" id="btnSaveKey">Lưu</button>
+        <button class="btn btn-primary" id="btnSaveKey" data-i18n="btn_save">Lưu</button>
       </div>
-      <div class="settings-tip">
+      <div class="settings-tip" data-i18n="settings_tip_html">
         Tự động chuyển Key khi hết 20 lượt/phút. Lấy miễn phí tại <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio ↗</a>
       </div>
-
     </div>
 
-    <!-- Section 1: Raw Input -->
-    <div class="panel-box input-panel">
-      <div class="panel-head">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-          <span>Văn bản Coursera gốc</span>
-        </div>
-        <div class="action-group">
-          <button class="btn btn-primary btn-sm" id="btnGrabCoursera" title="Lấy câu hỏi đang bôi đen trên Coursera">
-            Lấy chữ
-          </button>
-          <button class="btn btn-primary btn-sm" id="btnPaste" title="Dán nội dung từ Clipboard">
-            Dán
-          </button>
-          <button class="btn btn-default btn-sm" id="btnClear" title="Xóa toàn bộ văn bản">
-            Xóa
+    <!-- MAIN TAB CONTENTS CONTAINER -->
+    <main class="tabs-viewport">
+      <!-- ============================================== -->
+      <!-- TAB 1: QUIZ SOLVER & TEXT CLEANER (Hình 1)     -->
+      <!-- ============================================== -->
+      <section class="tab-page active" id="pageQuiz">
+        <!-- Quick Action Bar -->
+        <div class="quiz-hero-action">
+          <button class="btn btn-ai btn-hero" id="btnAutoScanSolve" title="Tự động quét toàn bộ câu hỏi và tự động tick trên Coursera" data-i18n-title="btn_auto_scan_solve_title">
+            <span class="btn-icon">⚡</span>
+            <span class="btn-text" data-i18n="btn_auto_scan_solve">Tự quét &amp; giải toàn bài</span>
           </button>
         </div>
-      </div>
-      <textarea id="rawInput" placeholder="Bôi đen câu hỏi trên Coursera rồi bấm 'Lấy chữ', hoặc bấm 'Dán'..."></textarea>
-    </div>
 
-    <!-- Section 2: Output & AI Solution -->
-    <div class="panel-box output-panel">
-      <div class="panel-head">
-        <!-- Segmented Tab -->
-        <div class="tab-group">
-          <button class="tab-btn active" id="tabClean">Văn bản sạch</button>
-          <button class="tab-btn" id="tabAi">Đáp án Gemini</button>
+        <!-- Section 1: Raw Input -->
+        <div class="panel-box input-panel">
+          <div class="panel-head">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+              <span data-i18n="raw_text_heading">Văn bản Coursera gốc</span>
+            </div>
+            <div class="action-group">
+              <button class="btn btn-primary btn-sm" id="btnGrabCoursera" title="Lấy câu hỏi đang bôi đen trên Coursera" data-i18n-title="btn_grab_title" data-i18n="btn_grab">
+                Lấy chữ
+              </button>
+              <button class="btn btn-primary btn-sm" id="btnPaste" title="Dán nội dung từ Clipboard" data-i18n-title="btn_paste_title" data-i18n="btn_paste">
+                Dán
+              </button>
+              <button class="btn btn-default btn-sm" id="btnClear" title="Xóa toàn bộ văn bản" data-i18n-title="btn_clear_title" data-i18n="btn_clear">
+                Xóa
+              </button>
+            </div>
+          </div>
+          <textarea id="rawInput" placeholder="Bôi đen câu hỏi trên Coursera rồi bấm 'Lấy chữ', hoặc bấm 'Dán'..."></textarea>
         </div>
 
-        <div class="action-group">
-          <button class="btn btn-emerald btn-sm" id="btnCopyClean" title="Copy kết quả sạch">
-            Copy sạch
-          </button>
-          <button class="btn btn-default btn-sm" id="btnCopyPrompt" title="Copy kèm prompt để dán web Gemini">
-            Prompt
-          </button>
-          <button class="btn btn-ai btn-sm" id="btnSolve" title="Gọi Gemini giải đáp án ngay trên thanh bên">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
-            Giải
-          </button>
-        </div>
-      </div>
+        <!-- Section 2: Output & AI Solution -->
+        <div class="panel-box output-panel">
+          <div class="panel-head">
+            <!-- Segmented Tab -->
+            <div class="tab-group">
+              <button class="tab-btn active" id="tabClean" data-i18n="tab_clean">Văn bản sạch</button>
+              <button class="tab-btn" id="tabAi" data-i18n="tab_ai">Đáp án Gemini</button>
+            </div>
 
-      <!-- View 1: Cleaned Text -->
-      <div class="view-panel active" id="viewClean">
-        <textarea id="cleanOutput" readonly placeholder="Nội dung sau khi lọc bẫy injection và '1 point' sẽ tự động hiện ở đây..."></textarea>
-      </div>
+            <div class="action-group">
+              <button class="btn btn-emerald btn-sm" id="btnCopyClean" title="Copy kết quả sạch" data-i18n-title="btn_copy_clean_title" data-i18n="btn_copy_clean">
+                Copy sạch
+              </button>
+              <button class="btn btn-default btn-sm" id="btnCopyPrompt" title="Copy kèm prompt để dán web Gemini" data-i18n-title="btn_prompt_title" data-i18n="btn_prompt">
+                Prompt
+              </button>
+              <button class="btn btn-ai btn-sm" id="btnSolve" title="Gọi Gemini giải đáp án ngay trên thanh bên" data-i18n-title="btn_solve_title">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
+                <span data-i18n="btn_solve">Giải</span>
+              </button>
+            </div>
+          </div>
 
-      <!-- View 2: Gemini AI Markdown Result -->
-      <div class="view-panel" id="viewAi">
-        <div class="ai-content" id="aiContent">
-          <div class="ai-empty-state">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5" style="opacity: 0.6; margin-bottom: 8px;"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
-            <p>Bấm nút <strong>"Giải"</strong> để nhận đáp án và giải thích chi tiết từ Gemini!</p>
+          <!-- View 1: Cleaned Text -->
+          <div class="view-panel active" id="viewClean">
+            <textarea id="cleanOutput" readonly placeholder="Nội dung sau khi lọc bẫy injection và '1 point' sẽ tự động hiện ở đây..."></textarea>
+          </div>
+
+          <!-- View 2: Gemini AI Markdown Result -->
+          <div class="view-panel" id="viewAi">
+            <div class="ai-content" id="aiContent">
+              <div class="ai-empty-state">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5" style="opacity: 0.6; margin-bottom: 8px;"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3Z"/></svg>
+                <p data-i18n="ai_empty_desc">Bấm nút <strong>"Giải"</strong> để nhận đáp án và giải thích chi tiết từ Gemini!</p>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- TAB 2: VIDEO & MODULE CONTROLLER               -->
+      <!-- ============================================== -->
+      <section class="tab-page" id="pageVideo">
+        <div class="card-section">
+          <div class="card-section-head">
+            <span class="card-section-title" data-i18n="video_section_title">🎬 Điều khiển Video bài giảng</span>
+          </div>
+          <p class="card-section-desc" data-i18n="video_section_desc">Tua nhanh bài giảng Coursera và tự động hoàn thành để chuyển sang bài tiếp theo.</p>
+          <div class="action-grid">
+            <button class="btn btn-primary btn-action" id="btnSideSkipVideo">
+              <span class="btn-icon">⏩</span>
+              <span class="btn-text" data-i18n="btn_side_skip_video">Tua xong Video này</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="card-section">
+          <div class="card-section-head">
+            <span class="card-section-title" data-i18n="module_section_title">🚀 Tự động học cả Module (Auto-Skip)</span>
+          </div>
+          <p class="card-section-desc" data-i18n="module_section_desc">Tự động duyệt bài học, xem video tốc độ cao, đọc bài và giải quiz liên tục.</p>
+          <div class="action-grid">
+            <button class="btn btn-emerald btn-action" id="btnSideAutoSkip">
+              <span class="btn-icon">🚀</span>
+              <span class="btn-text" id="lblSideAutoSkip" data-i18n="btn_side_start_autoskip">Auto-Skip Module</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="card-section">
+          <div class="card-section-head">
+            <span class="card-section-title" data-i18n="peer_section_title">⭐ Chấm điểm ngang hàng (Peer Review)</span>
+          </div>
+          <p class="card-section-desc" data-i18n="peer_section_desc">Tự động chọn điểm tối đa và tạo nhận xét tích cực chi tiết cho bài nộp của bạn học.</p>
+          <div class="action-grid">
+            <button class="btn btn-purple btn-action" id="btnSidePeerReview">
+              <span class="btn-icon">⭐</span>
+              <span class="btn-text" data-i18n="btn_side_peer_review">Chấm điểm Peer</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- TAB 3: HƯỚNG DẪN SỬ DỤNG (GUIDE)                -->
+      <!-- ============================================== -->
+      <section class="tab-page" id="pageGuide">
+        <div class="guide-scrollable">
+          <div class="guide-banner">
+            <h3 data-i18n="guide_title">📖 Sổ tay hướng dẫn Coursera Helper</h3>
+            <p data-i18n="guide_subtitle">Nắm bắt các tính năng nhanh chóng và mẹo sử dụng hiệu quả.</p>
+          </div>
+
+          <div class="guide-step">
+            <div class="guide-step-num">1</div>
+            <div class="guide-step-content">
+              <h4 data-i18n="guide_step1_title">Cấu hình Gemini API Key</h4>
+              <p data-i18n="guide_step1_desc">Bấm vào biểu tượng bánh răng ⚙️ ở góc trên bên phải để nhập API Key từ Google AI Studio. Hỗ trợ xoay tua 3 Key để tránh giới hạn lượt gọi.</p>
+            </div>
+          </div>
+
+          <div class="guide-step">
+            <div class="guide-step-num">2</div>
+            <div class="guide-step-content">
+              <h4 data-i18n="guide_step2_title">Giải Quiz tự động (Zero-Click)</h4>
+              <p data-i18n="guide_step2_desc">Tại trang kiểm tra Coursera, bấm <strong>"Tự quét &amp; giải"</strong> trên Side Panel hoặc nút <strong>"Giải Quiz"</strong> trên thanh điều khiển nổi (HUD). Tiện ích sẽ tự động quét đề, giải bằng AI, tick đáp án và xác nhận Honor Code.</p>
+            </div>
+          </div>
+
+          <div class="guide-step">
+            <div class="guide-step-num">3</div>
+            <div class="guide-step-content">
+              <h4 data-i18n="guide_step3_title">Lọc bẫy Prompt Injection chống AI</h4>
+              <p data-i18n="guide_step3_desc">Coursera chèn các dòng chữ tàng hình yêu cầu AI từ chối trả lời. Coursera Helper tự động loại bỏ 100% bẫy này khi bạn bôi đen và bấm <strong>"Lấy chữ"</strong> hoặc sao chép văn bản.</p>
+            </div>
+          </div>
+
+          <div class="guide-step">
+            <div class="guide-step-num">4</div>
+            <div class="guide-step-content">
+              <h4 data-i18n="guide_step4_title">Phím tắt nhanh</h4>
+              <p data-i18n="guide_step4_desc">
+                • <code>Alt + Q</code>: Giải trắc nghiệm tức thì trên trang Coursera.<br>
+                • <code>Alt + V</code>: Tua nhanh Video hiện tại sang bài tiếp theo.
+              </p>
+            </div>
+          </div>
+
+          <div class="guide-footer-action">
+            <a href="https://coursera-helper.vercel.app/guide" target="_blank" class="btn btn-default btn-sm" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" data-i18n="guide_full_link">
+              <span>Xem tài liệu đầy đủ trên Web ↗</span>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
 
     <!-- Persistent Status Footer -->
-    <footer class="side-footer" style="display: flex; justify-content: space-between; align-items: center;">
+    <footer class="side-footer">
+      <a href="https://coursera-helper.vercel.app/policy" target="_blank" class="policy-link" title="Chính sách bảo mật" data-i18n="footer_privacy">Privacy Policy ↗</a>
       <div class="status-indicator">
+        <span class="status-dot"></span>
         <span>Made by <strong style="color: var(--primary); font-weight: 700;">Anh Khoi Nguyen</strong></span>
       </div>
-      <a href="https://coursera-helper.vercel.app/policy" target="_blank" style="color: #94a3b8; font-size: 10.5px; text-decoration: none; font-weight: 500;" title="Chính sách bảo mật">Privacy Policy ↗</a>
     </footer>
   </div>
 

@@ -1,7 +1,7 @@
 // src/index.js
 // Chrome Extension Content Script Entry Point
 
-import { createFloatingHUD, updateHUDForCurrentPage } from './hud/hud.js';
+import { createFloatingHUD, updateHUDForCurrentPage, updateHUDLanguage } from './hud/hud.js';
 import { initFloatingCopyPill } from './hud/copyPill.js';
 import { triggerZeroClickQuizWorkflow } from './quiz/solver.js';
 import { completeCourseraVideo, startAutoSkipLoop, stopAutoSkipLoop } from './video/video.js';
@@ -64,6 +64,9 @@ import { isExtensionContextValid } from './utils/dom.js';
       } else if (request.action === 'peer_review_now') {
         const btn = document.getElementById('ch-hud-peerreview') || document.getElementById('ch-btn-peer-review');
         runAutoPeerReviewWorkflow(btn);
+        sendResponse({ success: true });
+      } else if (request.action === 'set_language') {
+        updateHUDLanguage(request.lang);
         sendResponse({ success: true });
       }
       return true;

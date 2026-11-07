@@ -2471,6 +2471,14 @@ ${q.text}
     restoreHUDPosition();
     setupHUDInteractions();
     setupHUDButtonActions();
+    try {
+      chrome.storage.local.get(["ui_language"], (res) => {
+        if (res && res.ui_language) {
+          updateHUDLanguage(res.ui_language);
+        }
+      });
+    } catch (e) {
+    }
   }
   function restoreHUDPosition() {
     if (!floatingHUD) return;
@@ -2578,6 +2586,48 @@ ${q.text}
     });
   }
   function updateHUDForCurrentPage() {
+    updateHUDLanguage();
+  }
+  function updateHUDLanguage(lang) {
+    const curLang = lang || window._chCurrentLanguage || "vi";
+    window._chCurrentLanguage = curLang;
+    const btnSolve = document.getElementById("ch-hud-solvequiz");
+    if (btnSolve) {
+      const lbl = btnSolve.querySelector(".ch-btn-label");
+      if (lbl) lbl.textContent = curLang === "en" ? "Solve Quiz" : "Gi\u1EA3i Quiz";
+      btnSolve.title = curLang === "en" ? "Auto-scan questions with images, solve with Gemini, select answers, and auto-submit! (Alt+Q)" : "T\u1EF1 \u0111\u1ED9ng qu\xE9t to\xE0n b\u1ED9 c\xE2u h\u1ECFi (k\xE8m h\xECnh \u1EA3nh), g\u1ECDi Gemini gi\u1EA3i, tick \u0111\xE1p \xE1n v\xE0 t\u1EF1 \u0111\u1ED9ng n\u1ED9p b\xE0i! (Alt+Q)";
+    }
+    const btnPeer = document.getElementById("ch-hud-peerreview");
+    if (btnPeer) {
+      const lbl = btnPeer.querySelector(".ch-btn-label");
+      if (lbl) lbl.textContent = curLang === "en" ? "Grade Peer" : "Ch\u1EA5m \u0110i\u1EC3m Peer";
+      btnPeer.title = curLang === "en" ? "Auto-grade peer assignments: give maximum score and write detailed positive feedback!" : "T\u1EF1 \u0111\u1ED9ng ch\u1EA5m \u0111i\u1EC3m Peer Review: ch\u1ECDn \u0111i\u1EC3m cao nh\u1EA5t v\xE0 vi\u1EBFt nh\u1EADn x\xE9t chi ti\u1EBFt!";
+    }
+    const btnAutoSkip = document.getElementById("ch-hud-autoskip");
+    if (btnAutoSkip && !window._chAutoSkipActive) {
+      const lbl = btnAutoSkip.querySelector(".ch-btn-label");
+      if (lbl) lbl.textContent = curLang === "en" ? "Auto-Skip Module" : "Auto-Skip Module";
+      btnAutoSkip.title = curLang === "en" ? "Auto-complete entire module: skip videos, mark readings, solve quizzes and submit continuously" : "T\u1EF1 \u0111\u1ED9ng duy\u1EC7t b\xE0i: tua video, \u0111\u1ECDc b\xE0i, t\u1EF1 gi\u1EA3i quiz v\xE0 n\u1ED9p b\xE0i li\xEAn t\u1EE5c";
+    } else if (btnAutoSkip && window._chAutoSkipActive) {
+      const lbl = btnAutoSkip.querySelector(".ch-btn-label");
+      if (lbl) lbl.textContent = curLang === "en" ? "Stop Auto-Skip" : "D\u1EEBng Auto-Skip";
+    }
+    const btnSkipOne = document.getElementById("ch-hud-skipone");
+    if (btnSkipOne) {
+      const lbl = btnSkipOne.querySelector(".ch-btn-label");
+      if (lbl) lbl.textContent = curLang === "en" ? "Skip Video" : "Skip Video";
+      btnSkipOne.title = curLang === "en" ? "Fast forward this video to the end and go to the next item (Alt+V)" : "Tua video n\xE0y t\u1EDBi cu\u1ED1i v\xE0 sang b\xE0i ti\u1EBFp (Alt+V)";
+    }
+    const btnGuide = document.getElementById("ch-hud-guide");
+    if (btnGuide) {
+      const lbl = btnGuide.querySelector(".ch-btn-label");
+      if (lbl) lbl.textContent = curLang === "en" ? "Guide" : "H\u01B0\u1EDBng d\u1EABn";
+      btnGuide.title = curLang === "en" ? "Open user guide notebook and API Key settings" : "M\u1EDF s\u1ED5 tay h\u01B0\u1EDBng d\u1EABn s\u1EED d\u1EE5ng v\xE0 c\xE0i \u0111\u1EB7t API Key";
+    }
+    const hudHeader = document.getElementById("ch-hud-header");
+    if (hudHeader) {
+      hudHeader.title = curLang === "en" ? "Click to Collapse / Expand \u2022 Hold and drag to move freely" : "Nh\u1EA5n 1 l\u1EA7n \u0111\u1EC3 thu nh\u1ECF / m\u1EDF r\u1ED9ng \u2022 K\xE9o gi\u1EEF \u0111\u1EC3 di chuy\u1EC3n t\u1EF1 do";
+    }
   }
 
   // src/hud/copyPill.js
@@ -2753,6 +2803,9 @@ ${q.text}
         } else if (request.action === "peer_review_now") {
           const btn = document.getElementById("ch-hud-peerreview") || document.getElementById("ch-btn-peer-review");
           runAutoPeerReviewWorkflow(btn);
+          sendResponse({ success: true });
+        } else if (request.action === "set_language") {
+          updateHUDLanguage(request.lang);
           sendResponse({ success: true });
         }
         return true;

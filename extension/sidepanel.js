@@ -1,6 +1,292 @@
 // Coursera Helper — Side Panel Controller v2.1.1
 
 // Multi-pattern regex để khử triệt để tất cả các biến thể Prompt Injection của Coursera
+// =======================================================
+// 0. ĐA NGÔN NGỮ (I18N: VIETNAMESE & ENGLISH)
+// =======================================================
+const I18N = {
+  vi: {
+    nav_quiz: 'Quiz',
+    nav_video: 'Video',
+    nav_guide: 'Hướng dẫn',
+    settings_title: 'Cấu hình Gemini API',
+    settings_keys_label: 'Danh sách Gemini API Key (Xoay tua)',
+    btn_save: 'Lưu',
+    settings_tip_html: 'Tự động chuyển Key khi hết 20 lượt/phút. Lấy miễn phí tại <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio ↗</a>',
+    btn_settings_title: 'Cài đặt Gemini API Key',
+    btn_web_title: 'Mở trang Web đầy đủ',
+    btn_auto_scan_solve: 'Tự quét & giải toàn bài',
+    btn_auto_scan_solve_title: 'Tự động quét toàn bộ câu hỏi và tự động tick trên Coursera',
+    raw_text_heading: 'Văn bản Coursera gốc',
+    raw_placeholder: "Bôi đen câu hỏi trên Coursera rồi bấm 'Lấy chữ', hoặc bấm 'Dán'...",
+    clean_placeholder: "Nội dung sau khi lọc bẫy injection và '1 point' sẽ tự động hiện ở đây...",
+    btn_grab: 'Lấy chữ',
+    btn_grab_title: 'Lấy câu hỏi đang bôi đen trên Coursera',
+    btn_paste: 'Dán',
+    btn_paste_title: 'Dán nội dung từ Clipboard',
+    btn_clear: 'Xóa',
+    btn_clear_title: 'Xóa toàn bộ văn bản',
+    tab_clean: 'Văn bản sạch',
+    tab_ai: 'Đáp án Gemini',
+    btn_copy_clean: 'Copy sạch',
+    btn_copy_clean_title: 'Copy kết quả sạch',
+    btn_prompt: 'Prompt',
+    btn_prompt_title: 'Copy kèm prompt để dán web Gemini',
+    btn_solve: 'Giải',
+    btn_solve_title: 'Gọi Gemini giải đáp án ngay trên thanh bên',
+    ai_empty_desc: 'Bấm nút <strong>"Giải"</strong> để nhận đáp án và giải thích chi tiết từ Gemini!',
+    video_section_title: '🎬 Điều khiển Video bài giảng',
+    video_section_desc: 'Tua nhanh bài giảng Coursera và tự động hoàn thành để chuyển sang bài tiếp theo.',
+    btn_side_skip_video: 'Tua xong Video này',
+    module_section_title: '🚀 Tự động học cả Module (Auto-Skip)',
+    module_section_desc: 'Tự động duyệt bài học, xem video tốc độ cao, đọc bài và giải quiz liên tục.',
+    btn_side_start_autoskip: 'Auto-Skip Module',
+    btn_side_stop_autoskip: 'Dừng Auto-Skip',
+    peer_section_title: '⭐ Chấm điểm ngang hàng (Peer Review)',
+    peer_section_desc: 'Tự động chọn điểm tối đa và tạo nhận xét tích cực chi tiết cho bài nộp của bạn học.',
+    btn_side_peer_review: 'Chấm điểm Peer',
+    guide_title: '📖 Sổ tay hướng dẫn Coursera Helper',
+    guide_subtitle: 'Nắm bắt các tính năng nhanh chóng và mẹo sử dụng hiệu quả.',
+    guide_step1_title: 'Cấu hình Gemini API Key',
+    guide_step1_desc: 'Bấm vào biểu tượng bánh răng ⚙️ ở góc trên bên phải để nhập API Key từ Google AI Studio. Hỗ trợ xoay tua 3 Key để tránh giới hạn lượt gọi.',
+    guide_step2_title: 'Giải Quiz tự động (Zero-Click)',
+    guide_step2_desc: 'Tại trang kiểm tra Coursera, bấm <strong>"Tự quét & giải"</strong> trên Side Panel hoặc nút <strong>"Giải Quiz"</strong> trên thanh điều khiển nổi (HUD). Tiện ích sẽ tự động quét đề, giải bằng AI, tick đáp án và xác nhận Honor Code.',
+    guide_step3_title: 'Lọc bẫy Prompt Injection chống AI',
+    guide_step3_desc: 'Coursera chèn các dòng chữ tàng hình yêu cầu AI từ chối trả lời. Coursera Helper tự động loại bỏ 100% bẫy này khi bạn bôi đen và bấm <strong>"Lấy chữ"</strong> hoặc sao chép văn bản.',
+    guide_step4_title: 'Phím tắt nhanh',
+    guide_step4_desc: '• <code>Alt + Q</code>: Giải trắc nghiệm tức thì trên trang Coursera.<br>• <code>Alt + V</code>: Tua nhanh Video hiện tại sang bài tiếp theo.',
+    guide_full_link: 'Xem tài liệu đầy đủ trên Web ↗',
+    footer_privacy: 'Privacy Policy ↗',
+    toast_copied: 'Đã sao chép!',
+    toast_cleared: 'Đã xóa',
+    toast_saved_keys: '✓ Đã lưu cài đặt API Key!',
+    toast_grabbed: '✓ Đã lấy câu hỏi từ Coursera!',
+    toast_open_coursera: '⚠️ Vui lòng mở trang Coursera!',
+    toast_grab_empty: 'Vui lòng bôi đen câu hỏi trên Coursera trước!',
+    toast_pasted: 'Đã dán và lọc sạch!',
+    toast_no_content_copy: 'Chưa có nội dung để copy',
+    toast_copied_clean: 'Đã copy văn bản sạch!',
+    toast_no_quiz: 'Chưa có câu hỏi',
+    toast_copied_prompt: 'Đã copy Prompt cho Gemini!',
+    toast_video_skipped: '⏩ Đã gửi lệnh tua xong Video sang Coursera!',
+    toast_peer_sent: '⭐ Đã gửi lệnh chấm điểm Peer Review sang Coursera!',
+    toast_autoskip_started: '🚀 Đã kích hoạt Auto-Skip Module trên Coursera!',
+    toast_autoskip_stopped: '🛑 Đã dừng Auto-Skip Module trên Coursera!'
+  },
+  en: {
+    nav_quiz: 'Quiz',
+    nav_video: 'Video',
+    nav_guide: 'Guide',
+    settings_title: 'Gemini API Configuration',
+    settings_keys_label: 'Gemini API Keys List (Key Rotation)',
+    btn_save: 'Save',
+    settings_tip_html: 'Auto-rotates when hitting 20 req/min limit. Get free keys at <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio ↗</a>',
+    btn_settings_title: 'Gemini API Settings',
+    btn_web_title: 'Open full Web app',
+    btn_auto_scan_solve: 'Auto Scan & Solve Full Quiz',
+    btn_auto_scan_solve_title: 'Automatically extract all questions and auto-fill on Coursera',
+    raw_text_heading: 'Original Coursera Text',
+    raw_placeholder: "Highlight questions on Coursera and click 'Grab', or click 'Paste'...",
+    clean_placeholder: "Cleaned text without prompt injection and '1 point' will appear here...",
+    btn_grab: 'Grab',
+    btn_grab_title: 'Grab selected text from Coursera',
+    btn_paste: 'Paste',
+    btn_paste_title: 'Paste text from clipboard',
+    btn_clear: 'Clear',
+    btn_clear_title: 'Clear all text',
+    tab_clean: 'Clean Text',
+    tab_ai: 'Gemini Answers',
+    btn_copy_clean: 'Copy Clean',
+    btn_copy_clean_title: 'Copy clean text',
+    btn_prompt: 'Prompt',
+    btn_prompt_title: 'Copy with prompt for external Gemini Web',
+    btn_solve: 'Solve',
+    btn_solve_title: 'Call Gemini AI to solve right in side panel',
+    ai_empty_desc: 'Click <strong>"Solve"</strong> to get answers and detailed explanations from Gemini!',
+    video_section_title: '🎬 Lecture Video Controls',
+    video_section_desc: 'Fast forward lecture video and auto-complete to proceed to next item.',
+    btn_side_skip_video: 'Complete & Skip This Video',
+    module_section_title: '🚀 Auto-Skip Entire Module',
+    module_section_desc: 'Hands-free module completion: auto watch videos, mark readings, and solve quizzes.',
+    btn_side_start_autoskip: 'Auto-Skip Module',
+    btn_side_stop_autoskip: 'Stop Auto-Skip',
+    peer_section_title: '⭐ Peer Review Auto-Grader',
+    peer_section_desc: 'Automatically give maximum grades and generate detailed positive feedback.',
+    btn_side_peer_review: 'Auto-Grade Peer',
+    guide_title: '📖 Coursera Helper Guide',
+    guide_subtitle: 'Master all features quickly and study with high efficiency.',
+    guide_step1_title: 'Configure Gemini API Key',
+    guide_step1_desc: 'Click the gear icon ⚙️ at top right to enter your free API Key from Google AI Studio. Supports 3-key rotation to bypass rate limits.',
+    guide_step2_title: 'Zero-Click Auto Quiz Solver',
+    guide_step2_desc: 'On any Coursera quiz page, click <strong>"Auto Scan & Solve"</strong> on Side Panel or <strong>"Solve Quiz"</strong> on Floating HUD. The extension automatically extracts questions, solves them with AI, checks answers, and agrees to Honor Code.',
+    guide_step3_title: 'Filter Anti-AI Prompt Injection Traps',
+    guide_step3_desc: 'Coursera injects invisible traps instructing AI to refuse answering. Coursera Helper automatically removes 100% of these traps whenever you grab or copy text.',
+    guide_step4_title: 'Keyboard Shortcuts',
+    guide_step4_desc: '• <code>Alt + Q</code>: Instant Quiz Solver on Coursera tab.<br>• <code>Alt + V</code>: Fast forward current Video to next item.',
+    guide_full_link: 'Read full documentation on Web ↗',
+    footer_privacy: 'Privacy Policy ↗',
+    toast_copied: 'Copied to clipboard!',
+    toast_cleared: 'Cleared',
+    toast_saved_keys: '✓ API Key settings saved!',
+    toast_grabbed: '✓ Grabbed questions from Coursera!',
+    toast_open_coursera: '⚠️ Please open a Coursera tab!',
+    toast_grab_empty: 'Please highlight questions on Coursera first!',
+    toast_pasted: 'Pasted and cleaned!',
+    toast_no_content_copy: 'No content to copy',
+    toast_copied_clean: 'Clean text copied!',
+    toast_no_quiz: 'No questions provided',
+    toast_copied_prompt: 'Prompt copied for Gemini!',
+    toast_video_skipped: '⏩ Video skip request sent to Coursera!',
+    toast_peer_sent: '⭐ Peer review request sent to Coursera!',
+    toast_autoskip_started: '🚀 Auto-Skip Module started on Coursera!',
+    toast_autoskip_stopped: '🛑 Auto-Skip Module stopped on Coursera!'
+  }
+};
+
+let currentLanguage = 'vi';
+
+function applyLanguage(lang) {
+  currentLanguage = (lang === 'en' || lang === 'vi') ? lang : 'vi';
+  const dict = I18N[currentLanguage] || I18N.vi;
+
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    if (dict[key]) {
+      if (key.endsWith('_html') || key.includes('desc') || key.includes('step')) {
+        el.innerHTML = dict[key];
+      } else {
+        el.textContent = dict[key];
+      }
+    }
+  });
+
+  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-title');
+    if (dict[key]) {
+      el.title = dict[key];
+    }
+  });
+
+  if (rawInput) rawInput.placeholder = dict.raw_placeholder;
+  if (cleanOutput) cleanOutput.placeholder = dict.clean_placeholder;
+
+  const btnVi = document.getElementById('btnLangVi');
+  const btnEn = document.getElementById('btnLangEn');
+  if (btnVi && btnEn) {
+    if (currentLanguage === 'en') {
+      btnEn.classList.add('active');
+      btnVi.classList.remove('active');
+    } else {
+      btnVi.classList.add('active');
+      btnEn.classList.remove('active');
+    }
+  }
+
+  chrome.storage.local.get(['auto_skip_active'], (res) => {
+    updateAutoSkipButtonUI(!!res?.auto_skip_active);
+  });
+
+  chrome.storage.local.set({ 'ui_language': currentLanguage });
+  broadcastLanguageToCourseraTabs(currentLanguage);
+}
+
+async function broadcastLanguageToCourseraTabs(lang) {
+  try {
+    const allTabs = await chrome.tabs.query({});
+    for (const t of allTabs) {
+      if (t.id && t.url && (t.url.includes('coursera.org') || t.url.includes('/learn/'))) {
+        chrome.tabs.sendMessage(t.id, { action: 'set_language', lang: lang }, () => {
+          if (chrome.runtime.lastError) {}
+        });
+      }
+    }
+  } catch (e) {}
+}
+
+function setupLanguageSwitcher() {
+  const btnVi = document.getElementById('btnLangVi');
+  const btnEn = document.getElementById('btnLangEn');
+  btnVi?.addEventListener('click', () => applyLanguage('vi'));
+  btnEn?.addEventListener('click', () => applyLanguage('en'));
+}
+
+function setupNavTabs() {
+  const tabs = [
+    { btnId: 'navTabQuiz', pageId: 'pageQuiz' },
+    { btnId: 'navTabVideo', pageId: 'pageVideo' },
+    { btnId: 'navTabGuide', pageId: 'pageGuide' }
+  ];
+
+  tabs.forEach(t => {
+    const btn = document.getElementById(t.btnId);
+    btn?.addEventListener('click', () => {
+      tabs.forEach(item => {
+        document.getElementById(item.btnId)?.classList.remove('active');
+        document.getElementById(item.pageId)?.classList.remove('active');
+      });
+      btn.classList.add('active');
+      document.getElementById(t.pageId)?.classList.add('active');
+    });
+  });
+}
+
+function updateAutoSkipButtonUI(isActive) {
+  const lbl = document.getElementById('lblSideAutoSkip');
+  const btn = document.getElementById('btnSideAutoSkip');
+  const dict = I18N[currentLanguage] || I18N.vi;
+  if (!btn) return;
+  if (isActive) {
+    if (lbl) lbl.textContent = dict.btn_side_stop_autoskip;
+    btn.style.background = '#f43f5e';
+    btn.style.color = '#ffffff';
+  } else {
+    if (lbl) lbl.textContent = dict.btn_side_start_autoskip;
+    btn.style.background = 'var(--emerald)';
+    btn.style.color = '#064e3b';
+  }
+}
+
+function setupSideActionButtons() {
+  safeListen('btnSideSkipVideo', 'click', async () => {
+    const tab = await getCourseraTab();
+    if (!tab || !tab.id) {
+      showToast(I18N[currentLanguage].toast_open_coursera);
+      return;
+    }
+    chrome.tabs.sendMessage(tab.id, { action: 'skip_video_now' }, (res) => {
+      showToast(I18N[currentLanguage].toast_video_skipped);
+    });
+  });
+
+  safeListen('btnSidePeerReview', 'click', async () => {
+    const tab = await getCourseraTab();
+    if (!tab || !tab.id) {
+      showToast(I18N[currentLanguage].toast_open_coursera);
+      return;
+    }
+    chrome.tabs.sendMessage(tab.id, { action: 'peer_review_now' }, (res) => {
+      showToast(I18N[currentLanguage].toast_peer_sent);
+    });
+  });
+
+  safeListen('btnSideAutoSkip', 'click', async () => {
+    const tab = await getCourseraTab();
+    if (!tab || !tab.id) {
+      showToast(I18N[currentLanguage].toast_open_coursera);
+      return;
+    }
+    chrome.storage.local.get(['auto_skip_active'], (res) => {
+      const nextState = !res.auto_skip_active;
+      chrome.storage.local.set({ 'auto_skip_active': nextState }, () => {
+        updateAutoSkipButtonUI(nextState);
+        const action = nextState ? 'start_auto_skip' : 'stop_auto_skip';
+        chrome.tabs.sendMessage(tab.id, { action: action }, () => {});
+        showToast(nextState ? I18N[currentLanguage].toast_autoskip_started : I18N[currentLanguage].toast_autoskip_stopped);
+      });
+    });
+  });
+}
+
 const POINT_REGEX = /^[ \t]*\d+(?:\.\d+)?[ \t]*points?\.?[ \t]*$/gmi;
 
 // Helper gắn sự kiện an toàn tuyệt đối (không bao giờ văng lỗi nếu thiếu DOM)
@@ -80,7 +366,8 @@ chrome.storage.local.get([
   'saved_clean_output',
   'saved_ai_html',
   'auto_skip_active',
-  'auto_fill_quiz_enabled'
+  'auto_fill_quiz_enabled',
+  'ui_language'
 ], (res) => {
   const k1 = res?.gemini_api_key_1 || (Array.isArray(res?.gemini_api_keys) ? res.gemini_api_keys[0] : '') || res?.gemini_api_key || localStorage.getItem('gemini_api_key_1') || localStorage.getItem('gemini_api_key') || '';
   const k2 = res?.gemini_api_key_2 || (Array.isArray(res?.gemini_api_keys) ? res.gemini_api_keys[1] : '') || localStorage.getItem('gemini_api_key_2') || '';
@@ -121,6 +408,11 @@ chrome.storage.local.get([
   }
 
   updateAutoSkipButtonUI(!!res.auto_skip_active);
+  if (res.ui_language) {
+    applyLanguage(res.ui_language);
+  } else {
+    applyLanguage('vi');
+  }
 });
 
 safeListen('chkAutoFillQuiz', 'change', () => {
@@ -1390,3 +1682,9 @@ async function callGeminiMultimodalParts(apiKeyOrKeys, preferredModel, parts) {
   }
   throw new Error(finalMsg);
 }
+
+
+// Setup Nav Tabs, Language Switcher, and Side Action Buttons
+setupLanguageSwitcher();
+setupNavTabs();
+setupSideActionButtons();

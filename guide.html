@@ -201,6 +201,15 @@
       background: var(--primary);
     }
 
+    .hero-label-group {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
     .hero-label {
       display: inline-block;
       font-family: 'JetBrains Mono', monospace;
@@ -211,9 +220,38 @@
       border: 1px solid rgba(99, 102, 241, 0.4);
       color: #a5b4fc;
       border-radius: var(--radius-sm);
-      margin-bottom: 14px;
       text-transform: uppercase;
       letter-spacing: 0.06em;
+    }
+
+    .lang-switcher {
+      display: flex;
+      gap: 8px;
+    }
+
+    .lang-btn {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 5px 14px;
+      background: #0d1117;
+      border: var(--border-neo);
+      box-shadow: var(--shadow-neo-sm);
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      outline: none;
+    }
+
+    .lang-btn:hover {
+      color: #ffffff;
+      background: #1e2433;
+    }
+
+    .lang-btn.active {
+      background: var(--primary);
+      color: #ffffff;
     }
 
     .hero-title {
@@ -605,9 +643,15 @@
 
     <!-- Hero Banner -->
     <div class="hero-banner">
-      <span class="hero-label">DOCUMENTATION & MANUAL</span>
-      <h1 class="hero-title">Cẩm Nang Hướng Dẫn Sử Dụng Coursera Helper</h1>
-      <p class="hero-desc">
+      <div class="hero-label-group">
+        <span class="hero-label">DOCUMENTATION & MANUAL</span>
+        <div class="lang-switcher">
+          <button class="lang-btn active" id="btnVi" onclick="switchGuideLang('vi')">Tiếng Việt</button>
+          <button class="lang-btn" id="btnEn" onclick="switchGuideLang('en')">English</button>
+        </div>
+      </div>
+      <h1 class="hero-title" id="guideHeroTitle">Cẩm Nang Hướng Dẫn Sử Dụng Coursera Helper</h1>
+      <p class="hero-desc" id="guideHeroDesc">
         Tài liệu vận hành chi tiết toàn bộ tính năng của tiện ích Chrome Extension và công cụ Web Solver trực tuyến. Tự động hóa quá trình học tập, bóc tách prompt injection rác, xử lý Video/Reading và tự động giải trắc nghiệm bằng Google Gemini AI.
       </p>
       
@@ -620,7 +664,9 @@
       </div>
     </div>
 
-    <!-- Section 01: HUD Di Động -->
+    <!-- Vietnamese Guide Content -->
+    <div id="guideContentVi">
+<!-- Section 01: HUD Di Động -->
     <div class="section-card" id="section-hud">
       <div class="section-header">
         <div class="step-badge">01</div>
@@ -843,8 +889,229 @@
         </div>
       </div>
     </div>
+    </div>
+<!-- English Guide Content -->
+    <div id="guideContentEn" style="display: none;">
+      <!-- Section 01: Floating HUD -->
+      <div class="section-card" id="en-section-hud">
+        <div class="section-header">
+          <div class="step-badge">01</div>
+          <div class="section-title-group">
+            <h2>Floating Drag-and-Drop HUD</h2>
+            <p>On-screen floating controller displayed directly over the Coursera course interface</p>
+          </div>
+        </div>
 
-    <!-- Footer -->
+        <div class="feature-grid">
+          <div class="feature-box">
+            <div class="feature-box-title">
+              <span>Drag & Drop Position</span>
+              <span class="status-tag tag-blue">UI CONTROL</span>
+            </div>
+            <p>
+              Click and hold the HUD header to drag it anywhere across your screen. The position automatically persists so it won't block lecture videos or assignment buttons.
+            </p>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-box-title">
+              <span>"Solve Quiz" / "Scan" Button</span>
+              <span class="status-tag tag-green">ACTION</span>
+            </div>
+            <p>
+              Triggers the zero-click quiz workflow directly on Coursera: automatically clicks "Start Assignment", scans all questions (with images), prompts Gemini AI, checks answers, checks the Honor Code, and submits!
+            </p>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-box-title">
+              <span>"Grade Peer" Button</span>
+              <span class="status-tag tag-purple">PEER REVIEW</span>
+            </div>
+            <p>
+              Automates peer-reviewed grading assignments: selects the maximum score for all criteria and writes constructive, high-quality feedback automatically.
+            </p>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-box-title">
+              <span>"Auto-Skip Module" Button</span>
+              <span class="status-tag tag-emerald">HANDS FREE</span>
+            </div>
+            <p>
+              Complete full modules autonomously: fast forwards videos at 16x speed, marks readings as completed, and auto-solves practice quizzes. Click again to safely stop anytime.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 02: Side Panel -->
+      <div class="section-card" id="en-section-sidepanel">
+        <div class="section-header">
+          <div class="step-badge step-badge-purple">02</div>
+          <div class="section-title-group">
+            <h2>Coursera Helper Side Panel</h2>
+            <p>Dedicated sidebar interface for text inspection, prompt cleaning, and video management</p>
+          </div>
+        </div>
+
+        <div class="feature-grid">
+          <div class="feature-box">
+            <div class="feature-box-title">
+              <span>Language Switcher (VI / EN)</span>
+              <span class="status-tag tag-blue">I18N</span>
+            </div>
+            <p>
+              Instantly toggle between Vietnamese and English. Language selection persists and synchronizes live with the in-page Floating HUD buttons!
+            </p>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-box-title">
+              <span>Tab Navigation (Quiz / Video / Guide)</span>
+              <span class="status-tag tag-purple">ORGANIZATION</span>
+            </div>
+            <p>
+              Clean tabbed layout categorizing core features: <strong>Quiz</strong> solver &amp; cleaner, <strong>Video</strong> &amp; module skip controls, and quick <strong>Guide</strong> handbook.
+            </p>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-box-title">
+              <span>Prompt Injection Stripper</span>
+              <span class="status-tag tag-green">ANTI-CHEAT BYPASS</span>
+            </div>
+            <p>
+              Multi-tiered regex engine removes 100% of Coursera's hidden traps (e.g. <em>"interacting with assessment elements is strictly prohibited"</em>), allowing external AI models to answer accurately without refusal.
+            </p>
+          </div>
+
+          <div class="feature-box">
+            <div class="feature-box-title">
+              <span>API Key Rotation</span>
+              <span class="status-tag tag-amber">RATE LIMIT SAFETY</span>
+            </div>
+            <p>
+              Store up to 3 Gemini API Keys. When one key reaches Google's free-tier rate limit (20 req/min), the extension seamlessly rotates to the next key without failing your quiz.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 03: Web Solver -->
+      <div class="section-card" id="en-section-websolver">
+        <div class="section-header">
+          <div class="step-badge step-badge-green">03</div>
+          <div class="section-title-group">
+            <h2>Online Web Solver Tool</h2>
+            <p>Zero-install standalone web app available at coursera-helper.vercel.app</p>
+          </div>
+        </div>
+
+        <div class="workflow-steps">
+          <div class="workflow-step">
+            <div class="step-num">1</div>
+            <div class="step-desc">
+              <strong>Paste Raw Text</strong>: Paste raw Coursera text directly into the input box. The system strips prompt injections and points automatically in real-time.
+            </div>
+          </div>
+          <div class="workflow-step">
+            <div class="step-num">2</div>
+            <div class="step-desc">
+              <strong>Copy Clean / Prompt</strong>: Click <em>"Copy Clean"</em> or <em>"Prompt"</em> to use with ChatGPT, Claude, DeepSeek, or Gemini Web.
+            </div>
+          </div>
+          <div class="workflow-step">
+            <div class="step-num">3</div>
+            <div class="step-desc">
+              <strong>Direct AI Solve</strong>: Enter your free Gemini API Key in Settings to receive formatted markdown solutions and explanations directly in browser.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 04: Smart Bot Mechanics -->
+      <div class="section-card" id="en-section-smartbot">
+        <div class="section-header">
+          <div class="step-badge step-badge-amber">04</div>
+          <div class="section-title-group">
+            <h2>Smart Bot Safety &amp; Automation Mechanics</h2>
+            <p>How Coursera Helper guarantees accuracy and protects your grade</p>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>State / Event</th>
+                <th>Bot Action</th>
+                <th>Safety Mechanism</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Start Assignment / Resume</strong></td>
+                <td>Clicks Start / Resume button automatically</td>
+                <td>Smooth scroll into view and DOM verification before clicking</td>
+              </tr>
+              <tr>
+                <td><strong>Multimodal (Images)</strong></td>
+                <td>Converts quiz diagrams &amp; equations to Base64</td>
+                <td>Passes image data directly into Gemini vision pipeline</td>
+              </tr>
+              <tr>
+                <td><strong>Honor Code &amp; Submit</strong></td>
+                <td>Checks Honor Code checkbox and confirms modal</td>
+                <td>Strict audit: Blocks submission if any question remains unanswered</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="warning-box">
+          <div class="warning-box-title">GRADE SAFETY GUARANTEE</div>
+          <p>
+            Before confirming any quiz submission, the extension performs a comprehensive scan. If any question has not been selected, submission is immediately intercepted with a warning to protect your final course grade.
+          </p>
+        </div>
+      </div>
+
+      <!-- Section 05: FAQ -->
+      <div class="section-card" id="en-section-faq">
+        <div class="section-header">
+          <div class="step-badge step-badge-cyan">05</div>
+          <div class="section-title-group">
+            <h2>Frequently Asked Questions (FAQ)</h2>
+            <p>Common questions and troubleshooting tips during course study</p>
+          </div>
+        </div>
+
+        <div class="faq-grid">
+          <div class="faq-item">
+            <div class="faq-question">Where do I get a Gemini API Key and is it free?</div>
+            <div class="faq-answer">
+              You can get a free API Key at Google AI Studio (<code>aistudio.google.com</code>). The free tier supports 15 requests per minute, which is more than enough for completing Coursera courses.
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <div class="faq-question">What should I do if some questions are not answered?</div>
+            <div class="faq-answer">
+              This can happen if your internet connection drops or the key temporarily hits Google's rate limit. Simply leave the page open and click <code>Solve Quiz</code> on the HUD again. The system skips already verified options and completes the rest.
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <div class="faq-question">Does the extension automatically advance to the next lecture?</div>
+            <div class="faq-answer">
+              Yes. When <code>Auto-Skip</code> mode is active, once a quiz is completed and grades are shown, the extension automatically clicks <code>Next Item</code> to transition to the next lesson.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+<!-- Footer -->
     <footer>
       <p>Coursera Helper — Phân phối miễn phí phục vụ mục đích nghiên cứu & học tập cá nhân.</p>
       <p style="margin-top: 6px;">
@@ -855,5 +1122,32 @@
     </footer>
   </div>
 
+
+  <script>
+    function switchGuideLang(lang) {
+      const viBox = document.getElementById('guideContentVi');
+      const enBox = document.getElementById('guideContentEn');
+      const btnVi = document.getElementById('btnVi');
+      const btnEn = document.getElementById('btnEn');
+      const heroTitle = document.getElementById('guideHeroTitle');
+      const heroDesc = document.getElementById('guideHeroDesc');
+
+      if (lang === 'en') {
+        if (viBox) viBox.style.display = 'none';
+        if (enBox) enBox.style.display = 'block';
+        btnVi?.classList.remove('active');
+        btnEn?.classList.add('active');
+        if (heroTitle) heroTitle.textContent = 'Coursera Helper User Guide & Documentation';
+        if (heroDesc) heroDesc.textContent = 'Comprehensive manual covering all Chrome Extension features and online Web Solver tools. Automate learning workflows, bypass prompt injection traps, fast-forward lectures, and auto-solve quizzes with Gemini AI.';
+      } else {
+        if (viBox) viBox.style.display = 'block';
+        if (enBox) enBox.style.display = 'none';
+        btnVi?.classList.add('active');
+        btnEn?.classList.remove('active');
+        if (heroTitle) heroTitle.textContent = 'Cẩm Nang Hướng Dẫn Sử Dụng Coursera Helper';
+        if (heroDesc) heroDesc.textContent = 'Tài liệu vận hành chi tiết toàn bộ tính năng của tiện ích Chrome Extension và công cụ Web Solver trực tuyến. Tự động hóa quá trình học tập, bóc tách prompt injection rác, xử lý Video/Reading và tự động giải trắc nghiệm bằng Google Gemini AI.';
+      }
+    }
+  </script>
 </body>
 </html>

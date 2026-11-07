@@ -357,6 +357,15 @@ export function createFloatingHUD() {
 
   // 5. Gắn sự kiện các nút hành động
   setupHUDButtonActions();
+
+  // 6. Đồng bộ ngôn ngữ khởi tạo từ storage
+  try {
+    chrome.storage.local.get(['ui_language'], (res) => {
+      if (res && res.ui_language) {
+        updateHUDLanguage(res.ui_language);
+      }
+    });
+  } catch (e) {}
 }
 
 function restoreHUDPosition() {
@@ -484,5 +493,66 @@ function setupHUDButtonActions() {
 }
 
 export function updateHUDForCurrentPage() {
-  // Giữ nguyên giao diện đầy đủ các nút theo đúng yêu cầu người dùng
+  // Đồng bộ lại ngôn ngữ và trạng thái HUD khi chuyển trang
+  updateHUDLanguage();
+}
+
+export function updateHUDLanguage(lang) {
+  const curLang = lang || window._chCurrentLanguage || 'vi';
+  window._chCurrentLanguage = curLang;
+
+  const btnSolve = document.getElementById('ch-hud-solvequiz');
+  if (btnSolve) {
+    const lbl = btnSolve.querySelector('.ch-btn-label');
+    if (lbl) lbl.textContent = curLang === 'en' ? 'Solve Quiz' : 'Giải Quiz';
+    btnSolve.title = curLang === 'en'
+      ? 'Auto-scan questions with images, solve with Gemini, select answers, and auto-submit! (Alt+Q)'
+      : 'Tự động quét toàn bộ câu hỏi (kèm hình ảnh), gọi Gemini giải, tick đáp án và tự động nộp bài! (Alt+Q)';
+  }
+
+  const btnPeer = document.getElementById('ch-hud-peerreview');
+  if (btnPeer) {
+    const lbl = btnPeer.querySelector('.ch-btn-label');
+    if (lbl) lbl.textContent = curLang === 'en' ? 'Grade Peer' : 'Chấm Điểm Peer';
+    btnPeer.title = curLang === 'en'
+      ? 'Auto-grade peer assignments: give maximum score and write detailed positive feedback!'
+      : 'Tự động chấm điểm Peer Review: chọn điểm cao nhất và viết nhận xét chi tiết!';
+  }
+
+  const btnAutoSkip = document.getElementById('ch-hud-autoskip');
+  if (btnAutoSkip && !window._chAutoSkipActive) {
+    const lbl = btnAutoSkip.querySelector('.ch-btn-label');
+    if (lbl) lbl.textContent = curLang === 'en' ? 'Auto-Skip Module' : 'Auto-Skip Module';
+    btnAutoSkip.title = curLang === 'en'
+      ? 'Auto-complete entire module: skip videos, mark readings, solve quizzes and submit continuously'
+      : 'Tự động duyệt bài: tua video, đọc bài, tự giải quiz và nộp bài liên tục';
+  } else if (btnAutoSkip && window._chAutoSkipActive) {
+    const lbl = btnAutoSkip.querySelector('.ch-btn-label');
+    if (lbl) lbl.textContent = curLang === 'en' ? 'Stop Auto-Skip' : 'Dừng Auto-Skip';
+  }
+
+  const btnSkipOne = document.getElementById('ch-hud-skipone');
+  if (btnSkipOne) {
+    const lbl = btnSkipOne.querySelector('.ch-btn-label');
+    if (lbl) lbl.textContent = curLang === 'en' ? 'Skip Video' : 'Skip Video';
+    btnSkipOne.title = curLang === 'en'
+      ? 'Fast forward this video to the end and go to the next item (Alt+V)'
+      : 'Tua video này tới cuối và sang bài tiếp (Alt+V)';
+  }
+
+  const btnGuide = document.getElementById('ch-hud-guide');
+  if (btnGuide) {
+    const lbl = btnGuide.querySelector('.ch-btn-label');
+    if (lbl) lbl.textContent = curLang === 'en' ? 'Guide' : 'Hướng dẫn';
+    btnGuide.title = curLang === 'en'
+      ? 'Open user guide notebook and API Key settings'
+      : 'Mở sổ tay hướng dẫn sử dụng và cài đặt API Key';
+  }
+
+  const hudHeader = document.getElementById('ch-hud-header');
+  if (hudHeader) {
+    hudHeader.title = curLang === 'en'
+      ? 'Click to Collapse / Expand • Hold and drag to move freely'
+      : 'Nhấn 1 lần để thu nhỏ / mở rộng • Kéo giữ để di chuyển tự do';
+  }
 }
