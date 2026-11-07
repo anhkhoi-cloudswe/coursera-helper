@@ -661,12 +661,19 @@
         Tài liệu vận hành chi tiết toàn bộ tính năng của tiện ích Chrome Extension và công cụ Web Solver trực tuyến. Tự động hóa quá trình học tập, bóc tách prompt injection rác, xử lý Video/Reading và tự động giải trắc nghiệm bằng Google Gemini AI.
       </p>
       
-      <div class="quick-nav">
+      <div class="quick-nav" id="guideQuickNavVi">
         <a href="#section-hud" class="chip-link">01. HUD Di Động</a>
         <a href="#section-sidepanel" class="chip-link">02. Side Panel</a>
         <a href="#section-websolver" class="chip-link">03. Web Solver</a>
         <a href="#section-smartbot" class="chip-link">04. Cơ Chế Smart Bot</a>
         <a href="#section-faq" class="chip-link">05. Giải Đáp FAQ</a>
+      </div>
+      <div class="quick-nav" id="guideQuickNavEn" style="display: none;">
+        <a href="#en-section-hud" class="chip-link">01. Floating HUD</a>
+        <a href="#en-section-sidepanel" class="chip-link">02. Side Panel</a>
+        <a href="#en-section-websolver" class="chip-link">03. Web Solver</a>
+        <a href="#en-section-smartbot" class="chip-link">04. Smart Bot Logic</a>
+        <a href="#en-section-faq" class="chip-link">05. FAQ Answers</a>
       </div>
     </div>
 
@@ -1133,6 +1140,8 @@
     function switchGuideLang(lang) {
       const viBox = document.getElementById('guideContentVi');
       const enBox = document.getElementById('guideContentEn');
+      const navVi = document.getElementById('guideQuickNavVi');
+      const navEn = document.getElementById('guideQuickNavEn');
       const btnVi = document.getElementById('btnVi');
       const btnEn = document.getElementById('btnEn');
       const heroTitle = document.getElementById('guideHeroTitle');
@@ -1141,6 +1150,8 @@
       if (lang === 'en') {
         if (viBox) viBox.style.display = 'none';
         if (enBox) enBox.style.display = 'block';
+        if (navVi) navVi.style.display = 'none';
+        if (navEn) navEn.style.display = 'flex';
         btnVi?.classList.remove('active');
         btnEn?.classList.add('active');
         if (heroTitle) heroTitle.textContent = 'Coursera Helper User Guide & Documentation';
@@ -1148,6 +1159,8 @@
       } else {
         if (viBox) viBox.style.display = 'block';
         if (enBox) enBox.style.display = 'none';
+        if (navVi) navVi.style.display = 'flex';
+        if (navEn) navEn.style.display = 'none';
         btnVi?.classList.add('active');
         btnEn?.classList.remove('active');
         if (heroTitle) heroTitle.textContent = 'Cẩm Nang Hướng Dẫn Sử Dụng Coursera Helper';
