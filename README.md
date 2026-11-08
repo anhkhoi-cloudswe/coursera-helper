@@ -1,6 +1,6 @@
 # Coursera Helper — Quiz Cleaner & AI Solver 🚀
 
-<img width="1660" height="898" alt="Screenshot 2026-09-23 132024" src="https://github.com/user-attachments/assets/62e4bb81-848e-480a-9f37-75639d9c085c" />
+<img width="1909" height="897" alt="Screenshot 2026-11-08 124342" src="https://github.com/user-attachments/assets/e61c19b1-0218-43e0-9944-4a200cb70ea0" />
 
 ![Version](https://img.shields.io/badge/version-2.3.5-indigo.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
